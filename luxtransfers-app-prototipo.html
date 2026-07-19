@@ -1758,6 +1758,15 @@ let currentUser = {
   c: { name:'Jean Paulo', email:'jn.paulo2020@gmail.com', phone:'+351 9XX XXX XXX' },
   d: { name:'Ricardo Almeida', email:'ricardo.almeida@email.com', phone:'+351 9XX XXX XXX' }
 };
+/* Contas especiais com acesso ilimitado (saldo infinito para o motorista,
+   sem pagamento para o cliente). Nota de segurança: como é tudo feito no
+   frontend, estas credenciais ficam visíveis no código-fonte da app — usa
+   isto só como conta de testes/fundador, não como mecanismo de segurança real. */
+const SPECIAL_ACCOUNTS = {
+  d: { email:'janpaulo2026@outlook.pt', pass:'Jp316246@', name:'Jean Paulo' },
+  c: { email:'nb.paulo@gmail.com', pass:'Nb316246@', name:'Nb Paulo' }
+};
+let unlimitedAccount = { c:false, d:false };
 const COUNTRIES = [
   {flag:'🇵🇹',name:'Portugal',dial:'+351'},
   {flag:'🇧🇷',name:'Brasil',dial:'+55'},
@@ -1841,7 +1850,19 @@ function doLogin(p){
   const ok = user.length>0 && pass.length>0;
   showErr(p+'-login-error', !ok);
   if(!ok) return;
-  if(validEmail(user)) currentUser[p].email = user;
+  const special = SPECIAL_ACCOUNTS[p];
+  if(special && user.toLowerCase()===special.email.toLowerCase() && pass===special.pass){
+    currentUser[p].email = special.email;
+    currentUser[p].name = special.name;
+    unlimitedAccount[p] = true;
+    if(p==='d' && typeof driverBalance!=='undefined'){
+      driverBalance = 999999;
+      if(typeof renderBalanceUI==='function') renderBalanceUI();
+    }
+  } else {
+    unlimitedAccount[p] = false;
+    if(validEmail(user)) currentUser[p].email = user;
+  }
   completeAuth(p);
 }
 function doRegister(p){
@@ -2087,8 +2108,7 @@ function initDriverApp(){ goTo('d-auth-welcome'); }
 })();
 
 /* ===================== STRIPE (frontend) ===================== */
-// TODO: substitui pela tua chave publicável Stripe real (pk_live_... em produção, pk_test_... em testes).
-const STRIPE_PUBLISHABLE_KEY = 'pk_test_51TuuIeGWsn8hhaSkrr62CNYXet0MELmV3hr9SYnoXkXUkyXpQgyqnsxdTjesZRE1svWxF7aiZXdtnX66peoPKqSy00b';
+const STRIPE_PUBLISHABLE_KEY = 'pk_live_51LzS4GGvTv5FeVcivmRKG7lS1sBOluHfuyniDykbUxM7df1vtgtbydV5MwasroXbxHNkDlT3muXC8MAB7x4LTMyx00SIS4e1Tb';
 // TODO: substitui pelo URL real da tua Cloud Function que cria o PaymentIntent no backend (ver ficheiro functions/index.js).
 const CREATE_PAYMENT_INTENT_URL = 'https://REGION-YOUR-PROJECT.cloudfunctions.net/createPaymentIntent';
 // TODO: substitui pelo URL real da tua Cloud Function que cria o SetupIntent (guardar cartão sem cobrar).
@@ -2226,6 +2246,7 @@ function payAndFinishTrip(){
   const wait = hasRealFare ? (clientRide.waitFee||0) : ((typeof waitOverageFee !== 'undefined') ? waitOverageFee : 0);
   const extra = wait + selectedTip;
   if(extra <= 0){ finishClientTrip(); return; }
+  if(unlimitedAccount.c){ finishClientTrip(); return; }
   openPayment('c', extra, function(){ finishClientTrip(); });
 }
 window.addEventListener('load', initStripe);
@@ -2786,6 +2807,7 @@ function payThenRequestRide(){
   // cancelado, o cliente fica no ecrã de escolha de veículo e nenhum
   // motorista é notificado.
   if(!selectedVehicle) return;
+  if(unlimitedAccount.c){ startMatching(); return; }
   openPayment('c', selectedVehicle.price, function(){ startMatching(); });
 }
 function startMatching(){
@@ -3039,7 +3061,8 @@ function resetDriverFlow(){
 }
 function renderBalanceUI(){
   const low = driverBalance < MIN_BALANCE_TO_RECEIVE;
-  document.getElementById('balance-amount').textContent = maskedOrValue(driverBalance);
+  const amountEl = document.getElementById('balance-amount');
+  amountEl.textContent = unlimitedAccount.d ? '∞' : maskedOrValue(driverBalance);
   document.getElementById('balance-fill').style.width = Math.max(0, Math.min(100, (driverBalance/MAX_BALANCE)*100)) + '%';
   document.getElementById('balance-card').classList.toggle('low', low);
 }
@@ -3411,7 +3434,7 @@ function markTripComplete(el){
     const commission = totalFare * COMMISSION_RATE;
     driverEarnings += totalFare;
     driverTrips += 1;
-    driverBalance = Math.max(0, driverBalance - commission);
+    if(!unlimitedAccount.d){ driverBalance = Math.max(0, driverBalance - commission); }
     document.getElementById('d-earn-amount').textContent = fmtEur(totalFare);
     const waitRow = document.getElementById('d-wait-row');
     if(waitRow) waitRow.style.display = wait > 0 ? 'flex' : 'none';
