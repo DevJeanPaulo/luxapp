@@ -1,0 +1,559 @@
+<!DOCTYPE html>
+<html lang="pt-PT">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lux Transfers — Painel de Administração</title>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyBpV5Plv5j6RnpOokgqVm6MJ55321Vul08&loading=async" async defer></script>
+<style>
+  :root{
+    --bg:#07080a; --panel:#0d0f13; --panel2:#15181e; --panel3:#1c2028;
+    --gold:#FFC94D; --text:#e7ebf1; --muted:#8b93a1; --muted2:#5b6473;
+    --danger:#FF4757; --success:#22E88C; --line:#232732;
+    --radius-lg:18px; --radius-md:12px; --radius-sm:8px;
+  }
+  *{ box-sizing:border-box; }
+  html,body{ margin:0; padding:0; background:var(--bg); color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",ui-sans-serif,system-ui,sans-serif; min-height:100vh; }
+  a{ color:var(--gold); }
+  header.topbar{
+    display:flex; align-items:center; justify-content:space-between;
+    padding:20px 28px; border-bottom:1px solid var(--line);
+    position:sticky; top:0; background:var(--bg); z-index:10;
+  }
+  header.topbar .brand{ font-size:16px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; }
+  header.topbar .brand span{ color:var(--gold); }
+  header.topbar .sub{ font-size:12px; color:var(--muted); margin-top:2px; }
+  header.topbar .actions{ display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+  .btn{
+    border:none; border-radius:var(--radius-sm); padding:9px 16px; font-size:13px; font-weight:700;
+    cursor:pointer; letter-spacing:.02em;
+  }
+  .btn-gold{ background:var(--gold); color:#1a1408; }
+  .btn-outline{ background:transparent; color:var(--text); border:1px solid var(--line); }
+  .btn-danger{ background:transparent; color:var(--danger); border:1px solid rgba(255,71,87,.4); }
+  .btn:disabled{ opacity:.35; cursor:not-allowed; }
+
+  .layout{ display:flex; gap:0; align-items:flex-start; max-width:1280px; margin:0 auto; }
+  .col-list{
+    width:380px; flex-shrink:0; border-right:1px solid var(--line);
+    min-height:calc(100vh - 73px); padding:18px;
+  }
+  .col-detail{ flex:1; padding:24px 28px; min-height:calc(100vh - 73px); }
+
+  .filters{ display:flex; gap:8px; margin-bottom:16px; flex-wrap:wrap; }
+  .filters button{
+    background:var(--panel2); border:1px solid var(--line); color:var(--muted);
+    font-size:11.5px; font-weight:700; text-transform:uppercase; letter-spacing:.03em;
+    padding:7px 12px; border-radius:999px; cursor:pointer;
+  }
+  .filters button.active{ background:var(--gold); color:#1a1408; border-color:var(--gold); }
+
+  .app-card{
+    background:var(--panel2); border:1px solid var(--line); border-radius:var(--radius-md);
+    padding:14px; margin-bottom:10px; cursor:pointer; transition:border-color .15s ease;
+  }
+  .app-card:hover{ border-color:var(--gold); }
+  .app-card.selected{ border-color:var(--gold); background:#1c1810; }
+  .app-card .row{ display:flex; justify-content:space-between; align-items:center; gap:8px; }
+  .app-card .row-right{ display:flex; align-items:center; gap:6px; flex-shrink:0; }
+  .app-card .name{ font-size:14px; font-weight:700; }
+  .app-card .meta{ font-size:11.5px; color:var(--muted); margin-top:4px; }
+  .icon-btn-mini{
+    background:transparent; border:1px solid var(--line); color:var(--muted); border-radius:var(--radius-sm);
+    width:24px; height:24px; display:flex; align-items:center; justify-content:center;
+    cursor:pointer; font-size:11px; flex-shrink:0; padding:0;
+  }
+  .icon-btn-mini:hover{ border-color:var(--danger); color:var(--danger); }
+  .status-badge{
+    font-size:9.5px; font-weight:700; text-transform:uppercase; letter-spacing:.04em;
+    padding:3px 9px; border-radius:999px; white-space:nowrap; flex-shrink:0;
+  }
+  .status-badge.incomplete{ background:var(--panel3); color:var(--muted); border:1px solid var(--line); }
+  .status-badge.pending{ background:rgba(255,201,77,.12); color:var(--gold); border:1px solid rgba(255,201,77,.4); }
+  .status-badge.approved{ background:rgba(34,232,140,.12); color:var(--success); border:1px solid rgba(34,232,140,.4); }
+  .status-badge.rejected{ background:rgba(255,71,87,.12); color:var(--danger); border:1px solid rgba(255,71,87,.4); }
+
+  .empty-state{ text-align:center; padding:60px 20px; color:var(--muted); }
+  .empty-state .emoji{ font-size:36px; margin-bottom:10px; }
+
+  .detail-header{ display:flex; justify-content:space-between; align-items:flex-start; gap:16px; margin-bottom:24px; }
+  .detail-header h1{ margin:0 0 6px; font-size:21px; }
+  .detail-header .meta-line{ font-size:13px; color:var(--muted); }
+  .detail-header .meta-line span{ margin-right:16px; }
+  .detail-header-info{ flex:1; min-width:0; }
+  .detail-header-actions{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; flex-shrink:0; }
+
+  .edit-form{ display:flex; flex-direction:column; gap:10px; max-width:360px; }
+  .edit-form label{ font-size:10.5px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; }
+  .edit-form input{
+    width:100%; background:var(--panel2); border:1px solid var(--line); border-radius:var(--radius-sm);
+    padding:9px 12px; color:var(--text); font-size:13px; outline:none; margin-top:3px;
+  }
+  .edit-form input:focus{ border-color:var(--gold); }
+
+  .doc-row{
+    display:flex; align-items:center; gap:14px;
+    background:var(--panel2); border:1px solid var(--line); border-radius:var(--radius-md);
+    padding:14px 16px; margin-bottom:10px;
+  }
+  .doc-row .doc-icon{ font-size:22px; flex-shrink:0; }
+  .doc-row .doc-info{ flex:1; min-width:0; }
+  .doc-row .doc-info .doc-name{ font-size:14px; font-weight:700; }
+  .doc-row .doc-info .doc-desc{ font-size:11.5px; color:var(--muted); margin-top:2px; }
+  .doc-row .doc-info .doc-file{ font-size:12px; color:var(--muted); margin-top:6px; }
+  .doc-row .doc-info .doc-file a{ color:var(--gold); font-weight:700; text-decoration:none; margin-left:8px; }
+  .doc-row .doc-info .doc-file a:hover{ text-decoration:underline; }
+  .doc-row .doc-actions{ display:flex; gap:8px; flex-shrink:0; flex-wrap:wrap; justify-content:flex-end; }
+  .doc-row .doc-actions button{ padding:7px 12px; font-size:11.5px; white-space:nowrap; }
+  .doc-row .doc-note{ font-size:11px; color:var(--danger); margin-top:6px; }
+
+  .overall-actions{
+    display:flex; gap:10px; margin-top:24px; padding-top:20px; border-top:1px solid var(--line);
+  }
+
+  .view-switch{ display:flex; gap:4px; background:var(--panel2); border:1px solid var(--line); border-radius:999px; padding:4px; }
+  .view-switch button{
+    background:transparent; border:none; color:var(--muted); font-size:12px; font-weight:700;
+    padding:7px 14px; border-radius:999px; cursor:pointer; white-space:nowrap;
+  }
+  .view-switch button.active{ background:var(--gold); color:#1a1408; }
+
+  .live-status{ font-size:12px; color:var(--muted); margin-bottom:14px; }
+  #live-map{ width:100%; height:100%; min-height:420px; background:#0b0d11; }
+  .live-driver-card{
+    background:var(--panel2); border:1px solid var(--line); border-radius:var(--radius-md);
+    padding:12px 14px; margin-bottom:8px; cursor:pointer; transition:border-color .15s ease;
+  }
+  .live-driver-card:hover{ border-color:var(--gold); }
+  .live-driver-card .name{ font-size:13.5px; font-weight:700; }
+  .live-driver-card .meta{ font-size:11px; color:var(--muted); margin-top:3px; }
+  .live-driver-card .dot{ display:inline-block; width:7px; height:7px; border-radius:50%; background:var(--success); margin-right:6px; }
+
+  @media (max-width: 860px){
+    .layout{ flex-direction:column; }
+    .col-list{ width:100%; border-right:none; border-bottom:1px solid var(--line); min-height:auto; }
+    .col-detail{ min-height:auto; }
+  }
+  @media (max-width: 560px){
+    header.topbar{ flex-direction:column; align-items:flex-start; gap:10px; padding:16px 18px; }
+    header.topbar .actions{ width:100%; justify-content:space-between; }
+    .view-switch{ width:100%; }
+    .view-switch button{ flex:1; }
+    .detail-header{ flex-direction:column; gap:10px; }
+    .detail-header-actions{ width:100%; justify-content:flex-start; }
+    .edit-form{ max-width:100%; }
+    .doc-row{ flex-wrap:wrap; }
+    .doc-row .doc-actions{ width:100%; justify-content:flex-start; }
+    .overall-actions{ flex-direction:column; }
+    .overall-actions button{ width:100%; }
+    #live-map{ min-height:280px; }
+  }
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div>
+    <div class="brand"><span>Lux</span> Transfers · Admin</div>
+    <div class="sub">Verificação de candidaturas de motoristas TVDE</div>
+  </div>
+  <div class="actions">
+    <div class="view-switch" id="view-switch">
+      <button data-v="apps" class="active" onclick="switchView('apps')">📋 Candidaturas</button>
+      <button data-v="live" onclick="switchView('live')">🔴 Ao vivo</button>
+    </div>
+    <button class="btn btn-outline" onclick="renderAll()">↻ Atualizar</button>
+  </div>
+</header>
+
+<div class="layout" id="view-apps">
+  <div class="col-list">
+    <div class="filters" id="filters">
+      <button data-f="all" class="active" onclick="setFilter('all')">Todas</button>
+      <button data-f="pending" onclick="setFilter('pending')">Pendentes</button>
+      <button data-f="approved" onclick="setFilter('approved')">Aprovadas</button>
+      <button data-f="rejected" onclick="setFilter('rejected')">Rejeitadas</button>
+    </div>
+    <div id="app-list"></div>
+  </div>
+  <div class="col-detail" id="detail-panel">
+    <div class="empty-state">
+      <div class="emoji">🗂️</div>
+      <p>Seleciona uma candidatura na lista para reveres os documentos.</p>
+    </div>
+  </div>
+</div>
+
+<div class="layout" id="view-live" style="display:none;">
+  <div class="col-list">
+    <div class="live-status" id="live-status">A ligar ao Firestore…</div>
+    <div id="live-driver-list"></div>
+  </div>
+  <div class="col-detail" id="live-map-col" style="padding:0;">
+    <div id="live-map"></div>
+  </div>
+</div>
+
+<script>
+const TVDE_DOCS = [
+  { key:'tvde',   name:'Cartão de Motorista TVDE', desc:'Emitido pelo IMT — comprovativo de habilitação para TVDE.' },
+  { key:'cc',     name:'Carta de Condução', desc:'Válida, categoria B.' },
+  { key:'crc',    name:'Certificado de Registo Criminal', desc:'Emitido há menos de 90 dias.' },
+  { key:'dua',    name:'Documento Único Automóvel (DUA)', desc:'Documento de identificação do veículo.' },
+  { key:'seguro', name:'Apólice de Seguro', desc:'Responsabilidade civil e seguro de ocupantes.' },
+  { key:'ipo',    name:'Certificado de Inspeção (IPO)', desc:'Inspeção periódica obrigatória válida.' }
+];
+const DRIVER_APPS_KEY = 'lux_driver_applications';
+let currentFilter = 'all';
+let selectedAppId = null;
+let editingAppId = null;
+
+/* ===================== FIREBASE / FIRESTORE ===================== */
+// Configuração real do projeto Firebase "Lux Transfers" (lux-transfers-3327d) —
+// igual à usada em lux-cliente.html/luxdriver-motorista.html.
+const FIREBASE_CONFIG = {
+  apiKey: 'AIzaSyC-AgjcPJvgktgK_6ctSF7DyBD6u-EQzMs',
+  authDomain: 'lux-transfers-3327d.firebaseapp.com',
+  projectId: 'lux-transfers-3327d',
+  storageBucket: 'lux-transfers-3327d.firebasestorage.app',
+  messagingSenderId: '612200636206',
+  appId: '1:612200636206:web:7765946c7da6f7d24c64bf'
+};
+let firestoreDb = null;
+function initFirestore(){
+  if(typeof firebase === 'undefined' || !firebase.firestore) return null;
+  if(!FIREBASE_CONFIG.apiKey || FIREBASE_CONFIG.apiKey.indexOf('TODO')>=0) return null;
+  if(firestoreDb) return firestoreDb;
+  try{
+    if(!firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG);
+    firestoreDb = firebase.firestore();
+  }catch(e){ console.warn('Firestore init falhou:', e); return null; }
+  return firestoreDb;
+}
+
+/* ===================== GOOGLE MAPS (ao vivo) ===================== */
+const LUX_MAP_STYLE = [
+  { elementType:'geometry', stylers:[{ color:'#0e1116' }] },
+  { elementType:'labels.text.stroke', stylers:[{ color:'#0e1116' }] },
+  { elementType:'labels.text.fill', stylers:[{ color:'#5b6473' }] },
+  { featureType:'administrative', elementType:'geometry', stylers:[{ color:'#232732' }] },
+  { featureType:'poi', stylers:[{ visibility:'off' }] },
+  { featureType:'road', elementType:'geometry', stylers:[{ color:'#1c2028' }] },
+  { featureType:'road', elementType:'geometry.stroke', stylers:[{ color:'#0b0d11' }] },
+  { featureType:'road.arterial', elementType:'labels.text.fill', stylers:[{ color:'#8b93a1' }] },
+  { featureType:'road.highway', elementType:'geometry', stylers:[{ color:'#232732' }] },
+  { featureType:'transit', stylers:[{ visibility:'off' }] },
+  { featureType:'water', elementType:'geometry', stylers:[{ color:'#07080a' }] }
+];
+const LISBON_CENTER = { lat:38.7369, lng:-9.1427 };
+let liveMap = null;
+let liveMarkers = {};
+let liveUnsubscribe = null;
+function gmapsAvailable(){ return typeof google !== 'undefined' && !!(google.maps && google.maps.Map); }
+function gDriverIcon(){
+  return { path:google.maps.SymbolPath.CIRCLE, scale:8, fillColor:'#FFC94D', fillOpacity:1, strokeColor:'#0b0d11', strokeWeight:2 };
+}
+function fmtRelativeTime(ts){
+  if(!ts || !ts.toDate) return '—';
+  const secs = Math.max(0, Math.round((Date.now() - ts.toDate().getTime())/1000));
+  if(secs < 60) return 'há ' + secs + 's';
+  if(secs < 3600) return 'há ' + Math.round(secs/60) + ' min';
+  return 'há ' + Math.round(secs/3600) + 'h';
+}
+function switchView(view){
+  document.querySelectorAll('#view-switch button').forEach(b=>b.classList.toggle('active', b.dataset.v===view));
+  document.getElementById('view-apps').style.display = view==='apps' ? 'flex' : 'none';
+  document.getElementById('view-live').style.display = view==='live' ? 'flex' : 'none';
+  if(view==='live') initLiveTracking();
+}
+function initLiveTracking(){
+  const statusEl = document.getElementById('live-status');
+  if(!gmapsAvailable()){
+    if(statusEl) statusEl.textContent = 'Não foi possível carregar o Google Maps (offline ou bloqueado).';
+    return;
+  }
+  if(!liveMap){
+    liveMap = new google.maps.Map(document.getElementById('live-map'), {
+      center:LISBON_CENTER, zoom:12, disableDefaultUI:true, gestureHandling:'greedy',
+      styles:LUX_MAP_STYLE, backgroundColor:'#0b0d11'
+    });
+  }
+  const db = initFirestore();
+  if(!db){
+    if(statusEl) statusEl.textContent = 'Firestore indisponível (configuração por preencher ou offline).';
+    return;
+  }
+  if(liveUnsubscribe) return; // já a ouvir
+  if(statusEl) statusEl.textContent = 'A app do motorista ainda não usa Firebase Authentication — regras do Firestore abertas apenas para esta demonstração.';
+  liveUnsubscribe = db.collection('driver_locations').onSnapshot(function(snapshot){
+    const activeIds = [];
+    snapshot.forEach(function(doc){
+      const d = doc.data();
+      if(!d.online){
+        if(liveMarkers[doc.id]){ liveMarkers[doc.id].marker.setMap(null); delete liveMarkers[doc.id]; }
+        return;
+      }
+      activeIds.push(doc.id);
+      const pos = { lat:d.lat, lng:d.lng };
+      if(liveMarkers[doc.id]){
+        liveMarkers[doc.id].marker.setPosition(pos);
+        liveMarkers[doc.id].data = d;
+      } else {
+        liveMarkers[doc.id] = {
+          marker: new google.maps.Marker({ position:pos, map:liveMap, icon:gDriverIcon(), title:d.name||'Motorista' }),
+          data: d
+        };
+      }
+    });
+    Object.keys(liveMarkers).forEach(function(id){
+      if(activeIds.indexOf(id)===-1){ liveMarkers[id].marker.setMap(null); delete liveMarkers[id]; }
+    });
+    renderLiveDriverList();
+  }, function(err){
+    console.warn('Falha ao ouvir driver_locations:', err);
+    if(statusEl) statusEl.textContent = 'Erro ao ligar ao Firestore — verifica as regras de segurança.';
+  });
+}
+function renderLiveDriverList(){
+  const el = document.getElementById('live-driver-list');
+  const statusEl = document.getElementById('live-status');
+  const ids = Object.keys(liveMarkers);
+  if(statusEl) statusEl.textContent = ids.length + (ids.length===1 ? ' motorista online' : ' motoristas online');
+  if(!el) return;
+  if(ids.length===0){
+    el.innerHTML = '<div class="empty-state"><div class="emoji">📍</div><p>Nenhum motorista online neste momento.</p></div>';
+    return;
+  }
+  el.innerHTML = ids.map(function(id){
+    const d = liveMarkers[id].data;
+    return '<div class="live-driver-card" onclick="liveMap.panTo({lat:' + d.lat + ',lng:' + d.lng + '}); liveMap.setZoom(15);">' +
+      '<div class="name"><span class="dot"></span>' + (d.name || 'Motorista') + '</div>' +
+      '<div class="meta">Atualizado ' + fmtRelativeTime(d.updatedAt) + '</div>' +
+    '</div>';
+  }).join('');
+}
+
+function loadApplications(){
+  try{ return JSON.parse(localStorage.getItem(DRIVER_APPS_KEY)) || []; }catch(e){ return []; }
+}
+function saveApplications(list){
+  try{ localStorage.setItem(DRIVER_APPS_KEY, JSON.stringify(list)); }catch(e){}
+}
+function openDocFile(appId, key){
+  const app = loadApplications().find(a=>a.id===appId);
+  const doc = app && app.documents[key];
+  if(!doc || !doc.fileData) return;
+  // Converte a Data URL guardada num Blob URL antes de abrir — os browsers bloqueiam
+  // a navegação direta de uma nova aba para um "data:" URL por segurança.
+  fetch(doc.fileData)
+    .then(function(res){ return res.blob(); })
+    .then(function(blob){
+      const url = URL.createObjectURL(blob);
+      window.open(url, '_blank');
+      setTimeout(function(){ URL.revokeObjectURL(url); }, 60000);
+    })
+    .catch(function(){ window.open(doc.fileData, '_blank'); });
+}
+function fmtDate(iso){
+  try{
+    const d = new Date(iso);
+    return d.toLocaleDateString('pt-PT') + ' ' + d.toLocaleTimeString('pt-PT', {hour:'2-digit', minute:'2-digit'});
+  }catch(e){ return iso; }
+}
+function statusLabel(s){
+  return { incomplete:'Incompleta', pending:'Pendente', approved:'Aprovada', rejected:'Rejeitada' }[s] || s;
+}
+function setFilter(f){
+  currentFilter = f;
+  document.querySelectorAll('#filters button').forEach(b=>b.classList.toggle('active', b.dataset.f===f));
+  renderList();
+}
+function renderAll(){
+  renderList();
+  renderDetail();
+}
+function renderList(){
+  const list = loadApplications()
+    .filter(a => currentFilter==='all' || a.overallStatus===currentFilter)
+    .sort((a,b) => new Date(b.createdAt) - new Date(a.createdAt));
+  const el = document.getElementById('app-list');
+  if(list.length===0){
+    el.innerHTML = '<div class="empty-state"><div class="emoji">📭</div><p>Sem candidaturas nesta categoria.</p></div>';
+    return;
+  }
+  el.innerHTML = list.map(a => `
+    <div class="app-card ${a.id===selectedAppId ? 'selected' : ''}" onclick="selectApplication('${a.id}')">
+      <div class="row">
+        <div class="name">${a.name || 'Sem nome'}</div>
+        <div class="row-right">
+          <span class="status-badge ${a.overallStatus}">${statusLabel(a.overallStatus)}</span>
+          <button class="icon-btn-mini" title="Excluir motorista" onclick="event.stopPropagation(); deleteApplication('${a.id}')">🗑</button>
+        </div>
+      </div>
+      <div class="meta">${a.email || ''}</div>
+      <div class="meta">${a.phone || ''} · ${fmtDate(a.createdAt)}</div>
+    </div>
+  `).join('');
+}
+function selectApplication(id){
+  selectedAppId = id;
+  editingAppId = null;
+  renderList();
+  renderDetail();
+}
+function escapeAttr(s){
+  return String(s==null ? '' : s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+function deleteApplication(id){
+  const app = loadApplications().find(a=>a.id===id);
+  const label = app ? (app.name || 'este motorista') : 'esta candidatura';
+  if(!confirm('Tens a certeza que queres excluir "' + label + '"? Esta ação não pode ser desfeita.')) return;
+  const list = loadApplications().filter(a=>a.id!==id);
+  saveApplications(list);
+  if(selectedAppId===id) selectedAppId = null;
+  if(editingAppId===id) editingAppId = null;
+  renderAll();
+}
+function startEditApplication(id){
+  editingAppId = id;
+  renderDetail();
+}
+function cancelEditApplication(){
+  editingAppId = null;
+  renderDetail();
+}
+function saveEditApplication(id){
+  const name = (document.getElementById('edit-name').value||'').trim();
+  const email = (document.getElementById('edit-email').value||'').trim();
+  const phone = (document.getElementById('edit-phone').value||'').trim();
+  if(!name){ alert('O nome não pode ficar vazio.'); return; }
+  editingAppId = null;
+  updateApplication(id, app => { app.name = name; app.email = email; app.phone = phone; });
+}
+function updateApplication(id, mutatorFn){
+  const list = loadApplications();
+  const idx = list.findIndex(a=>a.id===id);
+  if(idx<0) return;
+  mutatorFn(list[idx]);
+  saveApplications(list);
+  renderAll();
+}
+function approveDoc(id, key){
+  updateApplication(id, app => { app.documents[key].status = 'approved'; app.documents[key].note = ''; });
+}
+function rejectDoc(id, key){
+  const note = prompt('Motivo da rejeição deste documento:');
+  if(note===null) return;
+  updateApplication(id, app => { app.documents[key].status = 'rejected'; app.documents[key].note = note || 'Documento inválido.'; });
+}
+function approveApplication(id){
+  updateApplication(id, app => {
+    app.overallStatus = 'approved';
+    TVDE_DOCS.forEach(d => { app.documents[d.key].status = 'approved'; app.documents[d.key].note = ''; });
+  });
+}
+function rejectApplication(id){
+  const note = prompt('Motivo geral da rejeição da candidatura:');
+  if(note===null) return;
+  updateApplication(id, app => {
+    app.overallStatus = 'rejected';
+    TVDE_DOCS.forEach(d => {
+      if(app.documents[d.key].status !== 'rejected'){
+        app.documents[d.key].status = 'rejected';
+        app.documents[d.key].note = note || 'Candidatura rejeitada.';
+      }
+    });
+  });
+}
+function renderDetail(){
+  const panel = document.getElementById('detail-panel');
+  const app = loadApplications().find(a=>a.id===selectedAppId);
+  if(!app){
+    panel.innerHTML = '<div class="empty-state"><div class="emoji">🗂️</div><p>Seleciona uma candidatura na lista para reveres os documentos.</p></div>';
+    return;
+  }
+  const allApproved = TVDE_DOCS.every(d => app.documents[d.key].status === 'approved');
+  const anyMissing = TVDE_DOCS.some(d => app.documents[d.key].status === 'missing');
+  const isEditing = editingAppId === app.id;
+
+  panel.innerHTML = `
+    <div class="detail-header">
+      <div class="detail-header-info">
+        ${isEditing ? `
+          <div class="edit-form">
+            <div>
+              <label>Nome completo</label>
+              <input type="text" id="edit-name" value="${escapeAttr(app.name)}">
+            </div>
+            <div>
+              <label>Email</label>
+              <input type="email" id="edit-email" value="${escapeAttr(app.email)}">
+            </div>
+            <div>
+              <label>Telemóvel</label>
+              <input type="text" id="edit-phone" value="${escapeAttr(app.phone)}">
+            </div>
+          </div>
+        ` : `
+          <h1>${app.name || 'Sem nome'}</h1>
+          <div class="meta-line">
+            <span>✉️ ${app.email || '—'}</span>
+            <span>📱 ${app.phone || '—'}</span>
+            <span>🕒 ${fmtDate(app.createdAt)}</span>
+          </div>
+        `}
+      </div>
+      <div class="detail-header-actions">
+        ${isEditing ? `
+          <button class="btn btn-gold" onclick="saveEditApplication('${app.id}')">✓ Guardar</button>
+          <button class="btn btn-outline" onclick="cancelEditApplication()">Cancelar</button>
+        ` : `
+          <span class="status-badge ${app.overallStatus}" style="font-size:11px; padding:6px 14px;">${statusLabel(app.overallStatus)}</span>
+          <button class="btn btn-outline" onclick="startEditApplication('${app.id}')">✎ Editar</button>
+          <button class="btn btn-danger" onclick="deleteApplication('${app.id}')">🗑 Excluir</button>
+        `}
+      </div>
+    </div>
+
+    <div id="doc-rows">
+      ${TVDE_DOCS.map(d => {
+        const doc = app.documents[d.key];
+        return `
+          <div class="doc-row">
+            <div class="doc-icon">📄</div>
+            <div class="doc-info">
+              <div class="doc-name">${d.name}</div>
+              <div class="doc-desc">${d.desc}</div>
+              ${doc.fileName
+                ? `<div class="doc-file">Ficheiro enviado: ${doc.fileName}${doc.fileData ? `<a href="javascript:void(0)" onclick="openDocFile('${app.id}','${d.key}')">Ver ficheiro ↗</a>` : ' <span style="color:var(--muted2);">(enviado antes desta atualização — sem pré-visualização)</span>'}</div>`
+                : '<div class="doc-file" style="color:var(--muted);">Ainda não enviado</div>'}
+              ${doc.status==='rejected' && doc.note ? `<div class="doc-note">Motivo: ${doc.note}</div>` : ''}
+            </div>
+            <div class="doc-actions">
+              <span class="status-badge ${doc.status}">${statusLabel(doc.status)}</span>
+              <button class="btn btn-outline" ${!doc.fileData ? 'disabled' : ''} onclick="openDocFile('${app.id}','${d.key}')">Ver</button>
+              <button class="btn btn-gold" ${!doc.fileName ? 'disabled' : ''} onclick="approveDoc('${app.id}','${d.key}')">Aprovar</button>
+              <button class="btn btn-danger" ${!doc.fileName ? 'disabled' : ''} onclick="rejectDoc('${app.id}','${d.key}')">Rejeitar</button>
+            </div>
+          </div>`;
+      }).join('')}
+    </div>
+
+    <div class="overall-actions">
+      <button class="btn btn-gold" ${allApproved ? 'disabled' : ''} onclick="approveApplication('${app.id}')">✓ Aprovar candidatura completa</button>
+      <button class="btn btn-danger" onclick="rejectApplication('${app.id}')">✕ Rejeitar candidatura</button>
+    </div>
+    ${anyMissing ? '<p style="color:var(--muted); font-size:12px; margin-top:14px;">Este motorista ainda não enviou todos os documentos obrigatórios.</p>' : ''}
+  `;
+}
+
+window.addEventListener('storage', function(e){
+  if(e.key === DRIVER_APPS_KEY) renderAll();
+});
+renderAll();
+</script>
+</body>
+</html>
