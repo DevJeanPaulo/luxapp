@@ -1342,14 +1342,12 @@ let currentUser = {
   c: { name:'Jean Paulo', email:'jn.paulo2020@gmail.com', phone:'+351 9XX XXX XXX' },
   d: { name:'Ricardo Almeida', email:'ricardo.almeida@email.com', phone:'+351 9XX XXX XXX' }
 };
-/* Contas especiais com acesso ilimitado (saldo infinito para o motorista,
-   sem pagamento para o cliente). Nota de segurança: como é tudo feito no
-   frontend, estas credenciais ficam visíveis no código-fonte da app — usa
-   isto só como conta de testes/fundador, não como mecanismo de segurança real. */
-const SPECIAL_ACCOUNTS = {
-  d: { email:'janpaulo2026@outlook.pt', pass:'Jp316246@', name:'Jean Paulo' },
-  c: { email:'nb.paulo@gmail.com', pass:'Nb316246@', name:'Nb Paulo' }
-};
+/* Contas especiais com acesso ilimitado (saldo infinito para o motorista, sem
+   pagamento para o cliente). As credenciais NUNCA ficam no frontend — são
+   verificadas no backend (Cloud Function checkSpecialAccount, ver
+   functions/index.js), que compara com o secret SPECIAL_ACCOUNTS_JSON. */
+// TODO: substitui pelo URL real da tua Cloud Function checkSpecialAccount (ver functions/index.js).
+const CHECK_SPECIAL_ACCOUNT_URL = 'https://REGION-YOUR-PROJECT.cloudfunctions.net/checkSpecialAccount';
 let unlimitedAccount = { c:false, d:false };
 const COUNTRIES = [
   {flag:'🇵🇹',name:'Portugal',dial:'+351'},
@@ -1428,23 +1426,36 @@ function completeAuth(p){
   updateSettingsUI(p);
   if(p==='c'){ resetClientFlow(); } else { resetDriverFlow(); }
 }
-function doLogin(p){
+async function doLogin(p){
   const user = (document.getElementById(p+'-login-user').value||'').trim();
   const pass = document.getElementById(p+'-login-pass').value||'';
   const ok = user.length>0 && pass.length>0;
   showErr(p+'-login-error', !ok);
   if(!ok) return;
-  const special = SPECIAL_ACCOUNTS[p];
-  if(special && user.toLowerCase()===special.email.toLowerCase() && pass===special.pass){
-    currentUser[p].email = special.email;
-    currentUser[p].name = special.name;
-    unlimitedAccount[p] = true;
-    if(p==='d' && typeof driverBalance!=='undefined'){
-      driverBalance = 999999;
-      if(typeof renderBalanceUI==='function') renderBalanceUI();
+  unlimitedAccount[p] = false;
+  /* A verificação de "conta especial" (acesso ilimitado) é feita sempre no
+     backend — o frontend nunca guarda nem compara credenciais reais. Se o
+     backend não estiver configurado/disponível, entra em modo normal
+     (demonstração), sem acesso ilimitado. */
+  try{
+    const resp = await fetch(CHECK_SPECIAL_ACCOUNT_URL, {
+      method:'POST',
+      headers:{ 'Content-Type':'application/json' },
+      body: JSON.stringify({ role:p, email:user, password:pass })
+    });
+    const data = await resp.json();
+    if(data && data.unlimited){
+      currentUser[p].email = user;
+      if(data.name) currentUser[p].name = data.name;
+      unlimitedAccount[p] = true;
+      if(p==='d' && typeof driverBalance!=='undefined'){
+        driverBalance = 999999;
+        if(typeof renderBalanceUI==='function') renderBalanceUI();
+      }
+    } else if(validEmail(user)){
+      currentUser[p].email = user;
     }
-  } else {
-    unlimitedAccount[p] = false;
+  }catch(e){
     if(validEmail(user)) currentUser[p].email = user;
   }
   completeAuth(p);

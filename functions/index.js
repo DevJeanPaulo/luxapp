@@ -21,6 +21,7 @@ const cors = require('cors')({ origin: true });
 admin.initializeApp();
 
 const stripeSecretKey = defineSecret('STRIPE_SECRET_KEY');
+const specialAccountsJson = defineSecret('SPECIAL_ACCOUNTS_JSON');
 
 /**
  * Cria um PaymentIntent Stripe e devolve o client_secret ao frontend.
@@ -85,6 +86,50 @@ exports.createSetupIntent = onRequest({ secrets: [stripeSecretKey] }, (req, res)
     } catch (err) {
       console.error('createSetupIntent falhou:', err);
       res.status(500).json({ error: err.message });
+    }
+  });
+});
+
+/**
+ * Verifica se um login corresponde a uma "conta especial" (acesso ilimitado —
+ * saldo infinito para motorista, sem pagamento para cliente) sem NUNCA expor
+ * essas credenciais no código do frontend. As credenciais reais só existem
+ * no secret SPECIAL_ACCOUNTS_JSON (Secret Manager), nunca no repositório.
+ *
+ * Antes do deploy:
+ *   firebase functions:secrets:set SPECIAL_ACCOUNTS_JSON
+ *   (cola um JSON como:
+ *    {"d":{"email":"...","pass":"...","name":"..."},"c":{"email":"...","pass":"...","name":"..."}})
+ *
+ * Espera um POST JSON: { role: "c"|"d", email: "...", password: "..." }
+ * Devolve: { unlimited: true, name: "..." } ou { unlimited: false }
+ */
+exports.checkSpecialAccount = onRequest({ secrets: [specialAccountsJson] }, (req, res) => {
+  cors(req, res, async () => {
+    if (req.method !== 'POST') {
+      res.status(405).send('Method Not Allowed');
+      return;
+    }
+    try {
+      const { role, email, password } = req.body || {};
+      if (!role || !email || !password) {
+        res.status(200).json({ unlimited: false });
+        return;
+      }
+      let accounts = {};
+      try { accounts = JSON.parse(specialAccountsJson.value() || '{}'); } catch (e) { accounts = {}; }
+      const acc = accounts[role];
+      const match = acc && acc.email && acc.pass
+        && String(acc.email).toLowerCase() === String(email).toLowerCase()
+        && acc.pass === password;
+      if (match) {
+        res.status(200).json({ unlimited: true, name: acc.name || '' });
+      } else {
+        res.status(200).json({ unlimited: false });
+      }
+    } catch (err) {
+      console.error('checkSpecialAccount falhou:', err);
+      res.status(500).json({ unlimited: false, error: err.message });
     }
   });
 });
