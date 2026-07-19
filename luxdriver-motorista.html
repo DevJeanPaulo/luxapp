@@ -191,6 +191,24 @@
     overflow:hidden;
   }
   .map svg{ position:absolute; inset:0; width:100%; height:100%; }
+  .map-wrap{ position:relative; flex:1; min-height:0; }
+  .map-wrap .map{ position:absolute; inset:0; flex:none; }
+  .map-radar-overlay{
+    position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+    pointer-events:none; z-index:6; opacity:0; transition:opacity .3s ease;
+  }
+  .map-radar-overlay.show{ opacity:1; }
+  .map-radar-overlay .ring{
+    position:absolute; width:70px; height:70px; border-radius:50%;
+    border:1.5px solid rgba(255,201,77,.45);
+    animation:radar-pulse 2s ease-out infinite;
+  }
+  .map-radar-overlay .ring:nth-child(2){ animation-delay:.6s; }
+  .map-radar-overlay .ring:nth-child(3){ animation-delay:1.2s; }
+  .map-radar-overlay .core{
+    width:16px; height:16px; border-radius:50%; background:var(--gold);
+    box-shadow:0 0 16px rgba(255,201,77,.6);
+  }
   .pin{
     position:absolute; width:14px; height:14px; border-radius:50% 50% 50% 0;
     transform:translate(-50%,-100%) rotate(-45deg);
@@ -425,9 +443,11 @@
   .balance-bar .fill{ height:100%; background:var(--gold); transition:width .3s ease; }
   .balance-card.low .balance-bar .fill{ background:var(--danger); }
   .balance-eye-btn{
-    background:none; border:none; color:var(--muted); font-size:13px; cursor:pointer;
+    background:none; border:none; color:var(--gold); font-size:13px; cursor:pointer;
     padding:2px 4px; vertical-align:middle; margin-left:4px;
+    display:inline-flex; align-items:center; justify-content:center;
   }
+  .balance-eye-btn svg{ display:block; }
   .link-btn{
     background:transparent; border:1px solid var(--gold); color:var(--gold);
     font-size:11.5px; font-weight:700; text-transform:uppercase; letter-spacing:.04em;
@@ -721,10 +741,16 @@
 
   /* ---------- Settings screen ---------- */
   .settings-profile{ display:flex; flex-direction:column; align-items:center; gap:10px; padding:10px 0 22px; text-align:center; }
+  .settings-avatar-wrap{ position:relative; display:inline-flex; }
   .settings-avatar{
     width:76px; height:76px; border-radius:50%; background:var(--panel3);
     display:flex; align-items:center; justify-content:center; font-size:26px; font-weight:700; color:var(--gold);
-    border:1px solid var(--line);
+    border:1px solid var(--line); overflow:hidden; background-size:cover; background-position:center;
+  }
+  .avatar-edit-btn{
+    position:absolute; right:-2px; bottom:-2px; width:28px; height:28px; border-radius:50%;
+    background:var(--gold); color:#1a1408; border:2px solid var(--panel); display:flex;
+    align-items:center; justify-content:center; font-size:13px; cursor:pointer; padding:0;
   }
   .settings-profile .s-name{ font-size:16.5px; font-weight:700; }
   .section-label{
@@ -736,7 +762,16 @@
     background:var(--panel2); border:1px solid var(--line); border-radius:var(--radius-md);
     padding:13px 14px; margin-bottom:9px;
   }
-  .settings-row .s-lbl{ font-size:13.5px; }
+  .settings-row .s-lbl{ font-size:13.5px; flex-shrink:0; }
+  .s-val-group{ display:flex; align-items:center; gap:8px; min-width:0; }
+  .s-val-group .s-val{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0; }
+  .edit-field-btn{
+    width:26px; height:26px; border-radius:50%; background:var(--panel3); border:1px solid var(--line);
+    color:var(--gold); display:flex; align-items:center; justify-content:center; font-size:12px;
+    cursor:pointer; flex-shrink:0; padding:0;
+  }
+  .verify-badge.unverified{ color:var(--gold); background:rgba(255,201,77,.1); border-color:rgba(255,201,77,.4); }
+  .icon-btn.has-photo{ background-size:cover; background-position:center; font-size:0; overflow:hidden; }
   .settings-row .s-val{ font-size:12.5px; color:var(--muted); }
   .theme-switcher{ display:flex; gap:6px; background:var(--panel3); border-radius:999px; padding:4px; }
   .theme-switcher button{
@@ -908,12 +943,28 @@
         </div>
         <div class="auth-scroll" style="padding-top:6px;">
           <div class="settings-profile">
-            <div class="settings-avatar" id="d-settings-avatar">RA</div>
+            <div class="settings-avatar-wrap">
+              <div class="settings-avatar" id="d-settings-avatar">RA</div>
+              <button class="avatar-edit-btn" onclick="document.getElementById('d-avatar-input').click()">✎</button>
+              <input type="file" id="d-avatar-input" accept="image/*" style="display:none;" onchange="handleAvatarUpload(event,'d')" />
+            </div>
             <div class="s-name" id="d-settings-name">Ricardo Almeida</div>
           </div>
           <div class="section-label" data-i18n="section_profile">Perfil</div>
-          <div class="settings-row"><span class="s-lbl" data-i18n="lbl_email">Email</span><span class="s-val" id="d-settings-email">ricardo.almeida@email.com <span class="verify-badge" data-i18n="badge_verified">✓ Verificado</span></span></div>
-          <div class="settings-row"><span class="s-lbl" data-i18n="lbl_phone">Telemóvel</span><span class="s-val" id="d-settings-phone">+351 9XX XXX XXX <span class="verify-badge" data-i18n="badge_verified">✓ Verificado</span></span></div>
+          <div class="settings-row">
+            <span class="s-lbl" data-i18n="lbl_email">Email</span>
+            <span class="s-val-group">
+              <span class="s-val" id="d-settings-email">ricardo.almeida@email.com <span class="verify-badge" id="d-settings-email-badge" data-i18n="badge_verified">✓ Verificado</span></span>
+              <button class="edit-field-btn" onclick="openEditField('d','email')">✎</button>
+            </span>
+          </div>
+          <div class="settings-row">
+            <span class="s-lbl" data-i18n="lbl_phone">Telemóvel</span>
+            <span class="s-val-group">
+              <span class="s-val" id="d-settings-phone">+351 9XX XXX XXX <span class="verify-badge" id="d-settings-phone-badge" data-i18n="badge_verified">✓ Verificado</span></span>
+              <button class="edit-field-btn" onclick="openEditField('d','phone')">✎</button>
+            </span>
+          </div>
           <div class="section-label" data-i18n="section_tvde">Verificação TVDE</div>
           <div class="settings-row" style="cursor:pointer;" onclick="goTo('d-documents')"><span class="s-lbl" data-i18n="lbl_tvde_docs">Documentos TVDE</span><span class="s-val" id="d-settings-doc-status">›</span></div>
           <div class="section-label" data-i18n="section_security">Segurança</div>
@@ -942,12 +993,23 @@
         </div>
       </div>
 
+      <!-- EDIT FIELD (email/telemóvel) -->
+      <div class="req-overlay" id="edit-field-overlay">
+        <div class="req-sheet">
+          <h1 class="title" id="edit-field-title" style="text-align:center;">Editar email</h1>
+          <div class="auth-field"><input id="edit-field-input" type="text" /></div>
+          <div class="auth-error" id="edit-field-error" data-i18n="err_edit_field">Introduz um valor válido.</div>
+          <button class="btn btn-gold" data-i18n="btn_save" onclick="saveEditField()">Guardar</button>
+          <button class="btn btn-ghost-text" data-i18n="btn_cancel" onclick="closeEditField()">Cancelar</button>
+        </div>
+      </div>
+
       <!-- 1. DRIVER HOME -->
       <div class="screen" id="d-home">
         <div class="toast" id="toast-d-home">Saldo atualizado</div>
         <div class="topbar">
           <div class="brand"><span style="color:var(--gold);">Lux</span>Driver</div>
-          <div class="icon-btn" onclick="goTo('d-settings')">👤</div>
+          <div class="icon-btn" id="d-header-avatar" onclick="goTo('d-settings')">👤</div>
         </div>
         <div class="sub-badge">
           <span class="l" data-i18n="sub_active">✓ Subscrição ativa</span>
@@ -963,7 +1025,7 @@
         <div class="balance-card glow-frame" id="balance-card">
           <div class="row">
             <div>
-              <div class="lbl"><span data-i18n="lbl_commission_balance">Saldo de comissão</span> <button class="balance-eye-btn" id="balance-eye" onclick="toggleBalanceVisibility()">👁️</button></div>
+              <div class="lbl"><span data-i18n="lbl_commission_balance">Saldo de comissão</span> <button class="balance-eye-btn" id="balance-eye" onclick="toggleBalanceVisibility()"></button></div>
               <div class="amt" id="balance-amount">4,00€</div>
             </div>
             <button class="link-btn" data-i18n="btn_recharge" onclick="openRecharge()">Recarregar</button>
@@ -976,9 +1038,15 @@
           <div class="stat-card glow-frame"><div class="num" id="stat-trips">0</div><div class="lbl">Viagens</div></div>
           <div class="stat-card glow-frame"><div class="num">4.9★</div><div class="lbl">Avaliação</div></div>
         </div>
-        <div class="map" id="map-driver-home">
-          <svg></svg>
-          <div class="me-dot" style="left:50%; top:50%;"></div>
+        <div class="map-wrap">
+          <div class="map" id="map-driver-home">
+            <svg></svg>
+            <div class="me-dot" style="left:50%; top:50%;"></div>
+          </div>
+          <div class="map-radar-overlay" id="driver-map-radar">
+            <div class="ring"></div><div class="ring"></div><div class="ring"></div>
+            <div class="core"></div>
+          </div>
         </div>
         <div class="center-msg" id="driver-waiting-msg" style="display:none; position:absolute; inset:0; top:auto; bottom:0; background:transparent; pointer-events:none;"></div>
 
@@ -1265,10 +1333,19 @@ function gDotIcon(color, scale){
 function gCarIcon(){
   return { path:google.maps.SymbolPath.FORWARD_CLOSED_ARROW, scale:5, fillColor:'#FFC94D', fillOpacity:1, strokeColor:'#0b0d11', strokeWeight:1 };
 }
+const _singleLocationMapCache = {};
 function showRealSingleLocation(containerId, place){
+  if(!gmapsAvailable()) return false;
+  const cached = _singleLocationMapCache[containerId];
+  if(cached && cached.map && cached.marker){
+    cached.marker.setPosition(place);
+    cached.map.panTo(place);
+    return true;
+  }
   const map = initRealMap(containerId, place, 15);
   if(!map) return false;
-  new google.maps.Marker({ position:place, map:map, icon:gDotIcon('#FFC94D',8) });
+  const marker = new google.maps.Marker({ position:place, map:map, icon:gDotIcon('#FFC94D',8) });
+  _singleLocationMapCache[containerId] = { map:map, marker:marker };
   return true;
 }
 function showRealRoute(containerId, originPlace, destPlace, carDurationMs){
@@ -1322,6 +1399,85 @@ let currentUser = {
   c: { name:'Jean Paulo', email:'jn.paulo2020@gmail.com', phone:'+351 9XX XXX XXX' },
   d: { name:'Ricardo Almeida', email:'ricardo.almeida@email.com', phone:'+351 9XX XXX XXX' }
 };
+let userPhoto = { c:null, d:null };
+let fieldVerified = { c:{ email:true, phone:true }, d:{ email:true, phone:true } };
+function loadUserPhotos(){
+  ['c','d'].forEach(function(p){
+    try{
+      const v = localStorage.getItem('lux-photo-'+p);
+      if(v) userPhoto[p] = v;
+    }catch(e){}
+  });
+}
+function updateHeaderAvatar(p){
+  const el = document.getElementById(p+'-header-avatar');
+  if(!el) return;
+  if(userPhoto[p]){
+    el.classList.add('has-photo');
+    el.style.backgroundImage = "url('"+userPhoto[p]+"')";
+    el.textContent = '';
+  } else {
+    el.classList.remove('has-photo');
+    el.style.backgroundImage = '';
+    el.textContent = '👤';
+  }
+}
+function handleAvatarUpload(evt, p){
+  const file = evt.target.files && evt.target.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = function(e){
+    const img = new Image();
+    img.onload = function(){
+      const size = 200;
+      const canvas = document.createElement('canvas');
+      canvas.width = size; canvas.height = size;
+      const ctx = canvas.getContext('2d');
+      const scale = Math.max(size/img.width, size/img.height);
+      const w = img.width*scale, h = img.height*scale;
+      ctx.drawImage(img, (size-w)/2, (size-h)/2, w, h);
+      const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+      userPhoto[p] = dataUrl;
+      try{ localStorage.setItem('lux-photo-'+p, dataUrl); }catch(e){}
+      updateSettingsUI(p);
+      updateHeaderAvatar(p);
+      toast(p+'-settings', 'Foto de perfil atualizada');
+    };
+    img.src = e.target.result;
+  };
+  reader.readAsDataURL(file);
+  evt.target.value = '';
+}
+let editFieldCtx = { p:null, field:null };
+function openEditField(p, field){
+  editFieldCtx = { p:p, field:field };
+  const isEmail = field==='email';
+  const titleEl = document.getElementById('edit-field-title');
+  if(titleEl) titleEl.textContent = isEmail ? 'Editar email' : 'Editar telemóvel';
+  const inputEl = document.getElementById('edit-field-input');
+  if(inputEl){
+    inputEl.type = isEmail ? 'email' : 'tel';
+    inputEl.value = currentUser[p][field] || '';
+  }
+  showErr('edit-field-error', false);
+  document.getElementById('edit-field-overlay').classList.add('show');
+}
+function closeEditField(){
+  document.getElementById('edit-field-overlay').classList.remove('show');
+}
+function saveEditField(){
+  const v = (document.getElementById('edit-field-input').value||'').trim();
+  const p = editFieldCtx.p, field = editFieldCtx.field;
+  const ok = field==='email' ? validEmail(v) : v.length>=9;
+  showErr('edit-field-error', !ok);
+  if(!ok) return;
+  currentUser[p][field] = v;
+  if(!fieldVerified[p]) fieldVerified[p] = {};
+  fieldVerified[p][field] = false;
+  updateSettingsUI(p);
+  closeEditField();
+  toast(p+'-settings', field==='email' ? 'Email atualizado' : 'Telemóvel atualizado');
+}
 /* Contas especiais com acesso ilimitado (saldo infinito para o motorista, sem
    pagamento para o cliente). As credenciais NUNCA ficam no frontend — são
    verificadas no backend (Cloud Function checkSpecialAccount, ver
@@ -1390,6 +1546,12 @@ function selectCountry(p, name){
 function validEmail(v){ return /\S+@\S+\.\S+/.test(v); }
 function showErr(id, show){ const el=document.getElementById(id); if(el) el.classList.toggle('show', !!show); }
 function initials(name){ return name.split(' ').filter(Boolean).slice(0,2).map(w=>w[0].toUpperCase()).join(''); }
+function verifyBadgeHtml(p, field){
+  const ok = !fieldVerified[p] || fieldVerified[p][field]!==false;
+  return ok
+    ? '<span class="verify-badge">✓ Verificado</span>'
+    : '<span class="verify-badge unverified">Não verificado</span>';
+}
 function updateSettingsUI(p){
   const u = currentUser[p];
   const nameEl = document.getElementById(p+'-settings-name');
@@ -1397,9 +1559,18 @@ function updateSettingsUI(p){
   const emailEl = document.getElementById(p+'-settings-email');
   const phoneEl = document.getElementById(p+'-settings-phone');
   if(nameEl) nameEl.textContent = u.name;
-  if(avatarEl) avatarEl.textContent = initials(u.name);
-  if(emailEl) emailEl.innerHTML = u.email + ' <span class="verify-badge">✓ Verificado</span>';
-  if(phoneEl) phoneEl.innerHTML = u.phone + ' <span class="verify-badge">✓ Verificado</span>';
+  if(avatarEl){
+    if(userPhoto[p]){
+      avatarEl.style.backgroundImage = "url('"+userPhoto[p]+"')";
+      avatarEl.textContent = '';
+    } else {
+      avatarEl.style.backgroundImage = '';
+      avatarEl.textContent = initials(u.name);
+    }
+  }
+  if(emailEl) emailEl.innerHTML = u.email + ' ' + verifyBadgeHtml(p,'email');
+  if(phoneEl) phoneEl.innerHTML = u.phone + ' ' + verifyBadgeHtml(p,'phone');
+  updateHeaderAvatar(p);
   if(p==='d' && typeof updateSettingsDocStatus==='function') updateSettingsDocStatus();
 }
 function completeAuth(p){
@@ -1605,6 +1776,10 @@ const LANG_DICT = {
   settings_title: { pt:'DEFINIÇÕES', en:'SETTINGS', es:'AJUSTES' },
   section_profile: { pt:'Perfil', en:'Profile', es:'Perfil' },
   badge_verified: { pt:'✓ Verificado', en:'✓ Verified', es:'✓ Verificado' },
+  badge_unverified: { pt:'Não verificado', en:'Not verified', es:'No verificado' },
+  btn_save: { pt:'Guardar', en:'Save', es:'Guardar' },
+  btn_cancel: { pt:'Cancelar', en:'Cancel', es:'Cancelar' },
+  err_edit_field: { pt:'Introduz um valor válido.', en:'Enter a valid value.', es:'Introduce un valor válido.' },
   section_tvde: { pt:'Verificação TVDE', en:'TVDE verification', es:'Verificación TVDE' },
   lbl_tvde_docs: { pt:'Documentos TVDE', en:'TVDE documents', es:'Documentos TVDE' },
   section_security: { pt:'Segurança', en:'Security', es:'Seguridad' },
@@ -1664,6 +1839,7 @@ function initDriverApp(){ goTo('d-auth-welcome'); }
   let savedLang = 'pt';
   try{ savedLang = localStorage.getItem('lux-lang') || 'pt'; }catch(e){}
   setLanguage(savedLang);
+  loadUserPhotos();
   updateSettingsUI('c'); updateSettingsUI('d');
 })();
 
@@ -2161,8 +2337,18 @@ let _requestSoundAudio = null;
 function playRequestSound(){
   try{
     if(!_requestSoundAudio) _requestSoundAudio = new Audio('sounds/driver-request.mp3');
+    _requestSoundAudio.loop = true;
     _requestSoundAudio.currentTime = 0;
     _requestSoundAudio.play().catch(()=>{});
+  }catch(e){}
+}
+function stopRequestSound(){
+  try{
+    if(_requestSoundAudio){
+      _requestSoundAudio.loop = false;
+      _requestSoundAudio.pause();
+      _requestSoundAudio.currentTime = 0;
+    }
   }catch(e){}
 }
 
@@ -2178,6 +2364,8 @@ let pendingRechargeAmount = 50;
 
 function updateDriverFrames(){
   document.querySelectorAll('#d-home .glow-frame').forEach(el=>el.classList.toggle('frame-off', !isOnline));
+  const radar = document.getElementById('driver-map-radar');
+  if(radar) radar.classList.toggle('show', isOnline && !currentRideId);
 }
 let balanceHidden = (function(){
   try{ return localStorage.getItem('lux_balance_hidden') === '1'; }catch(e){ return false; }
@@ -2185,6 +2373,8 @@ let balanceHidden = (function(){
 function maskedOrValue(value){
   return balanceHidden ? '••••€' : fmtEur(value);
 }
+const EYE_ICON_OPEN = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>';
+const EYE_ICON_CLOSED = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.94 10.94 0 0 1 12 19c-7 0-11-7-11-7a21.8 21.8 0 0 1 5.06-6.06M9.9 4.24A9.12 9.12 0 0 1 12 5c7 0 11 7 11 7a21.8 21.8 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>';
 function toggleBalanceVisibility(){
   balanceHidden = !balanceHidden;
   try{ localStorage.setItem('lux_balance_hidden', balanceHidden ? '1' : '0'); }catch(e){}
@@ -2192,7 +2382,7 @@ function toggleBalanceVisibility(){
 }
 function applyBalanceVisibility(){
   const eyeBtn = document.getElementById('balance-eye');
-  if(eyeBtn) eyeBtn.textContent = balanceHidden ? '🙈' : '👁️';
+  if(eyeBtn) eyeBtn.innerHTML = balanceHidden ? EYE_ICON_CLOSED : EYE_ICON_OPEN;
   renderBalanceUI();
   const statEarnEl = document.getElementById('stat-earn');
   if(statEarnEl) statEarnEl.textContent = maskedOrValue(driverEarnings);
@@ -2444,6 +2634,7 @@ function triggerIncomingRequest(){
 }
 function declineRequest(){
   if(reqCountdown) clearInterval(reqCountdown);
+  stopRequestSound();
   document.getElementById('req-overlay').classList.remove('show');
   if(currentRideId){
     declinedRideIds.add(currentRideId);
@@ -2459,6 +2650,7 @@ function declineRequest(){
 }
 function acceptRequest(){
   if(reqCountdown) clearInterval(reqCountdown);
+  stopRequestSound();
   document.getElementById('req-overlay').classList.remove('show');
   goTo('d-to-pickup');
   if(currentRideId){
@@ -2617,6 +2809,7 @@ function markTripComplete(el){
 function backToDriverHome(){
   goTo('d-home');
   document.querySelectorAll('#d-to-pickup .swipe-btn, #d-trip .swipe-btn').forEach(b=>b.classList.remove('filled'));
+  updateDriverFrames();
   if(isOnline && driverBalance < MIN_BALANCE_TO_RECEIVE){
     isOnline = false;
     document.getElementById('online-switch').classList.remove('on');

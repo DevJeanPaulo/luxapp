@@ -720,10 +720,16 @@
 
   /* ---------- Settings screen ---------- */
   .settings-profile{ display:flex; flex-direction:column; align-items:center; gap:10px; padding:10px 0 22px; text-align:center; }
+  .settings-avatar-wrap{ position:relative; display:inline-flex; }
   .settings-avatar{
     width:76px; height:76px; border-radius:50%; background:var(--panel3);
     display:flex; align-items:center; justify-content:center; font-size:26px; font-weight:700; color:var(--gold);
-    border:1px solid var(--line);
+    border:1px solid var(--line); overflow:hidden; background-size:cover; background-position:center;
+  }
+  .avatar-edit-btn{
+    position:absolute; right:-2px; bottom:-2px; width:28px; height:28px; border-radius:50%;
+    background:var(--gold); color:#1a1408; border:2px solid var(--panel); display:flex;
+    align-items:center; justify-content:center; font-size:13px; cursor:pointer; padding:0;
   }
   .settings-profile .s-name{ font-size:16.5px; font-weight:700; }
   .section-label{
@@ -735,8 +741,17 @@
     background:var(--panel2); border:1px solid var(--line); border-radius:var(--radius-md);
     padding:13px 14px; margin-bottom:9px;
   }
-  .settings-row .s-lbl{ font-size:13.5px; }
-  .settings-row .s-val{ font-size:12.5px; color:var(--muted); }
+  .settings-row .s-lbl{ font-size:13.5px; flex-shrink:0; }
+  .settings-row .s-val{ font-size:12.5px; color:var(--muted); text-align:right; }
+  .s-val-group{ display:flex; align-items:center; gap:8px; min-width:0; }
+  .s-val-group .s-val{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0; }
+  .edit-field-btn{
+    width:26px; height:26px; border-radius:50%; background:var(--panel3); border:1px solid var(--line);
+    color:var(--gold); display:flex; align-items:center; justify-content:center; font-size:12px;
+    cursor:pointer; flex-shrink:0; padding:0;
+  }
+  .verify-badge.unverified{ color:var(--gold); background:rgba(255,201,77,.1); border-color:rgba(255,201,77,.4); }
+  .icon-btn.has-photo{ background-size:cover; background-position:center; font-size:0; overflow:hidden; }
   .theme-switcher{ display:flex; gap:6px; background:var(--panel3); border-radius:999px; padding:4px; }
   .theme-switcher button{
     border:none; background:transparent; color:var(--muted); font-size:11.5px; font-weight:700;
@@ -908,12 +923,28 @@
         </div>
         <div class="auth-scroll" style="padding-top:6px;">
           <div class="settings-profile">
-            <div class="settings-avatar" id="c-settings-avatar">JP</div>
+            <div class="settings-avatar-wrap">
+              <div class="settings-avatar" id="c-settings-avatar">JP</div>
+              <button class="avatar-edit-btn" onclick="document.getElementById('c-avatar-input').click()">✎</button>
+              <input type="file" id="c-avatar-input" accept="image/*" style="display:none;" onchange="handleAvatarUpload(event,'c')" />
+            </div>
             <div class="s-name" id="c-settings-name">Jean Paulo</div>
           </div>
           <div class="section-label" data-i18n="section_profile">Perfil</div>
-          <div class="settings-row"><span class="s-lbl" data-i18n="lbl_email">Email</span><span class="s-val" id="c-settings-email">jn.paulo2020@gmail.com <span class="verify-badge" data-i18n="badge_verified">✓ Verificado</span></span></div>
-          <div class="settings-row"><span class="s-lbl" data-i18n="lbl_phone">Telemóvel</span><span class="s-val" id="c-settings-phone">+351 9XX XXX XXX <span class="verify-badge" data-i18n="badge_verified">✓ Verificado</span></span></div>
+          <div class="settings-row">
+            <span class="s-lbl" data-i18n="lbl_email">Email</span>
+            <span class="s-val-group">
+              <span class="s-val" id="c-settings-email">jn.paulo2020@gmail.com <span class="verify-badge" id="c-settings-email-badge" data-i18n="badge_verified">✓ Verificado</span></span>
+              <button class="edit-field-btn" onclick="openEditField('c','email')">✎</button>
+            </span>
+          </div>
+          <div class="settings-row">
+            <span class="s-lbl" data-i18n="lbl_phone">Telemóvel</span>
+            <span class="s-val-group">
+              <span class="s-val" id="c-settings-phone">+351 9XX XXX XXX <span class="verify-badge" id="c-settings-phone-badge" data-i18n="badge_verified">✓ Verificado</span></span>
+              <button class="edit-field-btn" onclick="openEditField('c','phone')">✎</button>
+            </span>
+          </div>
           <div class="section-label" data-i18n="section_security">Segurança</div>
           <div class="settings-row" style="cursor:pointer;" onclick="goTo('c-auth-forgot')"><span class="s-lbl" data-i18n="lbl_change_password">Alterar palavra-passe</span><span class="s-val">›</span></div>
           <div class="section-label" data-i18n="section_preferences">Preferências</div>
@@ -940,11 +971,22 @@
         </div>
       </div>
 
+      <!-- EDIT FIELD (email/telemóvel) -->
+      <div class="req-overlay" id="edit-field-overlay">
+        <div class="req-sheet">
+          <h1 class="title" id="edit-field-title" style="text-align:center;">Editar email</h1>
+          <div class="auth-field"><input id="edit-field-input" type="text" /></div>
+          <div class="auth-error" id="edit-field-error" data-i18n="err_edit_field">Introduz um valor válido.</div>
+          <button class="btn btn-gold" data-i18n="btn_save" onclick="saveEditField()">Guardar</button>
+          <button class="btn btn-ghost-text" data-i18n="btn_cancel" onclick="closeEditField()">Cancelar</button>
+        </div>
+      </div>
+
       <!-- 1. HOME -->
       <div class="screen" id="c-home">
         <div class="topbar">
           <div class="brand" style="color:var(--gold);">Lux</div>
-          <div class="icon-btn" onclick="goTo('c-settings')">👤</div>
+          <div class="icon-btn" id="c-header-avatar" onclick="goTo('c-settings')">👤</div>
         </div>
         <div class="map" id="map-home">
           <svg><line x1="0" y1="0" x2="0" y2="0"/></svg>
@@ -1342,6 +1384,85 @@ let currentUser = {
   c: { name:'Jean Paulo', email:'jn.paulo2020@gmail.com', phone:'+351 9XX XXX XXX' },
   d: { name:'Ricardo Almeida', email:'ricardo.almeida@email.com', phone:'+351 9XX XXX XXX' }
 };
+let userPhoto = { c:null, d:null };
+let fieldVerified = { c:{ email:true, phone:true }, d:{ email:true, phone:true } };
+function loadUserPhotos(){
+  ['c','d'].forEach(function(p){
+    try{
+      const v = localStorage.getItem('lux-photo-'+p);
+      if(v) userPhoto[p] = v;
+    }catch(e){}
+  });
+}
+function updateHeaderAvatar(p){
+  const el = document.getElementById(p+'-header-avatar');
+  if(!el) return;
+  if(userPhoto[p]){
+    el.classList.add('has-photo');
+    el.style.backgroundImage = "url('"+userPhoto[p]+"')";
+    el.textContent = '';
+  } else {
+    el.classList.remove('has-photo');
+    el.style.backgroundImage = '';
+    el.textContent = '👤';
+  }
+}
+function handleAvatarUpload(evt, p){
+  const file = evt.target.files && evt.target.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = function(e){
+    const img = new Image();
+    img.onload = function(){
+      const size = 200;
+      const canvas = document.createElement('canvas');
+      canvas.width = size; canvas.height = size;
+      const ctx = canvas.getContext('2d');
+      const scale = Math.max(size/img.width, size/img.height);
+      const w = img.width*scale, h = img.height*scale;
+      ctx.drawImage(img, (size-w)/2, (size-h)/2, w, h);
+      const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+      userPhoto[p] = dataUrl;
+      try{ localStorage.setItem('lux-photo-'+p, dataUrl); }catch(e){}
+      updateSettingsUI(p);
+      updateHeaderAvatar(p);
+      toast(p+'-settings', p==='c' ? 'Foto de perfil atualizada' : 'Foto de perfil atualizada');
+    };
+    img.src = e.target.result;
+  };
+  reader.readAsDataURL(file);
+  evt.target.value = '';
+}
+let editFieldCtx = { p:null, field:null };
+function openEditField(p, field){
+  editFieldCtx = { p:p, field:field };
+  const isEmail = field==='email';
+  const titleEl = document.getElementById('edit-field-title');
+  if(titleEl) titleEl.textContent = isEmail ? 'Editar email' : 'Editar telemóvel';
+  const inputEl = document.getElementById('edit-field-input');
+  if(inputEl){
+    inputEl.type = isEmail ? 'email' : 'tel';
+    inputEl.value = currentUser[p][field] || '';
+  }
+  showErr('edit-field-error', false);
+  document.getElementById('edit-field-overlay').classList.add('show');
+}
+function closeEditField(){
+  document.getElementById('edit-field-overlay').classList.remove('show');
+}
+function saveEditField(){
+  const v = (document.getElementById('edit-field-input').value||'').trim();
+  const p = editFieldCtx.p, field = editFieldCtx.field;
+  const ok = field==='email' ? validEmail(v) : v.length>=9;
+  showErr('edit-field-error', !ok);
+  if(!ok) return;
+  currentUser[p][field] = v;
+  if(!fieldVerified[p]) fieldVerified[p] = {};
+  fieldVerified[p][field] = false;
+  updateSettingsUI(p);
+  closeEditField();
+  toast(p+'-settings', field==='email' ? 'Email atualizado' : 'Telemóvel atualizado');
+}
 /* Contas especiais com acesso ilimitado (saldo infinito para o motorista, sem
    pagamento para o cliente). As credenciais NUNCA ficam no frontend — são
    verificadas no backend (Cloud Function checkSpecialAccount, ver
@@ -1410,6 +1531,12 @@ function selectCountry(p, name){
 function validEmail(v){ return /\S+@\S+\.\S+/.test(v); }
 function showErr(id, show){ const el=document.getElementById(id); if(el) el.classList.toggle('show', !!show); }
 function initials(name){ return name.split(' ').filter(Boolean).slice(0,2).map(w=>w[0].toUpperCase()).join(''); }
+function verifyBadgeHtml(p, field){
+  const ok = !fieldVerified[p] || fieldVerified[p][field]!==false;
+  return ok
+    ? '<span class="verify-badge">✓ Verificado</span>'
+    : '<span class="verify-badge unverified">Não verificado</span>';
+}
 function updateSettingsUI(p){
   const u = currentUser[p];
   const nameEl = document.getElementById(p+'-settings-name');
@@ -1417,9 +1544,18 @@ function updateSettingsUI(p){
   const emailEl = document.getElementById(p+'-settings-email');
   const phoneEl = document.getElementById(p+'-settings-phone');
   if(nameEl) nameEl.textContent = u.name;
-  if(avatarEl) avatarEl.textContent = initials(u.name);
-  if(emailEl) emailEl.innerHTML = u.email + ' <span class="verify-badge">✓ Verificado</span>';
-  if(phoneEl) phoneEl.innerHTML = u.phone + ' <span class="verify-badge">✓ Verificado</span>';
+  if(avatarEl){
+    if(userPhoto[p]){
+      avatarEl.style.backgroundImage = "url('"+userPhoto[p]+"')";
+      avatarEl.textContent = '';
+    } else {
+      avatarEl.style.backgroundImage = '';
+      avatarEl.textContent = initials(u.name);
+    }
+  }
+  if(emailEl) emailEl.innerHTML = u.email + ' ' + verifyBadgeHtml(p,'email');
+  if(phoneEl) phoneEl.innerHTML = u.phone + ' ' + verifyBadgeHtml(p,'phone');
+  updateHeaderAvatar(p);
   if(p==='d' && typeof updateSettingsDocStatus==='function') updateSettingsDocStatus();
 }
 function completeAuth(p){
@@ -1618,6 +1754,10 @@ const LANG_DICT = {
   settings_title: { pt:'DEFINIÇÕES', en:'SETTINGS', es:'AJUSTES' },
   section_profile: { pt:'Perfil', en:'Profile', es:'Perfil' },
   badge_verified: { pt:'✓ Verificado', en:'✓ Verified', es:'✓ Verificado' },
+  badge_unverified: { pt:'Não verificado', en:'Not verified', es:'No verificado' },
+  btn_save: { pt:'Guardar', en:'Save', es:'Guardar' },
+  btn_cancel: { pt:'Cancelar', en:'Cancel', es:'Cancelar' },
+  err_edit_field: { pt:'Introduz um valor válido.', en:'Enter a valid value.', es:'Introduce un valor válido.' },
   section_security: { pt:'Segurança', en:'Security', es:'Seguridad' },
   lbl_change_password: { pt:'Alterar palavra-passe', en:'Change password', es:'Cambiar contraseña' },
   section_preferences: { pt:'Preferências', en:'Preferences', es:'Preferencias' },
@@ -1665,6 +1805,7 @@ function initDriverApp(){ goTo('d-auth-welcome'); }
   let savedLang = 'pt';
   try{ savedLang = localStorage.getItem('lux-lang') || 'pt'; }catch(e){}
   setLanguage(savedLang);
+  loadUserPhotos();
   updateSettingsUI('c'); updateSettingsUI('d');
 })();
 
