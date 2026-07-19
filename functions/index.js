@@ -56,6 +56,40 @@ exports.createPaymentIntent = onRequest({ secrets: [stripeSecretKey] }, (req, re
 });
 
 /**
+ * Cria um SetupIntent Stripe (sem cobrança) e um Customer associado, para
+ * guardar um cartão real no registo de novos clientes/motoristas.
+ * Chamada por lux-cliente.html e luxdriver-motorista.html logo após a
+ * verificação de email + SMS ser concluída com sucesso.
+ *
+ * Espera um POST JSON: { email: "...", name: "..." }
+ * Devolve: { clientSecret: "...", customerId: "..." }
+ */
+exports.createSetupIntent = onRequest({ secrets: [stripeSecretKey] }, (req, res) => {
+  cors(req, res, async () => {
+    if (req.method !== 'POST') {
+      res.status(405).send('Method Not Allowed');
+      return;
+    }
+    try {
+      const stripe = Stripe(stripeSecretKey.value());
+      const { email, name } = req.body || {};
+      const customer = await stripe.customers.create({
+        email: email || undefined,
+        name: name || undefined
+      });
+      const setupIntent = await stripe.setupIntents.create({
+        customer: customer.id,
+        payment_method_types: ['card']
+      });
+      res.status(200).json({ clientSecret: setupIntent.client_secret, customerId: customer.id });
+    } catch (err) {
+      console.error('createSetupIntent falhou:', err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+});
+
+/**
  * Envia uma notificação push a um único dispositivo via FCM.
  */
 async function sendPush(token, title, body) {

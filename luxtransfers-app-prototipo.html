@@ -10,6 +10,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 <!-- Google Maps (mapa real dos ecrãs de viagem + partilha de localização) -->
 <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyBpV5Plv5j6RnpOokgqVm6MJ55321Vul08&libraries=places&loading=async" async defer></script>
 <style>
@@ -596,7 +597,8 @@
   .auth-logo{ text-align:center; margin-bottom:28px; }
   .auth-logo .mark{ font-size:15px; letter-spacing:.12em; text-transform:uppercase; font-weight:700; color:var(--gold); }
   .auth-logo .tag{ font-size:12.5px; color:var(--muted); margin-top:6px; }
-  .auth-hero{ flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:26px; padding:24px; text-align:center; }
+  .auth-hero{ flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:26px; padding:24px; text-align:center; position:relative; }
+  .lang-switcher-fixed{ position:absolute; top:calc(14px + var(--safe-top)); right:14px; z-index:5; }
   .auth-hero .big-mark{ font-size:34px; font-weight:700; letter-spacing:.04em; }
   .auth-hero .big-mark .accent{ color:var(--gold); }
   .auth-hero .sub{ font-size:13.5px; color:var(--muted); max-width:260px; }
@@ -789,12 +791,17 @@
 
       <!-- AUTH: WELCOME -->
       <div class="screen active" id="c-auth-welcome">
+        <div class="theme-switcher lang-switcher-fixed" id="lang-switcher-welcome-c">
+          <button data-lang="pt" onclick="setLanguage('pt')">PT</button>
+          <button data-lang="en" onclick="setLanguage('en')">EN</button>
+          <button data-lang="es" onclick="setLanguage('es')">ES</button>
+        </div>
         <div class="auth-hero">
           <div class="big-mark"><span class="accent">Lux</span></div>
-          <p class="sub">Transfers executivos e chauffeur VIP em Portugal. Inicia sessão para pedir a tua viagem.</p>
+          <p class="sub" data-i18n="welcome_sub_c">Transfers executivos e chauffeur VIP em Portugal. Inicia sessão para pedir a tua viagem.</p>
           <div class="actions">
-            <button class="btn btn-gold" onclick="goTo('c-auth-login')">Entrar</button>
-            <button class="btn btn-outline" onclick="goTo('c-auth-register')">Criar conta</button>
+            <button class="btn btn-gold" data-i18n="btn_login" onclick="goTo('c-auth-login')">Entrar</button>
+            <button class="btn btn-outline" data-i18n="btn_create_account" onclick="goTo('c-auth-register')">Criar conta</button>
           </div>
         </div>
       </div>
@@ -802,40 +809,40 @@
       <!-- AUTH: LOGIN -->
       <div class="screen" id="c-auth-login">
         <div class="auth-scroll">
-          <div class="auth-logo"><div class="mark">Lux</div><div class="tag">Entrar na tua conta</div></div>
-          <div class="field-label">Email ou telemóvel</div>
+          <div class="auth-logo"><div class="mark">Lux</div><div class="tag" data-i18n="login_title">Entrar na tua conta</div></div>
+          <div class="field-label" data-i18n="lbl_email_or_phone">Email ou telemóvel</div>
           <div class="auth-field"><input id="c-login-user" placeholder="nome@email.com" /></div>
-          <div class="field-label">Palavra-passe</div>
+          <div class="field-label" data-i18n="lbl_password">Palavra-passe</div>
           <div class="auth-field"><input id="c-login-pass" type="password" placeholder="••••••••" /></div>
-          <div class="auth-error" id="c-login-error">Preenche email/telemóvel e palavra-passe.</div>
-          <div class="auth-link-row"><a onclick="goTo('c-auth-forgot')">Esqueci a palavra-passe</a></div>
-          <button class="btn btn-gold" onclick="doLogin('c')">Entrar</button>
-          <div class="auth-switch-row">Ainda não tens conta? <a class="link-inline" onclick="goTo('c-auth-register')">Criar conta</a></div>
+          <div class="auth-error" id="c-login-error" data-i18n="err_login">Preenche email/telemóvel e palavra-passe.</div>
+          <div class="auth-link-row"><a data-i18n="link_forgot_password" onclick="goTo('c-auth-forgot')">Esqueci a palavra-passe</a></div>
+          <button class="btn btn-gold" data-i18n="btn_login" onclick="doLogin('c')">Entrar</button>
+          <div class="auth-switch-row"><span data-i18n="no_account_yet">Ainda não tens conta?</span> <a class="link-inline" data-i18n="btn_create_account" onclick="goTo('c-auth-register')">Criar conta</a></div>
         </div>
       </div>
 
       <!-- AUTH: REGISTER -->
       <div class="screen" id="c-auth-register">
         <div class="auth-scroll">
-          <div class="auth-logo"><div class="mark">Lux</div><div class="tag">Criar a tua conta</div></div>
-          <div class="field-label">Nome completo</div>
+          <div class="auth-logo"><div class="mark">Lux</div><div class="tag" data-i18n="register_title">Criar a tua conta</div></div>
+          <div class="field-label" data-i18n="lbl_full_name">Nome completo</div>
           <div class="auth-field"><input id="c-reg-name" placeholder="O teu nome" /></div>
-          <div class="field-label">Email</div>
+          <div class="field-label" data-i18n="lbl_email">Email</div>
           <div class="auth-field"><input id="c-reg-email" placeholder="nome@email.com" /></div>
-          <div class="field-label">Telemóvel</div>
+          <div class="field-label" data-i18n="lbl_phone">Telemóvel</div>
           <div class="phone-row">
             <div class="country-select" onclick="openCountryPicker('c')">
               <span class="flag" id="c-country-flag">🇵🇹</span><span class="dial" id="c-country-dial">+351</span><span class="caret">▾</span>
             </div>
             <div class="auth-field"><input id="c-reg-phone" placeholder="9XX XXX XXX" inputmode="tel" /></div>
           </div>
-          <div class="field-label">Palavra-passe</div>
+          <div class="field-label" data-i18n="lbl_password">Palavra-passe</div>
           <div class="auth-field"><input id="c-reg-pass" type="password" placeholder="Mínimo 6 caracteres" /></div>
-          <div class="field-label">Confirmar palavra-passe</div>
+          <div class="field-label" data-i18n="lbl_confirm_password">Confirmar palavra-passe</div>
           <div class="auth-field"><input id="c-reg-pass2" type="password" placeholder="Repete a palavra-passe" /></div>
-          <div class="auth-error" id="c-reg-error">Verifica os campos — a palavra-passe deve ter 6+ caracteres e coincidir.</div>
-          <button class="btn btn-gold" onclick="doRegister('c')">Criar conta</button>
-          <div class="auth-switch-row">Já tens conta? <a class="link-inline" onclick="goTo('c-auth-login')">Entrar</a></div>
+          <div class="auth-error" id="c-reg-error" data-i18n="err_register">Verifica os campos — a palavra-passe deve ter 6+ caracteres e coincidir.</div>
+          <button class="btn btn-gold" data-i18n="btn_create_account" onclick="doRegister('c')">Criar conta</button>
+          <div class="auth-switch-row"><span data-i18n="already_have_account">Já tens conta?</span> <a class="link-inline" data-i18n="btn_login" onclick="goTo('c-auth-login')">Entrar</a></div>
         </div>
         <div class="req-overlay" id="c-country-overlay">
           <div class="req-sheet country-picker-sheet">
@@ -851,42 +858,43 @@
       <div class="screen" id="c-auth-verify">
         <div class="auth-scroll">
           <div class="auth-logo"><div class="mark">Lux</div><div class="tag">Confirma a tua conta</div></div>
-          <div class="otp-hint">Modo demonstração: introduz qualquer código de 6 dígitos (ex: <strong>123456</strong>) em cada campo para simular a verificação.</div>
+          <div class="otp-hint" id="c-otp-hint">A preparar verificação…</div>
           <div class="field-label">Código enviado por email — <span id="c-verify-email-target">nome@email.com</span></div>
           <div class="otp-row"><div class="otp-field"><input id="c-otp-email" maxlength="6" inputmode="numeric" placeholder="000000" /></div></div>
           <div class="field-label">Código enviado por SMS — <span id="c-verify-phone-target">+351 9XX XXX XXX</span></div>
           <div class="otp-row"><div class="otp-field"><input id="c-otp-phone" maxlength="6" inputmode="numeric" placeholder="000000" /></div></div>
           <div class="auth-error" id="c-verify-error">Introduz um código de 6 dígitos em cada campo.</div>
+          <div id="c-recaptcha-container"></div>
           <button class="btn btn-gold" onclick="doVerify('c')">Verificar e continuar</button>
-          <div class="auth-switch-row"><a class="link-inline" onclick="toast('c-auth-verify','Código reenviado')">Reenviar códigos</a></div>
+          <div class="auth-switch-row"><a class="link-inline" onclick="resendVerificationCodes('c')">Reenviar códigos</a></div>
         </div>
       </div>
 
       <!-- AUTH: FORGOT PASSWORD -->
       <div class="screen" id="c-auth-forgot">
         <div class="auth-scroll">
-          <div class="auth-logo"><div class="mark">Lux</div><div class="tag">Recuperar palavra-passe</div></div>
-          <div class="field-label">Email da tua conta</div>
+          <div class="auth-logo"><div class="mark">Lux</div><div class="tag" data-i18n="forgot_title">Recuperar palavra-passe</div></div>
+          <div class="field-label" data-i18n="lbl_account_email">Email da tua conta</div>
           <div class="auth-field"><input id="c-forgot-email" placeholder="nome@email.com" /></div>
-          <div class="auth-error" id="c-forgot-error">Introduz o teu email.</div>
-          <button class="btn btn-gold" onclick="doForgot('c')">Enviar código</button>
-          <div class="auth-switch-row"><a class="link-inline" onclick="goTo('c-auth-login')">Voltar a entrar</a></div>
+          <div class="auth-error" id="c-forgot-error" data-i18n="err_forgot">Introduz o teu email.</div>
+          <button class="btn btn-gold" data-i18n="btn_send_code" onclick="doForgot('c')">Enviar código</button>
+          <div class="auth-switch-row"><a class="link-inline" data-i18n="link_back_to_login" onclick="goTo('c-auth-login')">Voltar a entrar</a></div>
         </div>
       </div>
 
       <!-- AUTH: RESET PASSWORD -->
       <div class="screen" id="c-auth-reset">
         <div class="auth-scroll">
-          <div class="auth-logo"><div class="mark">Lux</div><div class="tag">Definir nova palavra-passe</div></div>
-          <div class="otp-hint">Modo demonstração: introduz qualquer código de 6 dígitos (ex: <strong>123456</strong>).</div>
-          <div class="field-label">Código recebido</div>
+          <div class="auth-logo"><div class="mark">Lux</div><div class="tag" data-i18n="reset_title">Definir nova palavra-passe</div></div>
+          <div class="otp-hint" data-i18n="reset_hint">Modo demonstração: introduz qualquer código de 6 dígitos (ex: <strong>123456</strong>).</div>
+          <div class="field-label" data-i18n="lbl_code_received">Código recebido</div>
           <div class="otp-row"><div class="otp-field"><input id="c-reset-code" maxlength="6" inputmode="numeric" placeholder="000000" /></div></div>
-          <div class="field-label">Nova palavra-passe</div>
+          <div class="field-label" data-i18n="lbl_new_password">Nova palavra-passe</div>
           <div class="auth-field"><input id="c-reset-pass" type="password" placeholder="Mínimo 6 caracteres" /></div>
-          <div class="field-label">Confirmar nova palavra-passe</div>
+          <div class="field-label" data-i18n="lbl_confirm_new_password">Confirmar nova palavra-passe</div>
           <div class="auth-field"><input id="c-reset-pass2" type="password" placeholder="Repete a palavra-passe" /></div>
-          <div class="auth-error" id="c-reset-error">Verifica o código e a palavra-passe.</div>
-          <button class="btn btn-gold" onclick="doReset('c')">Redefinir palavra-passe</button>
+          <div class="auth-error" id="c-reset-error" data-i18n="err_reset">Verifica o código e a palavra-passe.</div>
+          <button class="btn btn-gold" data-i18n="btn_reset_password" onclick="doReset('c')">Redefinir palavra-passe</button>
         </div>
       </div>
 
@@ -894,7 +902,7 @@
       <div class="screen" id="c-settings">
         <div class="topbar">
           <div class="icon-btn" onclick="goTo('c-home')">←</div>
-          <div class="brand" style="font-size:13px;">DEFINIÇÕES</div>
+          <div class="brand" style="font-size:13px;" data-i18n="settings_title">DEFINIÇÕES</div>
           <div style="width:38px;"></div>
         </div>
         <div class="auth-scroll" style="padding-top:6px;">
@@ -902,24 +910,32 @@
             <div class="settings-avatar" id="c-settings-avatar">JP</div>
             <div class="s-name" id="c-settings-name">Jean Paulo</div>
           </div>
-          <div class="section-label">Perfil</div>
-          <div class="settings-row"><span class="s-lbl">Email</span><span class="s-val" id="c-settings-email">jn.paulo2020@gmail.com <span class="verify-badge">✓ Verificado</span></span></div>
-          <div class="settings-row"><span class="s-lbl">Telemóvel</span><span class="s-val" id="c-settings-phone">+351 9XX XXX XXX <span class="verify-badge">✓ Verificado</span></span></div>
-          <div class="section-label">Segurança</div>
-          <div class="settings-row" style="cursor:pointer;" onclick="goTo('c-auth-forgot')"><span class="s-lbl">Alterar palavra-passe</span><span class="s-val">›</span></div>
-          <div class="section-label">Preferências</div>
+          <div class="section-label" data-i18n="section_profile">Perfil</div>
+          <div class="settings-row"><span class="s-lbl" data-i18n="lbl_email">Email</span><span class="s-val" id="c-settings-email">jn.paulo2020@gmail.com <span class="verify-badge" data-i18n="badge_verified">✓ Verificado</span></span></div>
+          <div class="settings-row"><span class="s-lbl" data-i18n="lbl_phone">Telemóvel</span><span class="s-val" id="c-settings-phone">+351 9XX XXX XXX <span class="verify-badge" data-i18n="badge_verified">✓ Verificado</span></span></div>
+          <div class="section-label" data-i18n="section_security">Segurança</div>
+          <div class="settings-row" style="cursor:pointer;" onclick="goTo('c-auth-forgot')"><span class="s-lbl" data-i18n="lbl_change_password">Alterar palavra-passe</span><span class="s-val">›</span></div>
+          <div class="section-label" data-i18n="section_preferences">Preferências</div>
           <div class="settings-row">
-            <span class="s-lbl">Tema</span>
-            <div class="theme-switcher" id="c-theme-switcher">
-              <button data-t="dark" onclick="setTheme('dark','c')">Escuro</button>
-              <button data-t="light" onclick="setTheme('light','c')">Claro</button>
+            <span class="s-lbl" data-i18n="lbl_language">Idioma</span>
+            <div class="theme-switcher" id="c-lang-switcher">
+              <button data-lang="pt" onclick="setLanguage('pt')">PT</button>
+              <button data-lang="en" onclick="setLanguage('en')">EN</button>
+              <button data-lang="es" onclick="setLanguage('es')">ES</button>
             </div>
           </div>
           <div class="settings-row">
-            <span class="s-lbl">Notificações push</span>
+            <span class="s-lbl" data-i18n="lbl_theme">Tema</span>
+            <div class="theme-switcher" id="c-theme-switcher">
+              <button data-t="dark" data-i18n="theme_dark" onclick="setTheme('dark','c')">Escuro</button>
+              <button data-t="light" data-i18n="theme_light" onclick="setTheme('light','c')">Claro</button>
+            </div>
+          </div>
+          <div class="settings-row">
+            <span class="s-lbl" data-i18n="lbl_push">Notificações push</span>
             <div class="switch" id="c-push-switch" onclick="togglePush('c')"><div class="knob"></div></div>
           </div>
-          <button class="btn btn-outline" style="margin-top:24px;" onclick="doLogout('c')">Terminar sessão</button>
+          <button class="btn btn-outline" style="margin-top:24px;" data-i18n="btn_logout" onclick="doLogout('c')">Terminar sessão</button>
         </div>
       </div>
 
@@ -935,8 +951,8 @@
         </div>
         <div class="sheet">
           <div class="sheet-handle"></div>
-          <h1 class="title">Boa noite, Jean Paulo</h1>
-          <p class="subtitle">Para onde vai hoje?</p>
+          <h1 class="title" data-i18n="home_greeting">Boa noite, Jean Paulo</h1>
+          <p class="subtitle" data-i18n="home_subtitle">Para onde vai hoje?</p>
           <div class="field glow-frame">
             <span class="dot-marker o"></span>
             <input id="c-origin" value="A minha localização atual" />
@@ -947,11 +963,11 @@
           </div>
           <div class="chips-wrap">
             <div class="chips">
-              <div class="chip" onclick="quickDest('Aeroporto de Lisboa (LIS)')">✈️ Aeroporto Lisboa</div>
-              <div class="chip" onclick="quickDest('Aeroporto Francisco Sá Carneiro, Porto')">✈️ Aeroporto Porto</div>
+              <div class="chip" onclick="quickDest('Aeroporto de Lisboa (LIS)')">✈️ <span data-i18n="chip_airport_lisbon">Aeroporto Lisboa</span></div>
+              <div class="chip" onclick="quickDest('Aeroporto Francisco Sá Carneiro, Porto')">✈️ <span data-i18n="chip_airport_porto">Aeroporto Porto</span></div>
             </div>
           </div>
-          <button class="btn btn-gold" id="c-request-btn" disabled onclick="goTo('c-vehicles')">Pedir viagem</button>
+          <button class="btn btn-gold" id="c-request-btn" disabled data-i18n="btn_request_ride" onclick="goTo('c-vehicles')">Pedir viagem</button>
         </div>
       </div>
 
@@ -969,7 +985,7 @@
           <div class="sheet-handle"></div>
           <p class="subtitle" id="route-summary" style="margin-bottom:12px;">Rota calculada</p>
           <div class="vehicle-list" id="vehicle-list"></div>
-          <button class="btn btn-gold" id="c-confirm-btn" disabled onclick="startMatching()">Confirmar veículo</button>
+          <button class="btn btn-gold" id="c-confirm-btn" disabled onclick="payThenRequestRide()">Pagar e chamar motorista</button>
         </div>
       </div>
 
@@ -1090,7 +1106,7 @@
             <div class="chip" onclick="selectTip(this,10)">10€</div>
           </div>
           <div style="background:var(--panel2); border:1px solid var(--line); border-radius:var(--radius-md); padding:14px; margin-bottom:16px;">
-            <div class="summary-row"><span>Tarifa base</span><span id="sum-base">28,00€</span></div>
+            <div class="summary-row"><span>Tarifa base (paga no pedido)</span><span id="sum-base">28,00€</span></div>
             <div class="summary-row"><span>Portagens incluídas</span><span>0,00€</span></div>
             <div class="summary-row" id="sum-wait-row" style="display:none;"><span>Tempo de espera extra</span><span id="sum-wait">0,00€</span></div>
             <div class="summary-row"><span>Gorjeta</span><span id="sum-tip">0,00€</span></div>
@@ -1098,18 +1114,19 @@
           </div>
         </div>
         <div class="sheet">
-          <button class="btn btn-gold" onclick="payAndFinishTrip()">Concluir e pagar</button>
+          <button class="btn btn-gold" id="c-finish-btn" onclick="payAndFinishTrip()">Concluir viagem</button>
         </div>
-        <div class="req-overlay" id="c-payment-overlay">
-          <div class="req-sheet">
-            <h1 class="title" style="text-align:center;">Pagamento seguro</h1>
-            <div class="payment-summary-row"><span>Total a pagar</span><span class="amt" id="c-payment-amount-label">28,00€</span></div>
-            <div id="c-card-element" class="stripe-card-element"></div>
-            <div class="auth-error" id="c-card-errors"></div>
-            <button class="btn btn-gold" id="c-pay-btn" onclick="submitPayment('c')">Pagar <span id="c-pay-btn-amount">28,00€</span></button>
-            <button class="btn btn-ghost-text" onclick="closePayment('c')">Cancelar</button>
-            <p class="stripe-badge">🔒 Pagamento processado com segurança pela Stripe</p>
-          </div>
+      </div>
+
+      <div class="req-overlay" id="c-payment-overlay">
+        <div class="req-sheet">
+          <h1 class="title" style="text-align:center;" id="c-payment-title">Pagamento seguro</h1>
+          <div class="payment-summary-row" id="c-payment-summary-row"><span id="c-payment-summary-label">Total a pagar</span><span class="amt" id="c-payment-amount-label">28,00€</span></div>
+          <div id="c-card-element" class="stripe-card-element"></div>
+          <div class="auth-error" id="c-card-errors"></div>
+          <button class="btn btn-gold" id="c-pay-btn" onclick="submitPayment('c')"><span id="c-pay-btn-label">Pagar</span> <span id="c-pay-btn-amount">28,00€</span></button>
+          <button class="btn btn-ghost-text" onclick="cancelPayment('c')">Cancelar</button>
+          <p class="stripe-badge">🔒 Pagamento processado com segurança pela Stripe</p>
         </div>
       </div>
 
@@ -1136,12 +1153,17 @@
 
       <!-- AUTH: WELCOME -->
       <div class="screen active" id="d-auth-welcome">
+        <div class="theme-switcher lang-switcher-fixed" id="lang-switcher-welcome-d">
+          <button data-lang="pt" onclick="setLanguage('pt')">PT</button>
+          <button data-lang="en" onclick="setLanguage('en')">EN</button>
+          <button data-lang="es" onclick="setLanguage('es')">ES</button>
+        </div>
         <div class="auth-hero">
           <div class="big-mark"><span class="accent">Lux</span>Driver</div>
-          <p class="sub">Área de parceiros Lux Transfers. Inicia sessão para começar a receber pedidos.</p>
+          <p class="sub" data-i18n="welcome_sub_d">Área de parceiros Lux Transfers. Inicia sessão para começar a receber pedidos.</p>
           <div class="actions">
-            <button class="btn btn-gold" onclick="goTo('d-auth-login')">Entrar</button>
-            <button class="btn btn-outline" onclick="goTo('d-auth-register')">Criar conta de motorista</button>
+            <button class="btn btn-gold" data-i18n="btn_login" onclick="goTo('d-auth-login')">Entrar</button>
+            <button class="btn btn-outline" data-i18n="btn_create_driver_account" onclick="goTo('d-auth-register')">Criar conta de motorista</button>
           </div>
         </div>
       </div>
@@ -1149,40 +1171,40 @@
       <!-- AUTH: LOGIN -->
       <div class="screen" id="d-auth-login">
         <div class="auth-scroll">
-          <div class="auth-logo"><div class="mark">LuxDriver</div><div class="tag">Entrar na tua conta</div></div>
-          <div class="field-label">Email ou telemóvel</div>
+          <div class="auth-logo"><div class="mark">LuxDriver</div><div class="tag" data-i18n="login_title">Entrar na tua conta</div></div>
+          <div class="field-label" data-i18n="lbl_email_or_phone">Email ou telemóvel</div>
           <div class="auth-field"><input id="d-login-user" placeholder="nome@email.com" /></div>
-          <div class="field-label">Palavra-passe</div>
+          <div class="field-label" data-i18n="lbl_password">Palavra-passe</div>
           <div class="auth-field"><input id="d-login-pass" type="password" placeholder="••••••••" /></div>
-          <div class="auth-error" id="d-login-error">Preenche email/telemóvel e palavra-passe.</div>
-          <div class="auth-link-row"><a onclick="goTo('d-auth-forgot')">Esqueci a palavra-passe</a></div>
-          <button class="btn btn-gold" onclick="doLogin('d')">Entrar</button>
-          <div class="auth-switch-row">Ainda não tens conta? <a class="link-inline" onclick="goTo('d-auth-register')">Criar conta</a></div>
+          <div class="auth-error" id="d-login-error" data-i18n="err_login">Preenche email/telemóvel e palavra-passe.</div>
+          <div class="auth-link-row"><a data-i18n="link_forgot_password" onclick="goTo('d-auth-forgot')">Esqueci a palavra-passe</a></div>
+          <button class="btn btn-gold" data-i18n="btn_login" onclick="doLogin('d')">Entrar</button>
+          <div class="auth-switch-row"><span data-i18n="no_account_yet">Ainda não tens conta?</span> <a class="link-inline" data-i18n="btn_create_account" onclick="goTo('d-auth-register')">Criar conta</a></div>
         </div>
       </div>
 
       <!-- AUTH: REGISTER -->
       <div class="screen" id="d-auth-register">
         <div class="auth-scroll">
-          <div class="auth-logo"><div class="mark">LuxDriver</div><div class="tag">Criar conta de motorista</div></div>
-          <div class="field-label">Nome completo</div>
+          <div class="auth-logo"><div class="mark">LuxDriver</div><div class="tag" data-i18n="register_driver_title">Criar conta de motorista</div></div>
+          <div class="field-label" data-i18n="lbl_full_name">Nome completo</div>
           <div class="auth-field"><input id="d-reg-name" placeholder="O teu nome" /></div>
-          <div class="field-label">Email</div>
+          <div class="field-label" data-i18n="lbl_email">Email</div>
           <div class="auth-field"><input id="d-reg-email" placeholder="nome@email.com" /></div>
-          <div class="field-label">Telemóvel</div>
+          <div class="field-label" data-i18n="lbl_phone">Telemóvel</div>
           <div class="phone-row">
             <div class="country-select" onclick="openCountryPicker('d')">
               <span class="flag" id="d-country-flag">🇵🇹</span><span class="dial" id="d-country-dial">+351</span><span class="caret">▾</span>
             </div>
             <div class="auth-field"><input id="d-reg-phone" placeholder="9XX XXX XXX" inputmode="tel" /></div>
           </div>
-          <div class="field-label">Palavra-passe</div>
+          <div class="field-label" data-i18n="lbl_password">Palavra-passe</div>
           <div class="auth-field"><input id="d-reg-pass" type="password" placeholder="Mínimo 6 caracteres" /></div>
-          <div class="field-label">Confirmar palavra-passe</div>
+          <div class="field-label" data-i18n="lbl_confirm_password">Confirmar palavra-passe</div>
           <div class="auth-field"><input id="d-reg-pass2" type="password" placeholder="Repete a palavra-passe" /></div>
-          <div class="auth-error" id="d-reg-error">Verifica os campos — a palavra-passe deve ter 6+ caracteres e coincidir.</div>
-          <button class="btn btn-gold" onclick="doRegister('d')">Criar conta</button>
-          <div class="auth-switch-row">Já tens conta? <a class="link-inline" onclick="goTo('d-auth-login')">Entrar</a></div>
+          <div class="auth-error" id="d-reg-error" data-i18n="err_register">Verifica os campos — a palavra-passe deve ter 6+ caracteres e coincidir.</div>
+          <button class="btn btn-gold" data-i18n="btn_create_account" onclick="doRegister('d')">Criar conta</button>
+          <div class="auth-switch-row"><span data-i18n="already_have_account">Já tens conta?</span> <a class="link-inline" data-i18n="btn_login" onclick="goTo('d-auth-login')">Entrar</a></div>
         </div>
         <div class="req-overlay" id="d-country-overlay">
           <div class="req-sheet country-picker-sheet">
@@ -1198,42 +1220,43 @@
       <div class="screen" id="d-auth-verify">
         <div class="auth-scroll">
           <div class="auth-logo"><div class="mark">LuxDriver</div><div class="tag">Confirma a tua conta</div></div>
-          <div class="otp-hint">Modo demonstração: introduz qualquer código de 6 dígitos (ex: <strong>123456</strong>) em cada campo para simular a verificação.</div>
+          <div class="otp-hint" id="d-otp-hint">A preparar verificação…</div>
           <div class="field-label">Código enviado por email — <span id="d-verify-email-target">nome@email.com</span></div>
           <div class="otp-row"><div class="otp-field"><input id="d-otp-email" maxlength="6" inputmode="numeric" placeholder="000000" /></div></div>
           <div class="field-label">Código enviado por SMS — <span id="d-verify-phone-target">+351 9XX XXX XXX</span></div>
           <div class="otp-row"><div class="otp-field"><input id="d-otp-phone" maxlength="6" inputmode="numeric" placeholder="000000" /></div></div>
           <div class="auth-error" id="d-verify-error">Introduz um código de 6 dígitos em cada campo.</div>
+          <div id="d-recaptcha-container"></div>
           <button class="btn btn-gold" onclick="doVerify('d')">Verificar e continuar</button>
-          <div class="auth-switch-row"><a class="link-inline" onclick="toast('d-auth-verify','Código reenviado')">Reenviar códigos</a></div>
+          <div class="auth-switch-row"><a class="link-inline" onclick="resendVerificationCodes('d')">Reenviar códigos</a></div>
         </div>
       </div>
 
       <!-- AUTH: FORGOT PASSWORD -->
       <div class="screen" id="d-auth-forgot">
         <div class="auth-scroll">
-          <div class="auth-logo"><div class="mark">LuxDriver</div><div class="tag">Recuperar palavra-passe</div></div>
-          <div class="field-label">Email da tua conta</div>
+          <div class="auth-logo"><div class="mark">LuxDriver</div><div class="tag" data-i18n="forgot_title">Recuperar palavra-passe</div></div>
+          <div class="field-label" data-i18n="lbl_account_email">Email da tua conta</div>
           <div class="auth-field"><input id="d-forgot-email" placeholder="nome@email.com" /></div>
-          <div class="auth-error" id="d-forgot-error">Introduz o teu email.</div>
-          <button class="btn btn-gold" onclick="doForgot('d')">Enviar código</button>
-          <div class="auth-switch-row"><a class="link-inline" onclick="goTo('d-auth-login')">Voltar a entrar</a></div>
+          <div class="auth-error" id="d-forgot-error" data-i18n="err_forgot">Introduz o teu email.</div>
+          <button class="btn btn-gold" data-i18n="btn_send_code" onclick="doForgot('d')">Enviar código</button>
+          <div class="auth-switch-row"><a class="link-inline" data-i18n="link_back_to_login" onclick="goTo('d-auth-login')">Voltar a entrar</a></div>
         </div>
       </div>
 
       <!-- AUTH: RESET PASSWORD -->
       <div class="screen" id="d-auth-reset">
         <div class="auth-scroll">
-          <div class="auth-logo"><div class="mark">LuxDriver</div><div class="tag">Definir nova palavra-passe</div></div>
-          <div class="otp-hint">Modo demonstração: introduz qualquer código de 6 dígitos (ex: <strong>123456</strong>).</div>
-          <div class="field-label">Código recebido</div>
+          <div class="auth-logo"><div class="mark">LuxDriver</div><div class="tag" data-i18n="reset_title">Definir nova palavra-passe</div></div>
+          <div class="otp-hint" data-i18n="reset_hint">Modo demonstração: introduz qualquer código de 6 dígitos (ex: <strong>123456</strong>).</div>
+          <div class="field-label" data-i18n="lbl_code_received">Código recebido</div>
           <div class="otp-row"><div class="otp-field"><input id="d-reset-code" maxlength="6" inputmode="numeric" placeholder="000000" /></div></div>
-          <div class="field-label">Nova palavra-passe</div>
+          <div class="field-label" data-i18n="lbl_new_password">Nova palavra-passe</div>
           <div class="auth-field"><input id="d-reset-pass" type="password" placeholder="Mínimo 6 caracteres" /></div>
-          <div class="field-label">Confirmar nova palavra-passe</div>
+          <div class="field-label" data-i18n="lbl_confirm_new_password">Confirmar nova palavra-passe</div>
           <div class="auth-field"><input id="d-reset-pass2" type="password" placeholder="Repete a palavra-passe" /></div>
-          <div class="auth-error" id="d-reset-error">Verifica o código e a palavra-passe.</div>
-          <button class="btn btn-gold" onclick="doReset('d')">Redefinir palavra-passe</button>
+          <div class="auth-error" id="d-reset-error" data-i18n="err_reset">Verifica o código e a palavra-passe.</div>
+          <button class="btn btn-gold" data-i18n="btn_reset_password" onclick="doReset('d')">Redefinir palavra-passe</button>
         </div>
       </div>
 
@@ -1263,26 +1286,34 @@
             <div class="settings-avatar" id="d-settings-avatar">RA</div>
             <div class="s-name" id="d-settings-name">Ricardo Almeida</div>
           </div>
-          <div class="section-label">Perfil</div>
-          <div class="settings-row"><span class="s-lbl">Email</span><span class="s-val" id="d-settings-email">ricardo.almeida@email.com <span class="verify-badge">✓ Verificado</span></span></div>
-          <div class="settings-row"><span class="s-lbl">Telemóvel</span><span class="s-val" id="d-settings-phone">+351 9XX XXX XXX <span class="verify-badge">✓ Verificado</span></span></div>
-          <div class="section-label">Verificação TVDE</div>
-          <div class="settings-row" style="cursor:pointer;" onclick="goTo('d-documents')"><span class="s-lbl">Documentos TVDE</span><span class="s-val" id="d-settings-doc-status">›</span></div>
-          <div class="section-label">Segurança</div>
-          <div class="settings-row" style="cursor:pointer;" onclick="goTo('d-auth-forgot')"><span class="s-lbl">Alterar palavra-passe</span><span class="s-val">›</span></div>
-          <div class="section-label">Preferências</div>
+          <div class="section-label" data-i18n="section_profile">Perfil</div>
+          <div class="settings-row"><span class="s-lbl" data-i18n="lbl_email">Email</span><span class="s-val" id="d-settings-email">ricardo.almeida@email.com <span class="verify-badge" data-i18n="badge_verified">✓ Verificado</span></span></div>
+          <div class="settings-row"><span class="s-lbl" data-i18n="lbl_phone">Telemóvel</span><span class="s-val" id="d-settings-phone">+351 9XX XXX XXX <span class="verify-badge" data-i18n="badge_verified">✓ Verificado</span></span></div>
+          <div class="section-label" data-i18n="section_tvde">Verificação TVDE</div>
+          <div class="settings-row" style="cursor:pointer;" onclick="goTo('d-documents')"><span class="s-lbl" data-i18n="lbl_tvde_docs">Documentos TVDE</span><span class="s-val" id="d-settings-doc-status">›</span></div>
+          <div class="section-label" data-i18n="section_security">Segurança</div>
+          <div class="settings-row" style="cursor:pointer;" onclick="goTo('d-auth-forgot')"><span class="s-lbl" data-i18n="lbl_change_password">Alterar palavra-passe</span><span class="s-val">›</span></div>
+          <div class="section-label" data-i18n="section_preferences">Preferências</div>
           <div class="settings-row">
-            <span class="s-lbl">Tema</span>
-            <div class="theme-switcher" id="d-theme-switcher">
-              <button data-t="dark" onclick="setTheme('dark','d')">Escuro</button>
-              <button data-t="light" onclick="setTheme('light','d')">Claro</button>
+            <span class="s-lbl" data-i18n="lbl_language">Idioma</span>
+            <div class="theme-switcher" id="d-lang-switcher">
+              <button data-lang="pt" onclick="setLanguage('pt')">PT</button>
+              <button data-lang="en" onclick="setLanguage('en')">EN</button>
+              <button data-lang="es" onclick="setLanguage('es')">ES</button>
             </div>
           </div>
           <div class="settings-row">
-            <span class="s-lbl">Notificações push</span>
+            <span class="s-lbl" data-i18n="lbl_theme">Tema</span>
+            <div class="theme-switcher" id="d-theme-switcher">
+              <button data-t="dark" data-i18n="theme_dark" onclick="setTheme('dark','d')">Escuro</button>
+              <button data-t="light" data-i18n="theme_light" onclick="setTheme('light','d')">Claro</button>
+            </div>
+          </div>
+          <div class="settings-row">
+            <span class="s-lbl" data-i18n="lbl_push">Notificações push</span>
             <div class="switch" id="d-push-switch" onclick="togglePush('d')"><div class="knob"></div></div>
           </div>
-          <button class="btn btn-outline" style="margin-top:24px;" onclick="doLogout('d')">Terminar sessão</button>
+          <button class="btn btn-outline" style="margin-top:24px;" data-i18n="btn_logout" onclick="doLogout('d')">Terminar sessão</button>
         </div>
       </div>
 
@@ -1294,26 +1325,26 @@
           <div class="icon-btn" onclick="goTo('d-settings')">👤</div>
         </div>
         <div class="sub-badge">
-          <span class="l">✓ Subscrição ativa</span>
+          <span class="l" data-i18n="sub_active">✓ Subscrição ativa</span>
           <span class="r">50€/mês · renova a 15 Ago</span>
         </div>
         <div class="online-toggle-wrap glow-frame">
           <div class="lbl-group">
-            <div class="t1" id="online-status-text">Offline</div>
-            <div class="t2">Ativa para receber pedidos</div>
+            <div class="t1" id="online-status-text" data-i18n="status_offline">Offline</div>
+            <div class="t2" data-i18n="online_hint">Ativa para receber pedidos</div>
           </div>
           <div class="switch" id="online-switch" onclick="toggleOnline()"><div class="knob"></div></div>
         </div>
         <div class="balance-card glow-frame" id="balance-card">
           <div class="row">
             <div>
-              <div class="lbl">Saldo de comissão <button class="balance-eye-btn" id="balance-eye" onclick="toggleBalanceVisibility()">👁️</button></div>
+              <div class="lbl"><span data-i18n="lbl_commission_balance">Saldo de comissão</span> <button class="balance-eye-btn" id="balance-eye" onclick="toggleBalanceVisibility()">👁️</button></div>
               <div class="amt" id="balance-amount">4,00€</div>
             </div>
-            <button class="link-btn" onclick="openRecharge()">Recarregar</button>
+            <button class="link-btn" data-i18n="btn_recharge" onclick="openRecharge()">Recarregar</button>
           </div>
           <div class="balance-bar"><div class="fill" id="balance-fill" style="width:100%;"></div></div>
-          <div class="note">A Lux Transfers retém 10% do valor de cada corrida, descontado automaticamente deste saldo. Sem saldo, deixa de receber novos pedidos.</div>
+          <div class="note" data-i18n="balance_note">A Lux Transfers retém 10% do valor de cada corrida, descontado automaticamente deste saldo. Sem saldo, deixa de receber novos pedidos.</div>
         </div>
         <div class="stat-row">
           <div class="stat-card glow-frame"><div class="num" id="stat-earn">0€</div><div class="lbl">Ganhos hoje</div></div>
@@ -1345,12 +1376,12 @@
         <!-- Payment overlay -->
         <div class="req-overlay" id="d-payment-overlay">
           <div class="req-sheet">
-            <h1 class="title" style="text-align:center;">Pagamento seguro</h1>
-            <div class="payment-summary-row"><span>Recarga de saldo</span><span class="amt" id="d-payment-amount-label">50,00€</span></div>
+            <h1 class="title" style="text-align:center;" id="d-payment-title">Pagamento seguro</h1>
+            <div class="payment-summary-row" id="d-payment-summary-row"><span id="d-payment-summary-label">Recarga de saldo</span><span class="amt" id="d-payment-amount-label">50,00€</span></div>
             <div id="d-card-element" class="stripe-card-element"></div>
             <div class="auth-error" id="d-card-errors"></div>
-            <button class="btn btn-gold" id="d-pay-btn" onclick="submitPayment('d')">Pagar <span id="d-pay-btn-amount">50,00€</span></button>
-            <button class="btn btn-ghost-text" onclick="closePayment('d')">Cancelar</button>
+            <button class="btn btn-gold" id="d-pay-btn" onclick="submitPayment('d')"><span id="d-pay-btn-label">Pagar</span> <span id="d-pay-btn-amount">50,00€</span></button>
+            <button class="btn btn-ghost-text" onclick="cancelPayment('d')">Cancelar</button>
             <p class="stripe-badge">🔒 Pagamento processado com segurança pela Stripe</p>
           </div>
         </div>
@@ -1572,6 +1603,34 @@ function animateMarker(markerEl, x1,y1,x2,y2, durationMs, onDone){
 }
 function fmtEur(v){ return v.toFixed(2).replace('.',',') + '€'; }
 
+let _beepCtx = null;
+function playStatusBeep(){
+  try{
+    if(!_beepCtx) _beepCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if(_beepCtx.state === 'suspended') _beepCtx.resume().catch(()=>{});
+    const ctx = _beepCtx;
+    const now = ctx.currentTime;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(880, now);
+    gain.gain.setValueAtTime(0.0001, now);
+    gain.gain.exponentialRampToValueAtTime(0.25, now + 0.01);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.18);
+    osc.connect(gain).connect(ctx.destination);
+    osc.start(now);
+    osc.stop(now + 0.2);
+  }catch(e){}
+}
+let _requestSoundAudio = null;
+function playRequestSound(){
+  try{
+    if(!_requestSoundAudio) _requestSoundAudio = new Audio('sounds/driver-request.mp3');
+    _requestSoundAudio.currentTime = 0;
+    _requestSoundAudio.play().catch(()=>{});
+  }catch(e){}
+}
+
 /* ===================== GOOGLE MAPS (real) =====================
    Substitui o mapa em grelha simulado por um google.maps.Map real sempre que a
    API carregou com sucesso. Se a API falhar/estiver bloqueada (ex.: offline,
@@ -1691,6 +1750,10 @@ function animateCarAlongPath(map, path, durationMs){
 
 /* ===================== AUTH + SETTINGS + THEME ===================== */
 let pendingAuth = { c:null, d:null };
+let realAuthActive = { c:false, d:false };
+let pendingFirebaseUser = { c:null, d:null };
+let pendingConfirmationResult = { c:null, d:null };
+let recaptchaVerifier = { c:null, d:null };
 let currentUser = {
   c: { name:'Jean Paulo', email:'jn.paulo2020@gmail.com', phone:'+351 9XX XXX XXX' },
   d: { name:'Ricardo Almeida', email:'ricardo.almeida@email.com', phone:'+351 9XX XXX XXX' }
@@ -1796,20 +1859,77 @@ function doRegister(p){
   document.getElementById(p+'-verify-email-target').textContent = email;
   document.getElementById(p+'-verify-phone-target').textContent = phone;
   goTo(p+'-auth-verify');
+  startRealVerification(p, email, pass, phone);
 }
-function doVerify(p){
-  const codeE = (document.getElementById(p+'-otp-email').value||'').trim();
-  const codeP = (document.getElementById(p+'-otp-phone').value||'').trim();
-  const ok = /^\d{6}$/.test(codeE) && /^\d{6}$/.test(codeP);
-  showErr(p+'-verify-error', !ok);
-  if(!ok) return;
-  if(pendingAuth[p]) currentUser[p] = pendingAuth[p];
-  if(p==='d' && typeof startDriverApplication==='function'){
-    updateSettingsUI(p);
-    startDriverApplication();
-  } else {
-    completeAuth(p);
+/* Verificação real via Firebase Auth (email de confirmação real + SMS OTP real
+   com reCAPTCHA). Se o Firebase Auth não estiver disponível/configurado (offline,
+   Phone Auth não ativado, etc.) cai automaticamente no modo demonstração — o
+   mesmo padrão de resiliência usado no resto da app. */
+async function startRealVerification(p, email, pass, phone){
+  realAuthActive[p] = false;
+  const hint = document.getElementById(p+'-otp-hint');
+  const auth = initAuth();
+  if(!auth){
+    if(hint) hint.textContent = 'Modo demonstração: introduz qualquer código de 6 dígitos (ex: 123456) em cada campo para simular a verificação.';
+    return;
   }
+  try{
+    const cred = await auth.createUserWithEmailAndPassword(email, pass);
+    pendingFirebaseUser[p] = cred.user;
+    await cred.user.sendEmailVerification();
+    if(!recaptchaVerifier[p]){
+      recaptchaVerifier[p] = new firebase.auth.RecaptchaVerifier(p+'-recaptcha-container', { size:'invisible' });
+    }
+    const confirmation = await cred.user.linkWithPhoneNumber(phone, recaptchaVerifier[p]);
+    pendingConfirmationResult[p] = confirmation;
+    realAuthActive[p] = true;
+    if(hint) hint.textContent = 'Enviámos um email de confirmação real (clica no link) e um SMS com um código de 6 dígitos.';
+  }catch(e){
+    console.warn('Verificação real falhou, a usar modo demonstração:', e);
+    if(hint) hint.textContent = 'Modo demonstração: introduz qualquer código de 6 dígitos (ex: 123456) em cada campo para simular a verificação.';
+    realAuthActive[p] = false;
+  }
+}
+async function resendVerificationCodes(p){
+  if(realAuthActive[p] && pendingFirebaseUser[p]){
+    try{ await pendingFirebaseUser[p].sendEmailVerification(); toast(p+'-auth-verify','Email reenviado'); }
+    catch(e){ toast(p+'-auth-verify','Não foi possível reenviar o email'); }
+  } else {
+    toast(p+'-auth-verify','Código reenviado');
+  }
+}
+async function doVerify(p){
+  const codeP = (document.getElementById(p+'-otp-phone').value||'').trim();
+  if(realAuthActive[p] && pendingConfirmationResult[p]){
+    let phoneOk = false;
+    try{ await pendingConfirmationResult[p].confirm(codeP); phoneOk = true; }catch(e){ phoneOk = false; }
+    let emailOk = false;
+    try{ await pendingFirebaseUser[p].reload(); emailOk = !!pendingFirebaseUser[p].emailVerified; }catch(e){ emailOk = false; }
+    const ok = phoneOk && emailOk;
+    const errEl = document.getElementById(p+'-verify-error');
+    if(errEl) errEl.textContent = !emailOk ? 'Ainda não confirmaste o email — abre o link que enviámos.' : (!phoneOk ? 'Código SMS inválido.' : '');
+    showErr(p+'-verify-error', !ok);
+    if(!ok) return;
+  } else {
+    const codeE = (document.getElementById(p+'-otp-email').value||'').trim();
+    const ok = /^\d{6}$/.test(codeE) && /^\d{6}$/.test(codeP);
+    showErr(p+'-verify-error', !ok);
+    if(!ok) return;
+  }
+  if(pendingAuth[p]) currentUser[p] = pendingAuth[p];
+  const finishRegistration = function(){
+    if(p==='d' && typeof startDriverApplication==='function'){
+      updateSettingsUI(p);
+      startDriverApplication();
+    } else {
+      completeAuth(p);
+    }
+  };
+  const u = pendingAuth[p] || currentUser[p];
+  openCardSetup(p, function(res){
+    if(u && res){ u.stripeCustomerId = res.customerId || u.stripeCustomerId; }
+    finishRegistration();
+  }, u && u.email, u && u.name);
 }
 function doForgot(p){
   const email = (document.getElementById(p+'-forgot-email').value||'').trim();
@@ -1851,6 +1971,101 @@ function setTheme(mode){
     sw.querySelectorAll('button').forEach(b=>b.classList.toggle('active', b.dataset.t===mode));
   });
 }
+/* ===================== IDIOMA (PT / EN / ES) =====================
+   Cobre os ecrãs de maior tráfego (boas-vindas, login, registo, verificação,
+   recuperação de senha, definições, início) de ambos os perfis (cliente e
+   motorista). O resto da app mantém-se em português — pode ser alargado
+   facilmente adicionando mais chaves data-i18n e as respetivas traduções. */
+const LANG_DICT = {
+  welcome_sub_c: {
+    pt:'Transfers executivos e chauffeur VIP em Portugal. Inicia sessão para pedir a tua viagem.',
+    en:'Executive transfers and VIP chauffeur service in Portugal. Sign in to request your ride.',
+    es:'Traslados ejecutivos y chófer VIP en Portugal. Inicia sesión para pedir tu viaje.'
+  },
+  welcome_sub_d: {
+    pt:'Área de parceiros Lux Transfers. Inicia sessão para começar a receber pedidos.',
+    en:'Lux Transfers partner area. Sign in to start receiving ride requests.',
+    es:'Área de socios Lux Transfers. Inicia sesión para empezar a recibir pedidos.'
+  },
+  btn_login: { pt:'Entrar', en:'Sign in', es:'Entrar' },
+  btn_create_account: { pt:'Criar conta', en:'Create account', es:'Crear cuenta' },
+  btn_create_driver_account: { pt:'Criar conta de motorista', en:'Create driver account', es:'Crear cuenta de conductor' },
+  login_title: { pt:'Entrar na tua conta', en:'Sign in to your account', es:'Entra en tu cuenta' },
+  lbl_email_or_phone: { pt:'Email ou telemóvel', en:'Email or phone', es:'Email o teléfono' },
+  lbl_password: { pt:'Palavra-passe', en:'Password', es:'Contraseña' },
+  err_login: { pt:'Preenche email/telemóvel e palavra-passe.', en:'Fill in your email/phone and password.', es:'Rellena el email/teléfono y la contraseña.' },
+  link_forgot_password: { pt:'Esqueci a palavra-passe', en:'Forgot password', es:'Olvidé la contraseña' },
+  no_account_yet: { pt:'Ainda não tens conta?', en:"Don't have an account yet?", es:'¿Aún no tienes cuenta?' },
+  register_title: { pt:'Criar a tua conta', en:'Create your account', es:'Crea tu cuenta' },
+  register_driver_title: { pt:'Criar conta de motorista', en:'Create driver account', es:'Crear cuenta de conductor' },
+  lbl_full_name: { pt:'Nome completo', en:'Full name', es:'Nombre completo' },
+  lbl_email: { pt:'Email', en:'Email', es:'Email' },
+  lbl_phone: { pt:'Telemóvel', en:'Phone', es:'Teléfono' },
+  lbl_confirm_password: { pt:'Confirmar palavra-passe', en:'Confirm password', es:'Confirmar contraseña' },
+  err_register: { pt:'Verifica os campos — a palavra-passe deve ter 6+ caracteres e coincidir.', en:'Check the fields — password must be 6+ characters and match.', es:'Revisa los campos — la contraseña debe tener 6+ caracteres y coincidir.' },
+  already_have_account: { pt:'Já tens conta?', en:'Already have an account?', es:'¿Ya tienes cuenta?' },
+  forgot_title: { pt:'Recuperar palavra-passe', en:'Recover password', es:'Recuperar contraseña' },
+  lbl_account_email: { pt:'Email da tua conta', en:'Your account email', es:'Email de tu cuenta' },
+  err_forgot: { pt:'Introduz o teu email.', en:'Enter your email.', es:'Introduce tu email.' },
+  btn_send_code: { pt:'Enviar código', en:'Send code', es:'Enviar código' },
+  link_back_to_login: { pt:'Voltar a entrar', en:'Back to sign in', es:'Volver a entrar' },
+  reset_title: { pt:'Definir nova palavra-passe', en:'Set a new password', es:'Definir nueva contraseña' },
+  reset_hint: { pt:'Modo demonstração: introduz qualquer código de 6 dígitos (ex: <strong>123456</strong>).', en:'Demo mode: enter any 6-digit code (e.g. <strong>123456</strong>).', es:'Modo demostración: introduce cualquier código de 6 dígitos (ej: <strong>123456</strong>).' },
+  lbl_code_received: { pt:'Código recebido', en:'Code received', es:'Código recibido' },
+  lbl_new_password: { pt:'Nova palavra-passe', en:'New password', es:'Nueva contraseña' },
+  lbl_confirm_new_password: { pt:'Confirmar nova palavra-passe', en:'Confirm new password', es:'Confirmar nueva contraseña' },
+  err_reset: { pt:'Verifica o código e a palavra-passe.', en:'Check the code and password.', es:'Revisa el código y la contraseña.' },
+  btn_reset_password: { pt:'Redefinir palavra-passe', en:'Reset password', es:'Restablecer contraseña' },
+  settings_title: { pt:'DEFINIÇÕES', en:'SETTINGS', es:'AJUSTES' },
+  section_profile: { pt:'Perfil', en:'Profile', es:'Perfil' },
+  badge_verified: { pt:'✓ Verificado', en:'✓ Verified', es:'✓ Verificado' },
+  section_tvde: { pt:'Verificação TVDE', en:'TVDE verification', es:'Verificación TVDE' },
+  lbl_tvde_docs: { pt:'Documentos TVDE', en:'TVDE documents', es:'Documentos TVDE' },
+  section_security: { pt:'Segurança', en:'Security', es:'Seguridad' },
+  lbl_change_password: { pt:'Alterar palavra-passe', en:'Change password', es:'Cambiar contraseña' },
+  section_preferences: { pt:'Preferências', en:'Preferences', es:'Preferencias' },
+  lbl_language: { pt:'Idioma', en:'Language', es:'Idioma' },
+  lbl_theme: { pt:'Tema', en:'Theme', es:'Tema' },
+  theme_dark: { pt:'Escuro', en:'Dark', es:'Oscuro' },
+  theme_light: { pt:'Claro', en:'Light', es:'Claro' },
+  lbl_push: { pt:'Notificações push', en:'Push notifications', es:'Notificaciones push' },
+  btn_logout: { pt:'Terminar sessão', en:'Log out', es:'Cerrar sesión' },
+  home_greeting: { pt:'Boa noite, Jean Paulo', en:'Good evening, Jean Paulo', es:'Buenas noches, Jean Paulo' },
+  home_subtitle: { pt:'Para onde vai hoje?', en:'Where are you headed today?', es:'¿A dónde vas hoy?' },
+  chip_airport_lisbon: { pt:'Aeroporto Lisboa', en:'Lisbon Airport', es:'Aeropuerto Lisboa' },
+  chip_airport_porto: { pt:'Aeroporto Porto', en:'Porto Airport', es:'Aeropuerto Oporto' },
+  btn_request_ride: { pt:'Pedir viagem', en:'Request ride', es:'Pedir viaje' },
+  sub_active: { pt:'✓ Subscrição ativa', en:'✓ Active subscription', es:'✓ Suscripción activa' },
+  status_online: { pt:'Online', en:'Online', es:'Online' },
+  status_offline: { pt:'Offline', en:'Offline', es:'Offline' },
+  online_hint: { pt:'Ativa para receber pedidos', en:'Turn on to receive ride requests', es:'Actívalo para recibir pedidos' },
+  lbl_commission_balance: { pt:'Saldo de comissão', en:'Commission balance', es:'Saldo de comisión' },
+  btn_recharge: { pt:'Recarregar', en:'Top up', es:'Recargar' },
+  balance_note: { pt:'A Lux Transfers retém 10% do valor de cada corrida, descontado automaticamente deste saldo. Sem saldo, deixa de receber novos pedidos.', en:'Lux Transfers withholds 10% of each ride, automatically deducted from this balance. Without balance, you stop receiving new requests.', es:'Lux Transfers retiene el 10% del valor de cada carrera, descontado automáticamente de este saldo. Sin saldo, dejas de recibir nuevos pedidos.' }
+};
+let currentLang = 'pt';
+function setLanguage(lang){
+  if(!LANG_DICT || (lang!=='pt' && lang!=='en' && lang!=='es')) lang = 'pt';
+  currentLang = lang;
+  try{ localStorage.setItem('lux-lang', lang); }catch(e){}
+  document.documentElement.setAttribute('lang', lang==='pt' ? 'pt-PT' : (lang==='en' ? 'en' : 'es'));
+  document.querySelectorAll('[data-i18n]').forEach(el=>{
+    const key = el.getAttribute('data-i18n');
+    const entry = LANG_DICT[key];
+    if(entry) el.innerHTML = entry[lang] || entry.pt;
+  });
+  document.querySelectorAll('#c-lang-switcher, #d-lang-switcher, #lang-switcher-welcome-c, #lang-switcher-welcome-d').forEach(sw=>{
+    sw.querySelectorAll('button').forEach(b=>b.classList.toggle('active', b.dataset.lang===lang));
+  });
+}
+function setOnlineStatusText(online){
+  const el = document.getElementById('online-status-text');
+  if(!el) return;
+  const key = online ? 'status_online' : 'status_offline';
+  el.setAttribute('data-i18n', key);
+  const entry = LANG_DICT[key];
+  el.textContent = entry ? (entry[currentLang] || entry.pt) : (online ? 'Online' : 'Offline');
+}
 function openNav(provider, which){
   const address = which==='pickup' ? 'Av. da Liberdade, Lisboa' : 'Aeroporto de Lisboa (LIS)';
   const q = encodeURIComponent(address);
@@ -1865,6 +2080,9 @@ function initDriverApp(){ goTo('d-auth-welcome'); }
   let saved = 'dark';
   try{ saved = localStorage.getItem('lux-theme') || 'dark'; }catch(e){}
   setTheme(saved);
+  let savedLang = 'pt';
+  try{ savedLang = localStorage.getItem('lux-lang') || 'pt'; }catch(e){}
+  setLanguage(savedLang);
   updateSettingsUI('c'); updateSettingsUI('d');
 })();
 
@@ -1873,6 +2091,8 @@ function initDriverApp(){ goTo('d-auth-welcome'); }
 const STRIPE_PUBLISHABLE_KEY = 'pk_test_51TuuIeGWsn8hhaSkrr62CNYXet0MELmV3hr9SYnoXkXUkyXpQgyqnsxdTjesZRE1svWxF7aiZXdtnX66peoPKqSy00b';
 // TODO: substitui pelo URL real da tua Cloud Function que cria o PaymentIntent no backend (ver ficheiro functions/index.js).
 const CREATE_PAYMENT_INTENT_URL = 'https://REGION-YOUR-PROJECT.cloudfunctions.net/createPaymentIntent';
+// TODO: substitui pelo URL real da tua Cloud Function que cria o SetupIntent (guardar cartão sem cobrar).
+const CREATE_SETUP_INTENT_URL = 'https://REGION-YOUR-PROJECT.cloudfunctions.net/createSetupIntent';
 
 let stripeInstance = null;
 let cardElements = { c:null, d:null };
@@ -1899,7 +2119,15 @@ function initStripe(){
   }catch(e){ console.warn('Stripe init falhou:', e); }
 }
 function openPayment(scope, amountEUR, onSuccess){
-  paymentContext = { scope, amount: amountEUR, onSuccess };
+  paymentContext = { scope, mode:'charge', amount: amountEUR, onSuccess };
+  const title = document.getElementById(scope+'-payment-title');
+  const summaryRow = document.getElementById(scope+'-payment-summary-row');
+  const summaryLabel = document.getElementById(scope+'-payment-summary-label');
+  if(title) title.textContent = 'Pagamento seguro';
+  if(summaryRow) summaryRow.style.display = '';
+  if(summaryLabel) summaryLabel.textContent = scope==='d' ? 'Recarga de saldo' : 'Total a pagar';
+  const btnLbl = document.getElementById(scope+'-pay-btn-label');
+  if(btnLbl) btnLbl.textContent = 'Pagar';
   const lbl = document.getElementById(scope+'-payment-amount-label');
   const btnAmt = document.getElementById(scope+'-pay-btn-amount');
   if(lbl) lbl.textContent = fmtEur(amountEUR);
@@ -1908,8 +2136,32 @@ function openPayment(scope, amountEUR, onSuccess){
   if(err) err.textContent = '';
   document.getElementById(scope+'-payment-overlay').classList.add('show');
 }
+/* Guarda um cartão real no registo (via Stripe SetupIntent), sem cobrar nada.
+   Reaproveita o mesmo ecrã/overlay de pagamento, apenas noutro "modo". */
+function openCardSetup(scope, onSuccess, userEmail, userName){
+  paymentContext = { scope, mode:'setup', onSuccess, userEmail, userName };
+  const title = document.getElementById(scope+'-payment-title');
+  const summaryRow = document.getElementById(scope+'-payment-summary-row');
+  const btnAmt = document.getElementById(scope+'-pay-btn-amount');
+  if(title) title.textContent = 'Guardar cartão';
+  if(summaryRow) summaryRow.style.display = 'none';
+  const btnLbl = document.getElementById(scope+'-pay-btn-label');
+  if(btnLbl) btnLbl.textContent = 'Guardar cartão';
+  if(btnAmt) btnAmt.textContent = '';
+  const err = document.getElementById(scope+'-card-errors');
+  if(err) err.textContent = '';
+  document.getElementById(scope+'-payment-overlay').classList.add('show');
+}
 function closePayment(scope){
   document.getElementById(scope+'-payment-overlay').classList.remove('show');
+}
+function cancelPayment(scope){
+  const isSetup = paymentContext && paymentContext.scope===scope && paymentContext.mode==='setup';
+  const cb = isSetup ? paymentContext.onSuccess : null;
+  closePayment(scope);
+  // Se o cliente/motorista cancelar a gravação do cartão no registo, não o
+  // bloqueamos — continua sem cartão guardado (pode adicionar mais tarde).
+  if(isSetup){ paymentContext = null; if(cb) cb(null); }
 }
 async function submitPayment(scope){
   const btn = document.getElementById(scope+'-pay-btn');
@@ -1917,10 +2169,28 @@ async function submitPayment(scope){
   if(btn) btn.disabled = true;
   try{
     if(!stripeInstance || !cardElements[scope]){
-      // Modo demonstração: sem chave Stripe/backend configurados ainda — simula um pagamento aprovado.
+      // Modo demonstração: sem chave Stripe/backend configurados ainda — simula um pagamento/cartão aprovado.
       await new Promise(r=>setTimeout(r, 900));
       closePayment(scope);
       if(paymentContext && paymentContext.onSuccess) paymentContext.onSuccess({ demo:true });
+      return;
+    }
+    if(paymentContext && paymentContext.mode==='setup'){
+      const resp = await fetch(CREATE_SETUP_INTENT_URL, {
+        method:'POST',
+        headers:{ 'Content-Type':'application/json' },
+        body: JSON.stringify({ email: paymentContext.userEmail, name: paymentContext.userName })
+      });
+      const data = await resp.json();
+      const result = await stripeInstance.confirmCardSetup(data.clientSecret, {
+        payment_method:{ card: cardElements[scope] }
+      });
+      if(result.error){
+        if(errEl) errEl.textContent = result.error.message;
+        return;
+      }
+      closePayment(scope);
+      if(paymentContext && paymentContext.onSuccess) paymentContext.onSuccess(Object.assign({ customerId: data.customerId }, result.setupIntent));
       return;
     }
     const resp = await fetch(CREATE_PAYMENT_INTENT_URL, {
@@ -1948,11 +2218,15 @@ async function submitPayment(scope){
   }
 }
 function payAndFinishTrip(){
+  // A tarifa base já foi cobrada no pedido (ver payThenRequestRide). Aqui só se
+  // cobra o que ainda não foi pago: tempo de espera extra (definido pelo
+  // motorista) + gorjeta escolhida agora. Se não houver nada em falta, conclui
+  // a viagem sem abrir o ecrã de pagamento outra vez.
   const hasRealFare = clientRide && clientRide.status==='completed' && clientRide.totalFare!=null;
-  const base = hasRealFare ? (clientRide.totalFare - (clientRide.waitFee||0)) : (selectedVehicle ? selectedVehicle.price : 0);
   const wait = hasRealFare ? (clientRide.waitFee||0) : ((typeof waitOverageFee !== 'undefined') ? waitOverageFee : 0);
-  const total = base + wait + selectedTip;
-  openPayment('c', total, function(){ finishClientTrip(); });
+  const extra = wait + selectedTip;
+  if(extra <= 0){ finishClientTrip(); return; }
+  openPayment('c', extra, function(){ finishClientTrip(); });
 }
 window.addEventListener('load', initStripe);
 
@@ -2007,6 +2281,18 @@ function initFirestore(){
     firestoreDb = firebase.firestore();
   }catch(e){ console.warn('Firestore init falhou:', e); return null; }
   return firestoreDb;
+}
+
+let luxAuth = null;
+function initAuth(){
+  if(typeof firebase === 'undefined' || !firebase.auth) return null;
+  if(!FIREBASE_CONFIG.apiKey || FIREBASE_CONFIG.apiKey.indexOf('TODO')>=0) return null;
+  if(luxAuth) return luxAuth;
+  try{
+    if(!firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG);
+    luxAuth = firebase.auth();
+  }catch(e){ console.warn('Firebase Auth init falhou:', e); return null; }
+  return luxAuth;
 }
 function driverLocationId(){
   let id = null;
@@ -2466,6 +2752,7 @@ function handleClientRideUpdate(ride){
   clientRide = ride;
   if(ride.status === clientLastHandledRideStatus) return;
   clientLastHandledRideStatus = ride.status;
+  playStatusBeep();
   if(ride.status === 'accepted'){
     document.getElementById('found-car-name').textContent = ride.driverName || (selectedVehicle && (selectedVehicle.model||selectedVehicle.name)) || 'Motorista';
     document.getElementById('found-plate').textContent = '00-XX-00';
@@ -2492,6 +2779,14 @@ function handleClientRideUpdate(ride){
     clientRideId = null; clientRide = null; clientLastHandledRideStatus = null;
     goTo('c-home');
   }
+}
+function payThenRequestRide(){
+  // Só se chama (pede) um motorista real depois de o pagamento da tarifa
+  // estimada ser aprovado — nunca antes. Se o pagamento falhar ou for
+  // cancelado, o cliente fica no ecrã de escolha de veículo e nenhum
+  // motorista é notificado.
+  if(!selectedVehicle) return;
+  openPayment('c', selectedVehicle.price, function(){ startMatching(); });
 }
 function startMatching(){
   goTo('c-vehicles'); // ensure state
@@ -2680,6 +2975,9 @@ function updateTotals(){
   if(waitEl) waitEl.textContent = fmtEur(wait);
   document.getElementById('sum-tip').textContent = fmtEur(selectedTip);
   document.getElementById('sum-total').textContent = fmtEur(base + wait + selectedTip);
+  const extra = wait + selectedTip;
+  const finishBtn = document.getElementById('c-finish-btn');
+  if(finishBtn) finishBtn.textContent = extra > 0 ? ('Pagar ' + fmtEur(extra) + ' e concluir') : 'Concluir viagem';
 }
 document.getElementById('stars-row').addEventListener('click', (e)=>{
   if(!e.target.dataset.v) return;
@@ -2874,6 +3172,7 @@ function showRealIncomingRequest(rideId, data){
   const fareEl = document.querySelector('#req-overlay .req-fare .amount');
   if(fareEl) fareEl.textContent = fmtEur(data.price || 0);
   document.getElementById('req-overlay').classList.add('show');
+  playRequestSound();
   let s = 15;
   const ring = document.getElementById('req-ring');
   ring.setAttribute('data-s', s);
@@ -2894,7 +3193,7 @@ function toggleOnline(){
   }
   isOnline = !isOnline;
   document.getElementById('online-switch').classList.toggle('on', isOnline);
-  document.getElementById('online-status-text').textContent = isOnline ? 'Online' : 'Offline';
+  setOnlineStatusText(isOnline);
   updateDriverFrames();
   if(isOnline){
     startSharingLocation();
@@ -2927,7 +3226,7 @@ function confirmRecharge(){
     if(!isOnline){
       isOnline = true;
       document.getElementById('online-switch').classList.add('on');
-      document.getElementById('online-status-text').textContent = 'Online';
+      setOnlineStatusText(true);
       updateDriverFrames();
       startSharingLocation();
       if(!startListeningForRides()){
@@ -2945,7 +3244,7 @@ function triggerIncomingRequest(){
   if(driverBalance < MIN_BALANCE_TO_RECEIVE){
     isOnline = false;
     document.getElementById('online-switch').classList.remove('on');
-    document.getElementById('online-status-text').textContent = 'Offline';
+    setOnlineStatusText(false);
     updateDriverFrames();
     openRecharge();
     return;
@@ -3143,7 +3442,7 @@ function backToDriverHome(){
   if(isOnline && driverBalance < MIN_BALANCE_TO_RECEIVE){
     isOnline = false;
     document.getElementById('online-switch').classList.remove('on');
-    document.getElementById('online-status-text').textContent = 'Offline';
+    setOnlineStatusText(false);
     updateDriverFrames();
     const t = setTimeout(()=>openRecharge(), 700);
     activeTimers.push(t);
