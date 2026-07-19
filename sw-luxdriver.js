@@ -6,12 +6,12 @@ importScripts('https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging-com
 
 // Configuração real do projeto Firebase "Lux Transfers" (igual à do luxdriver-motorista.html).
 firebase.initializeApp({
-  apiKey: 'AIzaSyC-AgjcPJvgktgK_6ctSF7DyBD6u-EQzMs',
-  authDomain: 'lux-transfers-3327d.firebaseapp.com',
-  projectId: 'lux-transfers-3327d',
-  storageBucket: 'lux-transfers-3327d.firebasestorage.app',
-  messagingSenderId: '612200636206',
-  appId: '1:612200636206:web:946c4450636412c44c64bf'
+  apiKey: 'AIzaSyCZdkmtYcjzGu93l0miV1iKfIcc55IC7Tc',
+  authDomain: 'lux-transfers-47cb2.firebaseapp.com',
+  projectId: 'lux-transfers-47cb2',
+  storageBucket: 'lux-transfers-47cb2.firebasestorage.app',
+  messagingSenderId: '11041025655',
+  appId: '1:11041025655:web:702b7e016352ae33d16072'
 });
 
 try{

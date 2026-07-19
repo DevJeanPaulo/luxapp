@@ -1,8 +1,5 @@
 {
   "projects": {
-    "default": "lux-transfers-3327d",
-    "firebase logout": "gen-lang-client-0149799653"
-  },
-  "targets": {},
-  "etags": {}
+    "default": "lux-transfers-47cb2"
+  }
 }
