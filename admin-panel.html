@@ -137,6 +137,50 @@
     .col-list{ width:100%; border-right:none; border-bottom:1px solid var(--line); min-height:auto; }
     .col-detail{ min-height:auto; }
   }
+
+  /* ---------- Login ---------- */
+  .admin-login-wrap{
+    min-height:100vh; display:flex; align-items:center; justify-content:center; padding:24px;
+  }
+  .admin-login-card{
+    width:100%; max-width:360px; background:var(--panel2); border:1px solid var(--line);
+    border-radius:var(--radius-lg); padding:28px;
+  }
+  .field-label{ font-size:11.5px; color:var(--muted); text-transform:uppercase; letter-spacing:.05em; margin:14px 0 6px; }
+  .field-label:first-of-type{ margin-top:0; }
+  .admin-login-field{
+    background:var(--panel3); border:1px solid var(--line); border-radius:var(--radius-md);
+    padding:12px 14px;
+  }
+  .admin-login-field input{
+    background:transparent; border:none; outline:none; color:var(--text); font-size:14.5px; width:100%;
+  }
+  .admin-login-error{
+    display:none; color:var(--danger); font-size:12px; margin-top:10px;
+  }
+  .admin-login-error.show{ display:block; }
+
+  /* ---------- Tarifário ---------- */
+  .pricing-table{ width:100%; border-collapse:collapse; }
+  .pricing-table th{
+    text-align:left; font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em;
+    padding:10px 12px; border-bottom:1px solid var(--line);
+  }
+  .pricing-table td{ padding:10px 12px; border-bottom:1px solid var(--line); }
+  .pricing-table input{
+    background:var(--panel3); border:1px solid var(--line); border-radius:var(--radius-sm);
+    color:var(--text); font-size:13.5px; padding:8px 10px; width:100px;
+  }
+  .pricing-table .cls-name{ font-weight:700; font-size:13.5px; }
+
+  /* ---------- Pedidos de nome ---------- */
+  .name-req-card{
+    background:var(--panel2); border:1px solid var(--line); border-radius:var(--radius-md);
+    padding:14px 16px; margin-bottom:10px; display:flex; align-items:center; justify-content:space-between; gap:14px; flex-wrap:wrap;
+  }
+  .name-req-card .info .old{ font-size:12px; color:var(--muted); text-decoration:line-through; }
+  .name-req-card .info .new{ font-size:15px; font-weight:700; margin-top:2px; }
+  .name-req-card .actions{ display:flex; gap:8px; flex-shrink:0; }
   @media (max-width: 560px){
     header.topbar{ flex-direction:column; align-items:flex-start; gap:10px; padding:16px 18px; }
     header.topbar .actions{ width:100%; justify-content:space-between; }
@@ -155,6 +199,21 @@
 </head>
 <body>
 
+<!-- LOGIN -->
+<div id="admin-login-screen" class="admin-login-wrap">
+  <div class="admin-login-card">
+    <div class="brand" style="margin-bottom:4px;"><span>Lux</span> Transfers · Admin</div>
+    <p class="sub" style="margin:0 0 20px;">Inicia sessão para aceder ao painel.</p>
+    <div class="field-label">Email</div>
+    <div class="admin-login-field"><input id="admin-login-email" type="email" placeholder="admin@luxtransfers.pt" /></div>
+    <div class="field-label">Palavra-passe</div>
+    <div class="admin-login-field"><input id="admin-login-pass" type="password" placeholder="••••••••" onkeydown="if(event.key==='Enter') doAdminLogin()" /></div>
+    <div class="admin-login-error" id="admin-login-error">Credenciais inválidas.</div>
+    <button class="btn btn-gold" id="admin-login-btn" style="width:100%; margin-top:10px;" onclick="doAdminLogin()">Entrar</button>
+  </div>
+</div>
+
+<div id="admin-dashboard" style="display:none;">
 <header class="topbar">
   <div>
     <div class="brand"><span>Lux</span> Transfers · Admin</div>
@@ -164,8 +223,11 @@
     <div class="view-switch" id="view-switch">
       <button data-v="apps" class="active" onclick="switchView('apps')">📋 Candidaturas</button>
       <button data-v="live" onclick="switchView('live')">🔴 Ao vivo</button>
+      <button data-v="pricing" onclick="switchView('pricing')">💶 Tarifário</button>
+      <button data-v="names" onclick="switchView('names')">✎ Pedidos de nome</button>
     </div>
     <button class="btn btn-outline" onclick="renderAll()">↻ Atualizar</button>
+    <button class="btn btn-danger" onclick="doAdminLogout()">Sair</button>
   </div>
 </header>
 
@@ -195,6 +257,30 @@
   <div class="col-detail" id="live-map-col" style="padding:0;">
     <div id="live-map"></div>
   </div>
+</div>
+
+<div class="layout" id="view-pricing" style="display:none;">
+  <div class="col-detail" style="flex:1;">
+    <h2 style="margin:0 0 6px;">Tarifário das classes de veículos</h2>
+    <p class="sub" style="margin:0 0 20px;">Altera os valores e clica em Guardar — os preços atualizam-se em tempo real no app do cliente.</p>
+    <div id="pricing-status" class="live-status" style="margin-bottom:16px;"></div>
+    <table class="pricing-table" id="pricing-table">
+      <thead>
+        <tr><th>Classe</th><th>Tarifa base (€)</th><th>Preço/km (€)</th><th>Preço/min (€)</th><th></th></tr>
+      </thead>
+      <tbody id="pricing-table-body"></tbody>
+    </table>
+  </div>
+</div>
+
+<div class="layout" id="view-names" style="display:none;">
+  <div class="col-detail" style="flex:1;">
+    <h2 style="margin:0 0 6px;">Pedidos de alteração de nome (motoristas)</h2>
+    <p class="sub" style="margin:0 0 20px;">Aprova ou rejeita pedidos de mudança de nome enviados pelos motoristas.</p>
+    <div id="name-requests-list"></div>
+  </div>
+</div>
+
 </div>
 
 <script>
@@ -234,6 +320,78 @@ function initFirestore(){
   return firestoreDb;
 }
 
+/* ===================== LOGIN ADMIN ===================== */
+// A verificação da password é feita sempre no backend (Cloud Function
+// checkAdminLogin, ver functions/index.js) — o frontend nunca guarda nem
+// compara a password real.
+// TODO: substitui pelo URL real da tua Cloud Function checkAdminLogin (ver functions/index.js).
+const CHECK_ADMIN_LOGIN_URL = 'https://us-central1-lux-transfers-47cb2.cloudfunctions.net/checkAdminLogin';
+const ADMIN_SESSION_KEY = 'lux_admin_session';
+
+function saveAdminSession(email){
+  try{ localStorage.setItem(ADMIN_SESSION_KEY, JSON.stringify({ email, at: Date.now() })); }catch(e){}
+}
+function clearAdminSession(){
+  try{ localStorage.removeItem(ADMIN_SESSION_KEY); }catch(e){}
+}
+function getAdminSession(){
+  try{
+    const raw = localStorage.getItem(ADMIN_SESSION_KEY);
+    if(!raw) return null;
+    return JSON.parse(raw);
+  }catch(e){ return null; }
+}
+function checkAdminAuth(){
+  const session = getAdminSession();
+  const loginScreen = document.getElementById('admin-login-screen');
+  const dashboard = document.getElementById('admin-dashboard');
+  if(session && session.email){
+    loginScreen.style.display = 'none';
+    dashboard.style.display = 'block';
+    renderAll();
+  } else {
+    loginScreen.style.display = 'flex';
+    dashboard.style.display = 'none';
+  }
+}
+async function doAdminLogin(){
+  const email = (document.getElementById('admin-login-email').value||'').trim();
+  const pass = document.getElementById('admin-login-pass').value||'';
+  const errEl = document.getElementById('admin-login-error');
+  errEl.classList.remove('show');
+  if(!email || !pass){
+    errEl.textContent = 'Preenche o email e a password.';
+    errEl.classList.add('show');
+    return;
+  }
+  const btn = document.getElementById('admin-login-btn');
+  if(btn){ btn.disabled = true; btn.textContent = 'A verificar…'; }
+  try{
+    const resp = await fetch(CHECK_ADMIN_LOGIN_URL, {
+      method:'POST',
+      headers:{ 'Content-Type':'application/json' },
+      body: JSON.stringify({ email, password: pass })
+    });
+    const data = await resp.json();
+    if(data && data.valid){
+      saveAdminSession(email);
+      checkAdminAuth();
+    } else {
+      errEl.textContent = 'Email ou password incorretos.';
+      errEl.classList.add('show');
+    }
+  }catch(e){
+    errEl.textContent = 'Não foi possível verificar as credenciais. Tenta novamente.';
+    errEl.classList.add('show');
+  }finally{
+    if(btn){ btn.disabled = false; btn.textContent = 'Entrar'; }
+  }
+}
+function doAdminLogout(){
+  clearAdminSession();
+  checkAdminAuth();
+}
+
 /* ===================== GOOGLE MAPS (ao vivo) ===================== */
 const LUX_MAP_STYLE = [
   { elementType:'geometry', stylers:[{ color:'#0e1116' }] },
@@ -267,7 +425,11 @@ function switchView(view){
   document.querySelectorAll('#view-switch button').forEach(b=>b.classList.toggle('active', b.dataset.v===view));
   document.getElementById('view-apps').style.display = view==='apps' ? 'flex' : 'none';
   document.getElementById('view-live').style.display = view==='live' ? 'flex' : 'none';
+  document.getElementById('view-pricing').style.display = view==='pricing' ? 'flex' : 'none';
+  document.getElementById('view-names').style.display = view==='names' ? 'flex' : 'none';
   if(view==='live') initLiveTracking();
+  if(view==='pricing') initPricingView();
+  if(view==='names') initNameRequestsView();
 }
 function initLiveTracking(){
   const statusEl = document.getElementById('live-status');
@@ -334,6 +496,138 @@ function renderLiveDriverList(){
       '<div class="meta">Atualizado ' + fmtRelativeTime(d.updatedAt) + '</div>' +
     '</div>';
   }).join('');
+}
+
+/* ===================== TARIFÁRIO (sync em tempo real) ===================== */
+// Mesmas 5 classes usadas em lux-cliente.html/luxdriver-motorista.html —
+// estes valores servem apenas de referência inicial caso ainda não exista
+// nenhum documento em Firestore para essa classe.
+const PRICING_DEFAULTS = [
+  { id:'eco',      name:'Económico', base:1.00, perKm:0.80, perMinute:0.12 },
+  { id:'exec',     name:'Executivo', base:1.50, perKm:0.96, perMinute:0.14 },
+  { id:'business', name:'Negócios',  base:2.00, perKm:1.04, perMinute:0.16 },
+  { id:'premium',  name:'Premium',   base:2.50, perKm:1.12, perMinute:0.18 },
+  { id:'vip',      name:'VIP',       base:3.00, perKm:1.28, perMinute:0.22 }
+];
+let pricingUnsubscribe = null;
+function initPricingView(){
+  const statusEl = document.getElementById('pricing-status');
+  const db = initFirestore();
+  if(!db){
+    if(statusEl) statusEl.textContent = 'Firestore indisponível (configuração por preencher ou offline).';
+    renderPricingTable({});
+    return;
+  }
+  if(pricingUnsubscribe) return; // já a ouvir
+  if(statusEl) statusEl.textContent = 'A carregar tarifário…';
+  pricingUnsubscribe = db.collection('pricing').onSnapshot(function(snapshot){
+    const live = {};
+    snapshot.forEach(function(doc){ live[doc.id] = doc.data(); });
+    renderPricingTable(live);
+    if(statusEl) statusEl.textContent = 'Tarifário atualizado. As alterações aplicam-se em tempo real no app do cliente.';
+  }, function(err){
+    console.warn('Falha ao ouvir pricing:', err);
+    if(statusEl) statusEl.textContent = 'Erro ao ligar ao Firestore — verifica as regras de segurança.';
+    renderPricingTable({});
+  });
+}
+function renderPricingTable(live){
+  const body = document.getElementById('pricing-table-body');
+  if(!body) return;
+  body.innerHTML = PRICING_DEFAULTS.map(function(def){
+    const cur = live[def.id] || {};
+    const base = (cur.base!==undefined ? cur.base : def.base);
+    const perKm = (cur.perKm!==undefined ? cur.perKm : def.perKm);
+    const perMinute = (cur.perMinute!==undefined ? cur.perMinute : def.perMinute);
+    return '<tr>' +
+      '<td class="cls-name">' + def.name + '</td>' +
+      '<td><input type="number" step="0.01" min="0" id="price-base-' + def.id + '" value="' + base + '" /></td>' +
+      '<td><input type="number" step="0.01" min="0" id="price-perkm-' + def.id + '" value="' + perKm + '" /></td>' +
+      '<td><input type="number" step="0.01" min="0" id="price-permin-' + def.id + '" value="' + perMinute + '" /></td>' +
+      '<td><button class="btn btn-gold" style="padding:8px 14px; font-size:12.5px;" onclick="savePricingRow(\'' + def.id + '\',\'' + def.name.replace(/'/g,"\\'") + '\')">Guardar</button></td>' +
+    '</tr>';
+  }).join('');
+}
+async function savePricingRow(classId, className){
+  const statusEl = document.getElementById('pricing-status');
+  const db = initFirestore();
+  if(!db){
+    if(statusEl) statusEl.textContent = 'Firestore indisponível — não foi possível guardar.';
+    return;
+  }
+  const base = parseFloat(document.getElementById('price-base-' + classId).value);
+  const perKm = parseFloat(document.getElementById('price-perkm-' + classId).value);
+  const perMinute = parseFloat(document.getElementById('price-permin-' + classId).value);
+  if(isNaN(base) || isNaN(perKm) || isNaN(perMinute) || base<0 || perKm<0 || perMinute<0){
+    if(statusEl) statusEl.textContent = 'Valores inválidos para ' + className + '.';
+    return;
+  }
+  try{
+    await db.collection('pricing').doc(classId).set({
+      name: className, base, perKm, perMinute,
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    }, { merge:true });
+    if(statusEl) statusEl.textContent = 'Tarifa de "' + className + '" guardada — já está a aplicar-se no app do cliente.';
+  }catch(e){
+    console.warn('Falha ao guardar tarifa:', e);
+    if(statusEl) statusEl.textContent = 'Erro ao guardar a tarifa de ' + className + '.';
+  }
+}
+
+/* ===================== PEDIDOS DE NOME (aprovação admin) ===================== */
+let nameRequestsUnsubscribe = null;
+function initNameRequestsView(){
+  const el = document.getElementById('name-requests-list');
+  const db = initFirestore();
+  if(!db){
+    if(el) el.innerHTML = '<div class="empty-state"><div class="emoji">✎</div><p>Firestore indisponível (configuração por preencher ou offline).</p></div>';
+    return;
+  }
+  if(nameRequestsUnsubscribe) return; // já a ouvir
+  if(el) el.innerHTML = '<div class="empty-state"><div class="emoji">✎</div><p>A carregar pedidos…</p></div>';
+  nameRequestsUnsubscribe = db.collection('driver_name_requests')
+    .where('status', '==', 'pending')
+    .orderBy('createdAt', 'desc')
+    .onSnapshot(function(snapshot){
+      const list = [];
+      snapshot.forEach(function(doc){ list.push(Object.assign({ id: doc.id }, doc.data())); });
+      renderNameRequestsList(list);
+    }, function(err){
+      console.warn('Falha ao ouvir driver_name_requests:', err);
+      if(el) el.innerHTML = '<div class="empty-state"><div class="emoji">✎</div><p>Erro ao ligar ao Firestore — verifica as regras de segurança.</p></div>';
+    });
+}
+function renderNameRequestsList(list){
+  const el = document.getElementById('name-requests-list');
+  if(!el) return;
+  if(list.length===0){
+    el.innerHTML = '<div class="empty-state"><div class="emoji">✎</div><p>Não há pedidos de alteração de nome pendentes.</p></div>';
+    return;
+  }
+  el.innerHTML = list.map(function(r){
+    return '<div class="name-req-card">' +
+      '<div class="info">' +
+        '<div style="font-size:13px; color:var(--muted); margin-bottom:4px;">' + (r.driverEmail || '') + '</div>' +
+        '<div class="old">Nome atual: ' + (r.oldName || '—') + '</div>' +
+        '<div class="new">Novo nome: ' + (r.newName || '—') + '</div>' +
+      '</div>' +
+      '<div class="actions">' +
+        '<button class="btn btn-gold" style="padding:8px 14px; font-size:12.5px;" onclick="resolveNameRequest(\'' + r.id + '\',\'approved\')">✓ Aprovar</button>' +
+        '<button class="btn btn-danger" style="padding:8px 14px; font-size:12.5px;" onclick="resolveNameRequest(\'' + r.id + '\',\'rejected\')">✕ Rejeitar</button>' +
+      '</div>' +
+    '</div>';
+  }).join('');
+}
+async function resolveNameRequest(reqId, status){
+  const db = initFirestore();
+  if(!db) return;
+  try{
+    await db.collection('driver_name_requests').doc(reqId).set({
+      status, resolvedAt: firebase.firestore.FieldValue.serverTimestamp()
+    }, { merge:true });
+  }catch(e){
+    console.warn('Falha ao resolver pedido de nome:', e);
+  }
 }
 
 function loadApplications(){
@@ -553,7 +847,7 @@ function renderDetail(){
 window.addEventListener('storage', function(e){
   if(e.key === DRIVER_APPS_KEY) renderAll();
 });
-renderAll();
+checkAdminAuth();
 </script>
 </body>
 </html>

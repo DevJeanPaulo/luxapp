@@ -22,6 +22,7 @@ admin.initializeApp();
 
 const stripeSecretKey = defineSecret('STRIPE_SECRET_KEY');
 const specialAccountsJson = defineSecret('SPECIAL_ACCOUNTS_JSON');
+const adminCredentialsJson = defineSecret('ADMIN_CREDENTIALS_JSON');
 
 /**
  * Cria um PaymentIntent Stripe e devolve o client_secret ao frontend.
@@ -130,6 +131,44 @@ exports.checkSpecialAccount = onRequest({ secrets: [specialAccountsJson] }, (req
     } catch (err) {
       console.error('checkSpecialAccount falhou:', err);
       res.status(500).json({ unlimited: false, error: err.message });
+    }
+  });
+});
+
+/**
+ * Verifica as credenciais de login do painel admin sem NUNCA expor a
+ * password real no código do frontend. A password real só existe no secret
+ * ADMIN_CREDENTIALS_JSON (Secret Manager), nunca no repositório.
+ *
+ * Antes do deploy:
+ *   firebase functions:secrets:set ADMIN_CREDENTIALS_JSON
+ *   (cola um JSON como:
+ *    {"email":"adm@luxtransfers.pt","pass":"a-tua-password-aqui"})
+ *
+ * Espera um POST JSON: { email: "...", password: "..." }
+ * Devolve: { valid: true } ou { valid: false }
+ */
+exports.checkAdminLogin = onRequest({ secrets: [adminCredentialsJson] }, (req, res) => {
+  cors(req, res, async () => {
+    if (req.method !== 'POST') {
+      res.status(405).send('Method Not Allowed');
+      return;
+    }
+    try {
+      const { email, password } = req.body || {};
+      if (!email || !password) {
+        res.status(200).json({ valid: false });
+        return;
+      }
+      let admins = {};
+      try { admins = JSON.parse(adminCredentialsJson.value() || '{}'); } catch (e) { admins = {}; }
+      const match = admins.email && admins.pass
+        && String(admins.email).toLowerCase() === String(email).toLowerCase()
+        && admins.pass === password;
+      res.status(200).json({ valid: !!match });
+    } catch (err) {
+      console.error('checkAdminLogin falhou:', err);
+      res.status(500).json({ valid: false, error: err.message });
     }
   });
 });

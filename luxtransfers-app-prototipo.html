@@ -200,6 +200,31 @@
     width:16px; height:16px; border-radius:50%; background:var(--gold);
     box-shadow:0 0 16px rgba(255,201,77,.6);
   }
+  .ride-float-widget{
+    position:absolute; right:16px; bottom:calc(16px + var(--safe-bottom));
+    display:flex; align-items:center; gap:10px;
+    background:var(--panel2); border:1px solid var(--gold); border-radius:999px;
+    padding:9px 16px 9px 9px; box-shadow:0 8px 24px rgba(0,0,0,.45);
+    cursor:pointer; z-index:40;
+    opacity:0; transform:translateY(12px) scale(.95); pointer-events:none;
+    transition:opacity .25s ease, transform .25s ease;
+  }
+  .ride-float-widget.show{ opacity:1; transform:translateY(0) scale(1); pointer-events:auto; }
+  .ride-float-widget .rfw-dot{
+    position:absolute; top:6px; right:6px; width:8px; height:8px; border-radius:50%;
+    background:var(--gold); animation:rfw-pulse 1.8s ease-out infinite;
+  }
+  @keyframes rfw-pulse{
+    0%{ box-shadow:0 0 0 0 rgba(255,201,77,.55); }
+    70%{ box-shadow:0 0 0 8px rgba(255,201,77,0); }
+    100%{ box-shadow:0 0 0 0 rgba(255,201,77,0); }
+  }
+  .ride-float-widget .rfw-icon{
+    width:36px; height:36px; border-radius:50%; background:var(--gold);
+    display:flex; align-items:center; justify-content:center; font-size:18px; flex-shrink:0;
+  }
+  .ride-float-widget .rfw-label{ font-size:12.5px; font-weight:700; }
+  .ride-float-widget .rfw-sub{ font-size:10.5px; color:var(--muted); }
   .pin{
     position:absolute; width:14px; height:14px; border-radius:50% 50% 50% 0;
     transform:translate(-50%,-100%) rotate(-45deg);
@@ -254,6 +279,12 @@
     border-radius:var(--radius-md);
     padding:13px 14px; margin-bottom:9px;
   }
+  .address-bar-top{
+    flex-shrink:0; margin:0 16px 10px; background:var(--panel2); border:1px solid var(--line);
+    border-radius:var(--radius-md); overflow:hidden;
+  }
+  .address-bar-top .field{ margin-bottom:0; border:none; border-radius:0; background:transparent; }
+  .address-bar-top .field-divider{ height:1px; background:var(--line); margin:0 14px; }
   .field .dot-marker{ width:9px; height:9px; border-radius:50%; flex-shrink:0; }
   .field .dot-marker.o{ background:#5b6473; }
   .field .dot-marker.d{ background:var(--gold); }
@@ -575,6 +606,13 @@
     .chat-bubble{ max-width:85%; font-size:13.5px; }
     .chat-header .info .name{ font-size:13.5px; }
   }
+  .req-countdown-bar{
+    width:100%; height:5px; border-radius:99px; background:var(--panel3);
+    overflow:hidden; margin-bottom:14px;
+  }
+  .req-countdown-bar .fill{
+    height:100%; background:var(--gold); width:100%; transition:width 1s linear;
+  }
   .req-timer{
     display:flex; align-items:center; justify-content:center; gap:10px; margin-bottom:14px;
   }
@@ -744,6 +782,11 @@
     align-items:center; justify-content:center; font-size:13px; cursor:pointer; padding:0;
   }
   .settings-profile .s-name{ font-size:16.5px; font-weight:700; }
+  .s-name-row{ display:flex; align-items:center; gap:8px; }
+  .name-pending-badge{
+    margin-top:6px; font-size:10.5px; color:var(--gold); background:rgba(255,201,77,.1);
+    border:1px solid rgba(255,201,77,.4); padding:3px 10px; border-radius:999px;
+  }
   .section-label{
     font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.08em;
     margin:20px 2px 10px;
@@ -1007,6 +1050,17 @@
           <div class="brand" style="color:var(--gold);">Lux</div>
           <div class="icon-btn" id="c-header-avatar" onclick="goTo('c-settings')">👤</div>
         </div>
+        <div class="address-bar-top glow-frame">
+          <div class="field">
+            <span class="dot-marker o"></span>
+            <input id="c-origin" value="A minha localização atual" />
+          </div>
+          <div class="field-divider"></div>
+          <div class="field">
+            <span class="dot-marker d"></span>
+            <input id="c-dest" placeholder="Introduza o destino" oninput="onDestInput()" />
+          </div>
+        </div>
         <div class="map" id="map-home">
           <svg><line x1="0" y1="0" x2="0" y2="0"/></svg>
           <div class="me-dot" style="left:50%; top:46%;"></div>
@@ -1015,14 +1069,6 @@
           <div class="sheet-handle"></div>
           <h1 class="title" data-i18n="home_greeting">Boa noite, Jean Paulo</h1>
           <p class="subtitle" data-i18n="home_subtitle">Para onde vai hoje?</p>
-          <div class="field glow-frame">
-            <span class="dot-marker o"></span>
-            <input id="c-origin" value="A minha localização atual" />
-          </div>
-          <div class="field glow-frame">
-            <span class="dot-marker d"></span>
-            <input id="c-dest" placeholder="Introduza o destino" oninput="onDestInput()" />
-          </div>
           <div class="chips-wrap">
             <div class="chips">
               <div class="chip" onclick="quickDest('Aeroporto de Lisboa (LIS)')">✈️ <span data-i18n="chip_airport_lisbon">Aeroporto Lisboa</span></div>
@@ -1350,7 +1396,11 @@
               <button class="avatar-edit-btn" onclick="document.getElementById('d-avatar-input').click()">✎</button>
               <input type="file" id="d-avatar-input" accept="image/*" style="display:none;" onchange="handleAvatarUpload(event,'d')" />
             </div>
-            <div class="s-name" id="d-settings-name">Ricardo Almeida</div>
+            <div class="s-name-row">
+              <div class="s-name" id="d-settings-name">Ricardo Almeida</div>
+              <button class="edit-field-btn" onclick="openEditField('d','name')">✎</button>
+            </div>
+            <div class="name-pending-badge" id="d-name-pending" style="display:none;"></div>
           </div>
           <div class="section-label" data-i18n="section_profile">Perfil</div>
           <div class="settings-row">
@@ -1473,6 +1523,7 @@
         <!-- Incoming request overlay -->
         <div class="req-overlay" id="req-overlay">
           <div class="req-sheet">
+            <div class="req-countdown-bar"><div class="fill" id="req-countdown-fill"></div></div>
             <div class="req-timer">
               <div class="ring" id="req-ring" data-s="10" style="--pct:100"></div>
               <span style="font-size:12.5px; color:var(--muted); text-transform:uppercase; letter-spacing:.06em;">Novo pedido</span>
@@ -1636,6 +1687,16 @@
         </div>
       </div>
 
+      <!-- Widget flutuante: viagem ativa -->
+      <div class="ride-float-widget" id="ride-float-widget" onclick="goToActiveRideScreen()">
+        <div class="rfw-dot"></div>
+        <div class="rfw-icon">🚙</div>
+        <div class="rfw-text">
+          <div class="rfw-label" id="rfw-label">Em viagem</div>
+          <div class="rfw-sub">Toca para voltar</div>
+        </div>
+      </div>
+
     </div>
 
   </div>
@@ -1648,6 +1709,7 @@ function goTo(screenId){
     if(s.closest('.app').contains(document.getElementById(screenId))) s.classList.remove('active');
   });
   document.getElementById(screenId).classList.add('active');
+  if(typeof updateFloatingWidget==='function') updateFloatingWidget();
 }
 function toast(scopeId, msg){
   const scope = document.getElementById(scopeId);
@@ -1914,11 +1976,12 @@ let editFieldCtx = { p:null, field:null };
 function openEditField(p, field){
   editFieldCtx = { p:p, field:field };
   const isEmail = field==='email';
+  const isName = field==='name';
   const titleEl = document.getElementById('edit-field-title');
-  if(titleEl) titleEl.textContent = isEmail ? 'Editar email' : 'Editar telemóvel';
+  if(titleEl) titleEl.textContent = isName ? 'Editar nome' : (isEmail ? 'Editar email' : 'Editar telemóvel');
   const inputEl = document.getElementById('edit-field-input');
   if(inputEl){
-    inputEl.type = isEmail ? 'email' : 'tel';
+    inputEl.type = isName ? 'text' : (isEmail ? 'email' : 'tel');
     inputEl.value = currentUser[p][field] || '';
   }
   showErr('edit-field-error', false);
@@ -1927,9 +1990,40 @@ function openEditField(p, field){
 function closeEditField(){
   document.getElementById('edit-field-overlay').classList.remove('show');
 }
+/* Alteração de nome do motorista: pedido fica pendente até ser aprovado no
+   painel admin — nunca é aplicado de imediato, ao contrário do email/telemóvel. */
+function requestDriverNameChange(newName){
+  const db = initFirestore();
+  if(!db) return;
+  db.collection('driver_name_requests').add({
+    driverEmail: currentUser.d.email,
+    oldName: currentUser.d.name,
+    newName: newName,
+    status: 'pending',
+    createdAt: firebase.firestore.FieldValue.serverTimestamp()
+  }).catch(function(e){ console.warn('Falha ao pedir alteração de nome:', e); });
+}
 function saveEditField(){
   const v = (document.getElementById('edit-field-input').value||'').trim();
   const p = editFieldCtx.p, field = editFieldCtx.field;
+  if(field==='name'){
+    const ok = v.length>=2;
+    showErr('edit-field-error', !ok);
+    if(!ok) return;
+    if(p==='d'){
+      requestDriverNameChange(v);
+      setNamePendingUI(v);
+      closeEditField();
+      toast('d-settings','Pedido de alteração de nome enviado para aprovação do admin');
+      return;
+    }
+    currentUser[p].name = v;
+    updateSettingsUI(p);
+    saveSession(p);
+    closeEditField();
+    toast(p+'-settings','Nome atualizado');
+    return;
+  }
   const ok = field==='email' ? validEmail(v) : v.length>=9;
   showErr('edit-field-error', !ok);
   if(!ok) return;
@@ -1939,6 +2033,42 @@ function saveEditField(){
   updateSettingsUI(p);
   closeEditField();
   toast(p+'-settings', field==='email' ? 'Email atualizado' : 'Telemóvel atualizado');
+}
+let nameRequestUnsub = null;
+function listenDriverNameRequest(){
+  const db = initFirestore();
+  if(!db || !currentUser.d.email) return;
+  if(nameRequestUnsub){ nameRequestUnsub(); nameRequestUnsub = null; }
+  nameRequestUnsub = db.collection('driver_name_requests')
+    .where('driverEmail','==', currentUser.d.email)
+    .orderBy('createdAt','desc')
+    .limit(1)
+    .onSnapshot(function(snap){
+      if(snap.empty){ setNamePendingUI(null); return; }
+      const doc = snap.docs[0].data();
+      if(doc.status === 'pending'){
+        setNamePendingUI(doc.newName);
+      } else if(doc.status === 'approved'){
+        currentUser.d.name = doc.newName;
+        updateSettingsUI('d');
+        saveSession('d');
+        setNamePendingUI(null);
+        toast('d-settings','Nome atualizado — aprovado pelo admin');
+      } else {
+        setNamePendingUI(null);
+      }
+    }, function(e){ console.warn('Falha ao ouvir pedido de nome:', e); });
+}
+function setNamePendingUI(pendingName){
+  const el = document.getElementById('d-name-pending');
+  if(!el) return;
+  if(pendingName){
+    el.style.display = 'inline-flex';
+    el.textContent = 'Pendente de aprovação: ' + pendingName;
+  } else {
+    el.style.display = 'none';
+    el.textContent = '';
+  }
 }
 /* Contas especiais com acesso ilimitado (saldo infinito para o motorista, sem
    pagamento para o cliente). As credenciais NUNCA ficam no frontend — são
@@ -2035,8 +2165,31 @@ function updateSettingsUI(p){
   updateHeaderAvatar(p);
   if(p==='d' && typeof updateSettingsDocStatus==='function') updateSettingsDocStatus();
 }
+function saveSession(p){
+  try{
+    localStorage.setItem('lux-session-'+p, JSON.stringify({
+      email: currentUser[p].email, name: currentUser[p].name, phone: currentUser[p].phone
+    }));
+  }catch(e){}
+}
+function clearSession(p){
+  try{ localStorage.removeItem('lux-session-'+p); }catch(e){}
+}
+function restoreSession(p){
+  try{
+    const raw = localStorage.getItem('lux-session-'+p);
+    if(!raw) return false;
+    const data = JSON.parse(raw);
+    if(!data || !data.email) return false;
+    currentUser[p].email = data.email;
+    if(data.name) currentUser[p].name = data.name;
+    if(data.phone) currentUser[p].phone = data.phone;
+    return true;
+  }catch(e){ return false; }
+}
 function completeAuth(p){
   updateSettingsUI(p);
+  saveSession(p);
   if(p==='c'){ resetClientFlow(); } else { resetDriverFlow(); }
 }
 async function doLogin(p){
@@ -2184,11 +2337,13 @@ function doLogout(p){
     if(typeof stopSharingLocation==='function') stopSharingLocation();
     if(typeof stopListeningForRides==='function') stopListeningForRides();
     driverRideId = null; driverRideData = null;
+    if(typeof setDriverRidePhase==='function') setDriverRidePhase(null);
   }
   if(p==='c'){
     if(typeof stopListeningToClientRide==='function') stopListeningToClientRide();
     clientRideId = null; clientRide = null; clientLastHandledRideStatus = null;
   }
+  clearSession(p);
   goTo(p+'-auth-welcome');
 }
 function setTheme(mode){
@@ -2318,6 +2473,12 @@ function initDriverApp(){ goTo('d-auth-welcome'); }
   setLanguage(savedLang);
   loadUserPhotos();
   updateSettingsUI('c'); updateSettingsUI('d');
+  ['c','d'].forEach(function(p){
+    if(document.getElementById(p+'-home') && restoreSession(p)){
+      completeAuth(p);
+    }
+  });
+  if(typeof listenPricingSync==='function') listenPricingSync();
 })();
 
 /* ===================== STRIPE (frontend) ===================== */
@@ -2853,6 +3014,31 @@ function calcFare(v, km, minutes){
   const raw = v.base + (km * v.perKm) + (minutes * v.perMinute);
   return Math.round(raw * 100) / 100;
 }
+/* Sincronização em tempo real do tarifário definido pelo admin (painel admin
+   → coleção Firestore "pricing"). Assim que o admin guarda uma alteração,
+   os valores de VEHICLES são atualizados aqui e, se o ecrã de escolha de
+   veículo estiver visível, os preços são recalculados na hora. */
+let pricingSyncUnsubscribe = null;
+function listenPricingSync(){
+  const db = (typeof initFirestore==='function') ? initFirestore() : null;
+  if(!db || pricingSyncUnsubscribe) return;
+  try{
+    pricingSyncUnsubscribe = db.collection('pricing').onSnapshot(function(snapshot){
+      let changed = false;
+      snapshot.forEach(function(doc){
+        const v = VEHICLES.find(function(x){ return x.id === doc.id; });
+        const d = doc.data();
+        if(!v || !d) return;
+        if(typeof d.base === 'number') { v.base = d.base; changed = true; }
+        if(typeof d.perKm === 'number') { v.perKm = d.perKm; changed = true; }
+        if(typeof d.perMinute === 'number') { v.perMinute = d.perMinute; changed = true; }
+      });
+      if(changed && routeKm!=null && typeof paintVehicleList==='function'){
+        paintVehicleList();
+      }
+    }, function(err){ console.warn('Falha ao ouvir pricing:', err); });
+  }catch(e){ console.warn('listenPricingSync falhou:', e); }
+}
 function estimateRouteMetrics(origin, dest, cb){
   if(!gmapsAvailable() || !origin || !dest || dest==='destino'){ cb(null); return; }
   try{
@@ -3275,6 +3461,7 @@ function resetDriverFlow(){
   applyBalanceVisibility();
   updateDriverFrames();
   showRealSingleLocation('map-driver-home', LUX_PLACES.near);
+  if(typeof listenDriverNameRequest==='function') listenDriverNameRequest();
 }
 function renderBalanceUI(){
   const low = driverBalance < MIN_BALANCE_TO_RECEIVE;
@@ -3365,6 +3552,30 @@ function sendDriverChatMessage(){
    esquema de regras abertas já usado em driver_locations (sem Firebase
    Authentication real ainda) — ver GUIA-CONFIGURACAO-STRIPE-FIREBASE.md
    antes de ires para produção. */
+/* ===== Widget flutuante de viagem ativa (visível em qualquer ecrã da app) ===== */
+let driverRidePhase = null; // null | 'pickup' | 'waiting' | 'trip'
+const RIDE_PHASE_SCREEN = { pickup:'d-to-pickup', waiting:'d-waiting', trip:'d-trip' };
+const RIDE_PHASE_LABEL = { pickup:'A caminho do cliente', waiting:'À espera do passageiro', trip:'Viagem em curso' };
+function setDriverRidePhase(phase){
+  driverRidePhase = phase;
+  updateFloatingWidget();
+}
+function updateFloatingWidget(){
+  const w = document.getElementById('ride-float-widget');
+  if(!w) return;
+  if(!driverRidePhase){ w.classList.remove('show'); return; }
+  const targetId = RIDE_PHASE_SCREEN[driverRidePhase];
+  const targetEl = document.getElementById(targetId);
+  const onRideScreen = targetEl && targetEl.classList.contains('active');
+  w.classList.toggle('show', !onRideScreen);
+  const labelEl = document.getElementById('rfw-label');
+  if(labelEl) labelEl.textContent = RIDE_PHASE_LABEL[driverRidePhase] || 'Em viagem';
+}
+function goToActiveRideScreen(){
+  if(!driverRidePhase) return;
+  goTo(RIDE_PHASE_SCREEN[driverRidePhase]);
+}
+
 let ridesListUnsub = null;
 let driverRideId = null;
 let driverRideData = null;
@@ -3415,13 +3626,16 @@ function showRealIncomingRequest(rideId, data){
   playRequestSound();
   let s = 15;
   const ring = document.getElementById('req-ring');
+  const bar = document.getElementById('req-countdown-fill');
   ring.setAttribute('data-s', s);
   ring.style.setProperty('--pct', 100);
+  if(bar) bar.style.width = '100%';
   if(reqCountdown) clearInterval(reqCountdown);
   reqCountdown = setInterval(()=>{
     s--;
     ring.setAttribute('data-s', s);
     ring.style.setProperty('--pct', Math.max(0, (s/15)*100));
+    if(bar) bar.style.width = Math.max(0, (s/15)*100) + '%';
     if(s<=0){ clearInterval(reqCountdown); declineRequest(); }
   }, 1000);
 }
@@ -3490,14 +3704,18 @@ function triggerIncomingRequest(){
     return;
   }
   document.getElementById('req-overlay').classList.add('show');
-  let s = 10;
+  playRequestSound();
+  let s = 15;
   const ring = document.getElementById('req-ring');
+  const bar = document.getElementById('req-countdown-fill');
   ring.setAttribute('data-s', s);
   ring.style.setProperty('--pct', 100);
+  if(bar) bar.style.width = '100%';
   reqCountdown = setInterval(()=>{
     s--;
     ring.setAttribute('data-s', s);
-    ring.style.setProperty('--pct', Math.max(0, (s/10)*100));
+    ring.style.setProperty('--pct', Math.max(0, (s/15)*100));
+    if(bar) bar.style.width = Math.max(0, (s/15)*100) + '%';
     if(s<=0){
       clearInterval(reqCountdown);
       declineRequest();
@@ -3525,6 +3743,7 @@ function acceptRequest(){
   stopRequestSound();
   document.getElementById('req-overlay').classList.remove('show');
   goTo('d-to-pickup');
+  setDriverRidePhase('pickup');
   if(driverRideId){
     const col = ridesCollection();
     if(col){
@@ -3561,6 +3780,7 @@ function markArrived(el){
   }
   const t = setTimeout(()=>{
     goTo('d-waiting');
+    setDriverRidePhase('waiting');
     showRealSingleLocation('map-d-waiting', LUX_PLACES.pickup);
     startWaitingTimer();
   }, 500);
@@ -3616,6 +3836,7 @@ function startTripFromWaiting(){
     if(col) col.doc(driverRideId).set({ status:'in_progress', updatedAt: firebase.firestore.FieldValue.serverTimestamp() }, { merge:true }).catch(function(){});
   }
   goTo('d-trip');
+  setDriverRidePhase('trip');
   toast('d-trip','Passageiro a bordo');
   if(!showRealRoute('map-d-trip', LUX_PLACES.pickup, LUX_PLACES.airport, 5200)){
     drawRoute(document.getElementById('svg-route-d-trip'), 25,75,75,25,'#FFC94D');
@@ -3641,6 +3862,7 @@ function cancelWaitingTrip(){
   }
   document.querySelectorAll('#d-to-pickup .swipe-btn').forEach(b=>b.classList.remove('filled'));
   toast('d-home','Viagem cancelada — taxa de não comparência aplicada');
+  setDriverRidePhase(null);
   goTo('d-home');
 }
 const CURRENT_RIDE_FARE = 22.40; // tarifa de demonstração — usada só quando não há pedido real (driverRideData)
@@ -3674,6 +3896,7 @@ function markTripComplete(el){
       }
       driverRideId = null; driverRideData = null; declinedRideIds.clear();
     }
+    setDriverRidePhase(null);
     goTo('d-complete');
   }, 500);
   activeTimers.push(t);

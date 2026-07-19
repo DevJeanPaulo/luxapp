@@ -245,6 +245,12 @@
     border-radius:var(--radius-md);
     padding:13px 14px; margin-bottom:9px;
   }
+  .address-bar-top{
+    flex-shrink:0; margin:0 16px 10px; background:var(--panel2); border:1px solid var(--line);
+    border-radius:var(--radius-md); overflow:hidden;
+  }
+  .address-bar-top .field{ margin-bottom:0; border:none; border-radius:0; background:transparent; }
+  .address-bar-top .field-divider{ height:1px; background:var(--line); margin:0 14px; }
   .field .dot-marker{ width:9px; height:9px; border-radius:50%; flex-shrink:0; }
   .field .dot-marker.o{ background:#5b6473; }
   .field .dot-marker.d{ background:var(--gold); }
@@ -988,6 +994,17 @@
           <div class="brand" style="color:var(--gold);">Lux</div>
           <div class="icon-btn" id="c-header-avatar" onclick="goTo('c-settings')">👤</div>
         </div>
+        <div class="address-bar-top glow-frame">
+          <div class="field">
+            <span class="dot-marker o"></span>
+            <input id="c-origin" value="A minha localização atual" />
+          </div>
+          <div class="field-divider"></div>
+          <div class="field">
+            <span class="dot-marker d"></span>
+            <input id="c-dest" placeholder="Introduza o destino" oninput="onDestInput()" />
+          </div>
+        </div>
         <div class="map" id="map-home">
           <svg><line x1="0" y1="0" x2="0" y2="0"/></svg>
           <div class="me-dot" style="left:50%; top:46%;"></div>
@@ -996,14 +1013,6 @@
           <div class="sheet-handle"></div>
           <h1 class="title" data-i18n="home_greeting">Boa noite, Jean Paulo</h1>
           <p class="subtitle" data-i18n="home_subtitle">Para onde vai hoje?</p>
-          <div class="field glow-frame">
-            <span class="dot-marker o"></span>
-            <input id="c-origin" value="A minha localização atual" />
-          </div>
-          <div class="field glow-frame">
-            <span class="dot-marker d"></span>
-            <input id="c-dest" placeholder="Introduza o destino" oninput="onDestInput()" />
-          </div>
           <div class="chips-wrap">
             <div class="chips">
               <div class="chip" onclick="quickDest('Aeroporto de Lisboa (LIS)')">✈️ <span data-i18n="chip_airport_lisbon">Aeroporto Lisboa</span></div>
@@ -1558,8 +1567,31 @@ function updateSettingsUI(p){
   updateHeaderAvatar(p);
   if(p==='d' && typeof updateSettingsDocStatus==='function') updateSettingsDocStatus();
 }
+function saveSession(p){
+  try{
+    localStorage.setItem('lux-session-'+p, JSON.stringify({
+      email: currentUser[p].email, name: currentUser[p].name, phone: currentUser[p].phone
+    }));
+  }catch(e){}
+}
+function clearSession(p){
+  try{ localStorage.removeItem('lux-session-'+p); }catch(e){}
+}
+function restoreSession(p){
+  try{
+    const raw = localStorage.getItem('lux-session-'+p);
+    if(!raw) return false;
+    const data = JSON.parse(raw);
+    if(!data || !data.email) return false;
+    currentUser[p].email = data.email;
+    if(data.name) currentUser[p].name = data.name;
+    if(data.phone) currentUser[p].phone = data.phone;
+    return true;
+  }catch(e){ return false; }
+}
 function completeAuth(p){
   updateSettingsUI(p);
+  saveSession(p);
   if(p==='c'){ resetClientFlow(); } else { resetDriverFlow(); }
 }
 async function doLogin(p){
@@ -1702,6 +1734,7 @@ function doReset(p){
 function doLogout(p){
   clearAllTimers();
   if(p==='d'){ isOnline = false; if(typeof waitInterval!=='undefined' && waitInterval) clearInterval(waitInterval); }
+  clearSession(p);
   goTo(p+'-auth-welcome');
 }
 function setTheme(mode){
@@ -1807,6 +1840,12 @@ function initDriverApp(){ goTo('d-auth-welcome'); }
   setLanguage(savedLang);
   loadUserPhotos();
   updateSettingsUI('c'); updateSettingsUI('d');
+  ['c','d'].forEach(function(p){
+    if(document.getElementById(p+'-home') && restoreSession(p)){
+      completeAuth(p);
+    }
+  });
+  if(typeof listenPricingSync==='function') listenPricingSync();
 })();
 
 /* ===================== STRIPE (frontend) ===================== */
@@ -2247,6 +2286,31 @@ let selectedTip = 0;
 function calcFare(v, km, minutes){
   const raw = v.base + (km * v.perKm) + (minutes * v.perMinute);
   return Math.round(raw * 100) / 100;
+}
+/* Sincronização em tempo real do tarifário definido pelo admin (painel admin
+   → coleção Firestore "pricing"). Assim que o admin guarda uma alteração,
+   os valores de VEHICLES são atualizados aqui e, se o ecrã de escolha de
+   veículo estiver visível, os preços são recalculados na hora. */
+let pricingSyncUnsubscribe = null;
+function listenPricingSync(){
+  const db = (typeof initFirestore==='function') ? initFirestore() : null;
+  if(!db || pricingSyncUnsubscribe) return;
+  try{
+    pricingSyncUnsubscribe = db.collection('pricing').onSnapshot(function(snapshot){
+      let changed = false;
+      snapshot.forEach(function(doc){
+        const v = VEHICLES.find(function(x){ return x.id === doc.id; });
+        const d = doc.data();
+        if(!v || !d) return;
+        if(typeof d.base === 'number') { v.base = d.base; changed = true; }
+        if(typeof d.perKm === 'number') { v.perKm = d.perKm; changed = true; }
+        if(typeof d.perMinute === 'number') { v.perMinute = d.perMinute; changed = true; }
+      });
+      if(changed && routeKm!=null && typeof paintVehicleList==='function'){
+        paintVehicleList();
+      }
+    }, function(err){ console.warn('Falha ao ouvir pricing:', err); });
+  }catch(e){ console.warn('listenPricingSync falhou:', e); }
 }
 function estimateRouteMetrics(origin, dest, cb){
   if(!gmapsAvailable() || !origin || !dest || dest==='destino'){ cb(null); return; }
