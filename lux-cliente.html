@@ -9,8 +9,9 @@
 <!-- Firebase (push notifications) -->
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <!-- Google Maps (mapa real dos ecrãs de viagem) -->
-<script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyBpV5Plv5j6RnpOokgqVm6MJ55321Vul08&loading=async" async defer></script>
+<script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyBpV5Plv5j6RnpOokgqVm6MJ55321Vul08&libraries=places&loading=async" async defer></script>
 <link rel="manifest" href="lux-manifest.json">
 <meta name="theme-color" content="#07080a">
 <meta name="mobile-web-app-capable" content="yes">
@@ -45,12 +46,12 @@
     --panel:#ffffff;
     --panel2:#f1eee6;
     --panel3:#e7e1d3;
-    --gold:#D99A2B;
-    --gold-dim:#B8862A;
+    --gold:#C48A22;
+    --gold-dim:#A6741C;
     --text:#191a1d;
-    --muted:#6b7078;
-    --muted2:#9a9fa8;
-    --line:#e3ddcd;
+    --muted:#565b62;
+    --muted2:#787d85;
+    --line:#ada085;
   }
   [data-theme="light"] .btn-gold{ color:#fff; }
   [data-theme="light"] .radar .core, [data-theme="light"] .car-marker{ color:#fff; }
@@ -502,6 +503,66 @@
     width:100%; background:var(--panel); border-radius:24px 24px 0 0;
     padding:20px 20px calc(20px + var(--safe-bottom)); border-top:1px solid var(--gold);
   }
+  .chat-overlay{
+    position:absolute; inset:0; background:var(--bg); z-index:90;
+    display:none; flex-direction:column;
+  }
+  .chat-overlay.show{ display:flex; }
+  .chat-header{
+    display:flex; align-items:center; gap:12px;
+    padding:calc(14px + var(--safe-top)) 16px 14px; border-bottom:1px solid var(--line);
+    background:var(--panel); flex-shrink:0;
+  }
+  .chat-header .avatar{
+    width:38px; height:38px; border-radius:50%; background:var(--panel3);
+    display:flex; align-items:center; justify-content:center; font-weight:700; font-size:13px;
+    color:var(--gold); flex-shrink:0;
+  }
+  .chat-header .info{ flex:1; min-width:0; }
+  .chat-header .info .name{ font-size:14.5px; font-weight:700; color:var(--text); }
+  .chat-header .info .status{ font-size:11.5px; color:var(--muted); }
+  .chat-header .close-btn{
+    width:34px; height:34px; border-radius:50%; background:var(--panel2);
+    display:flex; align-items:center; justify-content:center; cursor:pointer;
+    font-size:15px; color:var(--text); flex-shrink:0;
+  }
+  .chat-messages{
+    flex:1; overflow-y:auto; padding:16px; display:flex; flex-direction:column; gap:8px;
+  }
+  .chat-bubble{
+    max-width:78%; padding:10px 13px; border-radius:16px; font-size:14px; line-height:1.4;
+    word-wrap:break-word; white-space:pre-wrap;
+  }
+  .chat-bubble.mine{
+    align-self:flex-end; background:var(--gold); color:#1a1408; border-bottom-right-radius:4px;
+  }
+  .chat-bubble.theirs{
+    align-self:flex-start; background:var(--panel2); color:var(--text); border-bottom-left-radius:4px;
+    border:1px solid var(--line);
+  }
+  .chat-empty{
+    text-align:center; color:var(--muted); font-size:13px; margin-top:30px; padding:0 24px;
+  }
+  .chat-input-row{
+    display:flex; gap:8px; padding:12px 16px calc(12px + var(--safe-bottom));
+    border-top:1px solid var(--line); background:var(--panel); flex-shrink:0;
+  }
+  .chat-input-row input{
+    flex:1; background:var(--panel2); border:1px solid var(--line); border-radius:99px;
+    padding:11px 16px; color:var(--text); font-size:14px; outline:none; min-width:0;
+  }
+  .chat-input-row input::placeholder{ color:var(--muted2); }
+  .chat-input-row input:disabled{ opacity:.5; }
+  .chat-send-btn{
+    width:42px; height:42px; border-radius:50%; background:var(--gold); color:#1a1408;
+    display:flex; align-items:center; justify-content:center; font-size:17px; cursor:pointer;
+    flex-shrink:0; border:none;
+  }
+  .chat-send-btn:disabled{ opacity:.5; cursor:default; }
+  @media (max-width:380px){
+    .chat-bubble{ max-width:85%; font-size:13.5px; }
+    .chat-header .info .name{ font-size:13.5px; }
+  }
   .req-timer{
     display:flex; align-items:center; justify-content:center; gap:10px; margin-bottom:14px;
   }
@@ -702,6 +763,21 @@
 
   ::-webkit-scrollbar{ display:none; }
 
+  /* Dropdown do Google Places Autocomplete (origem/destino) — tema escuro
+     a condizer com o resto da app, e maior/mais espaçado em ecrãs táteis. */
+  .pac-container{
+    background:var(--panel2); border:1px solid var(--line); border-radius:var(--radius-md);
+    box-shadow:0 12px 32px rgba(0,0,0,.55); margin-top:6px; overflow:hidden; font-family:inherit;
+  }
+  .pac-item{ padding:12px 14px; border-top:1px solid var(--line); color:var(--text); font-size:14px; cursor:pointer; }
+  .pac-item:first-child{ border-top:none; }
+  .pac-item:hover, .pac-item-selected{ background:var(--panel3); }
+  .pac-icon{ filter:invert(1) brightness(1.6); opacity:.7; }
+  .pac-item-query{ color:var(--text); font-size:14px; }
+  .pac-matched{ color:var(--gold); }
+  @media (max-width:480px){
+    .pac-item{ padding:14px 16px; font-size:15px; }
+  }
 
   html,body{ height:100%; }
   .standalone-root{ position:relative; width:100%; height:100dvh; overflow:hidden; background:var(--bg); }
@@ -874,8 +950,6 @@
             <div class="chips">
               <div class="chip" onclick="quickDest('Aeroporto de Lisboa (LIS)')">✈️ Aeroporto Lisboa</div>
               <div class="chip" onclick="quickDest('Aeroporto Francisco Sá Carneiro, Porto')">✈️ Aeroporto Porto</div>
-              <div class="chip" onclick="quickDest('Hotel Four Seasons Ritz, Lisboa')">🏨 Ritz Lisboa</div>
-              <div class="chip" onclick="quickDest('Terminal de Cruzeiros de Lisboa')">🛳️ Terminal Cruzeiros</div>
             </div>
           </div>
           <button class="btn btn-gold" id="c-request-btn" disabled onclick="goTo('c-vehicles')">Pedir viagem</button>
@@ -951,8 +1025,8 @@
               <div class="meta"><span class="star">★</span> 4.9 · <span id="found-car-name">Mercedes Classe E</span></div>
             </div>
             <div class="card-actions">
-              <div class="icon-btn" onclick="toast('c-found','A ligar...')">📞</div>
-              <div class="icon-btn" onclick="toast('c-found','Mensagem enviada')">💬</div>
+              <div class="icon-btn" onclick="callDriver()">📞</div>
+              <div class="icon-btn" onclick="openChat()">💬</div>
             </div>
           </div>
           <button class="btn btn-danger-text" onclick="goTo('c-home')">Cancelar viagem</button>
@@ -1040,6 +1114,22 @@
         </div>
       </div>
 
+      <div class="chat-overlay" id="chat-overlay">
+        <div class="chat-header">
+          <div class="avatar" id="chat-avatar">RA</div>
+          <div class="info">
+            <div class="name" id="chat-name">Motorista</div>
+            <div class="status">Chat da viagem</div>
+          </div>
+          <div class="close-btn" onclick="closeChat()">✕</div>
+        </div>
+        <div class="chat-messages" id="chat-messages"></div>
+        <div class="chat-input-row">
+          <input id="chat-input" placeholder="Escreve uma mensagem..." onkeydown="if(event.key==='Enter') sendChatMessage()" />
+          <button class="chat-send-btn" id="chat-send-btn" onclick="sendChatMessage()">➤</button>
+        </div>
+      </div>
+
     </div>
 </div>
 <script>
@@ -1112,6 +1202,36 @@ const LUX_MAP_STYLE = [
   { featureType:'water', elementType:'geometry', stylers:[{ color:'#07080a' }] }
 ];
 function gmapsAvailable(){ return typeof google !== 'undefined' && !!(google.maps && google.maps.Map); }
+/* Autocomplete de moradas (Google Places) nos campos de origem/destino do
+   cliente, restrito a Portugal. Só liga uma vez (placesAutocompleteBound)
+   e é chamado sempre que o ecrã inicial é mostrado (initHomeMap), tal como
+   o resto dos mapas — se a livraria "places" ainda não tiver carregado
+   (script async), simplesmente tenta de novo na próxima chamada. */
+let placesAutocompleteBound = false;
+function initPlacesAutocomplete(){
+  if(placesAutocompleteBound) return true;
+  if(!(typeof google !== 'undefined' && google.maps && google.maps.places)) return false;
+  const opts = { componentRestrictions:{ country:'pt' }, fields:['formatted_address','name'] };
+  const originInput = document.getElementById('c-origin');
+  const destInput = document.getElementById('c-dest');
+  if(originInput){
+    const acOrigin = new google.maps.places.Autocomplete(originInput, opts);
+    acOrigin.addListener('place_changed', function(){
+      const place = acOrigin.getPlace();
+      if(place && (place.formatted_address || place.name)) originInput.value = place.formatted_address || place.name;
+    });
+  }
+  if(destInput){
+    const acDest = new google.maps.places.Autocomplete(destInput, opts);
+    acDest.addListener('place_changed', function(){
+      const place = acDest.getPlace();
+      if(place && (place.formatted_address || place.name)) destInput.value = place.formatted_address || place.name;
+      onDestInput();
+    });
+  }
+  placesAutocompleteBound = true;
+  return true;
+}
 function initRealMap(containerId, center, zoom){
   if(!gmapsAvailable()) return null;
   const el = document.getElementById(containerId);
@@ -1346,7 +1466,7 @@ function initDriverApp(){ goTo('d-auth-welcome'); }
 
 /* ===================== STRIPE (frontend) ===================== */
 // TODO: substitui pela tua chave publicável Stripe real (pk_live_... em produção, pk_test_... em testes).
-const STRIPE_PUBLISHABLE_KEY = 'pk_test_TODO_REPLACE_WITH_YOUR_KEY';
+const STRIPE_PUBLISHABLE_KEY = 'pk_test_51TuuIeGWsn8hhaSkrr62CNYXet0MELmV3hr9SYnoXkXUkyXpQgyqnsxdTjesZRE1svWxF7aiZXdtnX66peoPKqSy00b';
 // TODO: substitui pelo URL real da tua Cloud Function que cria o PaymentIntent no backend (ver ficheiro functions/index.js).
 const CREATE_PAYMENT_INTENT_URL = 'https://REGION-YOUR-PROJECT.cloudfunctions.net/createPaymentIntent';
 
@@ -1424,24 +1544,26 @@ async function submitPayment(scope){
   }
 }
 function payAndFinishTrip(){
-  const wait = (typeof waitOverageFee !== 'undefined') ? waitOverageFee : 0;
-  const total = (selectedVehicle ? selectedVehicle.price : 0) + wait + selectedTip;
+  const hasRealFare = currentRide && currentRide.status==='completed' && currentRide.totalFare!=null;
+  const base = hasRealFare ? (currentRide.totalFare - (currentRide.waitFee||0)) : (selectedVehicle ? selectedVehicle.price : 0);
+  const wait = hasRealFare ? (currentRide.waitFee||0) : ((typeof waitOverageFee !== 'undefined') ? waitOverageFee : 0);
+  const total = base + wait + selectedTip;
   openPayment('c', total, function(){ finishClientTrip(); });
 }
 window.addEventListener('load', initStripe);
 
 /* ===================== FIREBASE PUSH (frontend) ===================== */
-// Configuração real do projeto Firebase "Lux Transfers" (lux-transfers-3327d).
+// Configuração real do projeto Firebase "Lux Transfers" (lux-transfers-47cb2).
 const FIREBASE_CONFIG = {
-  apiKey: 'AIzaSyC-AgjcPJvgktgK_6ctSF7DyBD6u-EQzMs',
-  authDomain: 'lux-transfers-3327d.firebaseapp.com',
-  projectId: 'lux-transfers-3327d',
-  storageBucket: 'lux-transfers-3327d.firebasestorage.app',
-  messagingSenderId: '612200636206',
-  appId: '1:612200636206:web:7765946c7da6f7d24c64bf',
-  measurementId: 'G-0TYTSDZ2FK'
+  apiKey: 'AIzaSyCZdkmtYcjzGu93l0miV1iKfIcc55IC7Tc',
+  authDomain: 'lux-transfers-47cb2.firebaseapp.com',
+  projectId: 'lux-transfers-47cb2',
+  storageBucket: 'lux-transfers-47cb2.firebasestorage.app',
+  messagingSenderId: '11041025655',
+  appId: '1:11041025655:web:6777d9bcf46e2c79d16072',
+  measurementId: 'G-K2ND96WHM3'
 };
-const FIREBASE_VAPID_KEY = 'BPAWGXvChltUwIdGhxZxLQJVG-FE-QZ_HIXxrme2SosPFeKqhtRn1-JwG3czvDF4Ev2XYwe9zb6G6l20avo9YwE';
+const FIREBASE_VAPID_KEY = 'BLXZepPKAGRjfUxddp9mij17tHetNUEllsrkirzAB80JD8YNQiyhJFI2HaWnfWkiqIo8NaZ_1OdOlwcDis2xwoo';
 
 let firebaseMessaging = null;
 let pushEnabled = { c:false, d:false };
@@ -1461,6 +1583,23 @@ function initFirebase(){
     });
   }catch(e){ console.warn('Firebase init falhou:', e); }
 }
+
+/* ===================== FIRESTORE (viagens ao vivo) =====================
+   Nota de segurança: mesmo esquema de regras abertas já usado em
+   driver_locations (sem Firebase Authentication real ainda) — ver
+   GUIA-CONFIGURACAO-STRIPE-FIREBASE.md antes de ires para produção. */
+let firestoreDb = null;
+function initFirestore(){
+  if(typeof firebase === 'undefined' || !firebase.firestore) return null;
+  if(!FIREBASE_CONFIG.apiKey || FIREBASE_CONFIG.apiKey.indexOf('TODO')>=0) return null;
+  if(firestoreDb) return firestoreDb;
+  try{
+    if(!firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG);
+    firestoreDb = firebase.firestore();
+  }catch(e){ console.warn('Firestore init falhou:', e); return null; }
+  return firestoreDb;
+}
+
 function markPushEnabledUI(p, enabled){
   pushEnabled[p] = enabled;
   const sw = document.getElementById(p+'-push-switch');
@@ -1673,19 +1812,49 @@ let activeTimers = [];
 function clearAllTimers(){ activeTimers.forEach(id=>clearTimeout(id)); activeTimers=[]; }
 
 /* ===================== CLIENT FLOW ===================== */
+/* Tabela de tarifas — tarifa inicial + preço por km + preço por minuto.
+   O preço final de cada classe é calculado dinamicamente a partir da
+   distância/duração reais da rota (Google Directions), com um fallback
+   estimado (FALLBACK_ROUTE_KM/MINUTES) quando o Maps não está disponível. */
 const VEHICLES = [
-  {id:'eco', name:'Económico', icon:'🚗', pax:4, bags:3, eta:'6 min', price:18},
-  {id:'sedan', name:'Executivo Sedan', icon:'🚘', pax:4, bags:3, eta:'4 min', price:28, model:'Mercedes Classe E'},
-  {id:'suv', name:'SUV Premium', icon:'🚙', pax:4, bags:4, eta:'5 min', price:38, model:'Volvo XC90'},
-  {id:'van', name:'Business Van', icon:'🚐', pax:7, bags:6, eta:'8 min', price:48, model:'Mercedes V-Class'},
+  {id:'eco', name:'Económico', icon:'🚗', pax:4, bags:2, eta:'6 min', base:1.00, perKm:0.80, perMinute:0.12},
+  {id:'exec', name:'Executivo', icon:'🚘', pax:4, bags:3, eta:'5 min', base:1.50, perKm:0.96, perMinute:0.14, model:'Mercedes Classe E'},
+  {id:'business', name:'Negócios', icon:'🚙', pax:4, bags:3, eta:'5 min', base:2.00, perKm:1.04, perMinute:0.16, model:'Mercedes Classe S'},
+  {id:'premium', name:'Premium', icon:'🚖', pax:4, bags:4, eta:'6 min', base:2.50, perKm:1.12, perMinute:0.18, model:'BMW Série 7'},
+  {id:'vip', name:'VIP', icon:'🚐', pax:6, bags:6, eta:'8 min', base:3.00, perKm:1.28, perMinute:0.22, model:'Mercedes V-Class'},
 ];
+const FALLBACK_ROUTE_KM = 15;
+const FALLBACK_ROUTE_MINUTES = 25;
+let routeKm = null;
+let routeMinutes = null;
+let myCurrentLatLng = null;
 let selectedVehicle = null;
 let selectedTip = 0;
 
+function calcFare(v, km, minutes){
+  const raw = v.base + (km * v.perKm) + (minutes * v.perMinute);
+  return Math.round(raw * 100) / 100;
+}
+function estimateRouteMetrics(origin, dest, cb){
+  if(!gmapsAvailable() || !origin || !dest || dest==='destino'){ cb(null); return; }
+  try{
+    new google.maps.DirectionsService().route({ origin:origin, destination:dest, travelMode:'DRIVING' }, function(result, status){
+      if(status !== 'OK' || !result.routes[0] || !result.routes[0].legs[0]){ cb(null); return; }
+      const leg = result.routes[0].legs[0];
+      cb({ km: leg.distance.value/1000, minutes: leg.duration.value/60 });
+    });
+  }catch(e){ cb(null); }
+}
+
 function initHomeMap(){
+  if(!initPlacesAutocomplete()){
+    // livraria "places" ainda não carregou — tenta outra vez daqui a pouco
+    setTimeout(initPlacesAutocomplete, 1500);
+  }
   if(navigator.geolocation){
     navigator.geolocation.getCurrentPosition(function(pos){
-      showRealSingleLocation('map-home', { lat:pos.coords.latitude, lng:pos.coords.longitude });
+      myCurrentLatLng = { lat:pos.coords.latitude, lng:pos.coords.longitude };
+      showRealSingleLocation('map-home', myCurrentLatLng);
     }, function(){
       showRealSingleLocation('map-home', LUX_PLACES.pickup);
     }, { timeout:4000 });
@@ -1700,6 +1869,8 @@ function resetClientFlow(){
   document.getElementById('c-request-btn').disabled = true;
   selectedVehicle = null;
   selectedTip = 0;
+  routeKm = null;
+  routeMinutes = null;
   document.getElementById('c-confirm-btn').disabled = true;
   document.querySelectorAll('#stars-row .s').forEach(s=>s.classList.remove('on'));
   document.querySelectorAll('#tip-row .chip').forEach(c=>c.classList.remove('selected'));
@@ -1711,14 +1882,14 @@ function quickDest(name){
   document.getElementById('c-dest').value = name;
   onDestInput();
 }
-function renderVehicleList(){
-  const dest = document.getElementById('c-dest').value || 'destino';
-  document.getElementById('route-summary').textContent = `A minha localização → ${dest}`;
+function paintVehicleList(){
   const list = document.getElementById('vehicle-list');
   list.innerHTML = '';
   VEHICLES.forEach(v=>{
+    v.price = calcFare(v, routeKm, routeMinutes);
     const el = document.createElement('div');
     el.className = 'vehicle';
+    el.dataset.vehicleId = v.id;
     el.onclick = ()=>selectVehicle(v.id, el);
     el.innerHTML = `
       <div class="v-icon">${v.icon}</div>
@@ -1727,10 +1898,30 @@ function renderVehicleList(){
         <div class="v-meta">${v.model ? v.model+' · ' : ''}${v.pax} pax · ${v.bags} malas</div>
       </div>
       <div class="v-price">
-        <div class="amount">${v.price}€</div>
+        <div class="amount">${fmtEur(v.price)}</div>
         <div class="eta">${v.eta}</div>
       </div>`;
     list.appendChild(el);
+  });
+  if(selectedVehicle){
+    const match = list.querySelector(`[data-vehicle-id="${selectedVehicle.id}"]`);
+    if(match){
+      match.classList.add('selected');
+      selectedVehicle = VEHICLES.find(v=>v.id===selectedVehicle.id);
+      const btn = document.getElementById('c-confirm-btn');
+      if(btn) btn.textContent = `Confirmar ${selectedVehicle.name} · ${fmtEur(selectedVehicle.price)}`;
+    }
+  }
+}
+function renderVehicleList(){
+  const originVal = document.getElementById('c-origin').value || 'A minha localização atual';
+  const dest = document.getElementById('c-dest').value || 'destino';
+  document.getElementById('route-summary').textContent = `${originVal} → ${dest}`;
+  if(routeKm==null){ routeKm = FALLBACK_ROUTE_KM; routeMinutes = FALLBACK_ROUTE_MINUTES; }
+  paintVehicleList();
+  const originForRoute = (originVal === 'A minha localização atual' && myCurrentLatLng) ? myCurrentLatLng : originVal;
+  estimateRouteMetrics(originForRoute, dest, function(metrics){
+    if(metrics){ routeKm = metrics.km; routeMinutes = metrics.minutes; paintVehicleList(); }
   });
   if(!showRealRoute('map-vehicles', LUX_PLACES.pickup, LUX_PLACES.airport, 0)){
     drawRoute(document.getElementById('svg-route-vehicles'), 20,70,80,30,'#FFC94D');
@@ -1743,11 +1934,98 @@ function selectVehicle(id, el){
   el.classList.add('selected');
   const btn = document.getElementById('c-confirm-btn');
   btn.disabled = false;
-  btn.textContent = `Confirmar ${selectedVehicle.name} · ${selectedVehicle.price}€`;
+  btn.textContent = `Confirmar ${selectedVehicle.name} · ${fmtEur(selectedVehicle.price)}`;
+}
+/* ===================== COMUNICAÇÃO (chamada real + chat) =====================
+   Chamada real via tel: (abre o marcador do telemóvel) usando o número do
+   motorista da viagem real quando existe, ou o número de demonstração como
+   fallback. O chat está na secção "CHAT AO VIVO" mais abaixo. */
+function callDriver(){
+  const phone = (currentRide && currentRide.driverPhone) ? currentRide.driverPhone : (currentUser.d && currentUser.d.phone);
+  if(!phone) return;
+  window.location.href = 'tel:' + phone.replace(/[^\d+]/g,'');
+}
+
+/* ===================== VIAGENS AO VIVO (Firestore) =====================
+   Liga o pedido real do cliente à receção pelo motorista noutro dispositivo.
+   Se o Firestore não estiver disponível (offline/config por preencher), cai
+   automaticamente no fluxo simulado que já existia (startMatchingSimulated). */
+let currentRideId = null;
+let currentRide = null;
+let rideUnsub = null;
+let lastHandledRideStatus = null;
+function ridesCollection(){
+  const db = initFirestore();
+  return db ? db.collection('rides') : null;
+}
+function stopListeningToRide(){
+  if(rideUnsub){ rideUnsub(); rideUnsub = null; }
+}
+function listenToRide(rideId){
+  const col = ridesCollection();
+  if(!col) return;
+  stopListeningToRide();
+  rideUnsub = col.doc(rideId).onSnapshot(function(doc){
+    if(!doc.exists) return;
+    handleRideUpdate(doc.data());
+  }, function(err){ console.warn('Falha ao ouvir a viagem:', err); });
+}
+function handleRideUpdate(ride){
+  currentRide = ride;
+  if(ride.status === lastHandledRideStatus) return;
+  lastHandledRideStatus = ride.status;
+  if(ride.status === 'accepted'){
+    document.getElementById('found-car-name').textContent = ride.driverName || (selectedVehicle && (selectedVehicle.model||selectedVehicle.name)) || 'Motorista';
+    document.getElementById('found-plate').textContent = '00-XX-00';
+    document.getElementById('pickup-eta').textContent = 'A caminho';
+    goTo('c-found');
+    toast('c-found', 'Motorista encontrado!');
+    if(!showRealRoute('map-found', LUX_PLACES.near, LUX_PLACES.pickup, 4200)){
+      drawRoute(document.getElementById('svg-route-found'), 65,75,35,35,'#FFC94D');
+      placePins(document.getElementById('map-found'), 35,35,35,35);
+      const car = document.getElementById('car-found');
+      car.style.left='65%'; car.style.top='75%';
+      animateMarker(car, 65,75, 35,35, 4200);
+    }
+  } else if(ride.status === 'arrived'){
+    document.getElementById('pickup-eta').textContent = 'Chegou';
+    toast('c-found', 'O motorista chegou ao local de recolha');
+  } else if(ride.status === 'in_progress'){
+    startTrip();
+  } else if(ride.status === 'completed'){
+    showClientSummary();
+  } else if(ride.status === 'cancelled'){
+    toast('c-home', 'A viagem foi cancelada');
+    stopListeningToRide();
+    currentRideId = null; currentRide = null; lastHandledRideStatus = null;
+    goTo('c-home');
+  }
 }
 function startMatching(){
   goTo('c-vehicles'); // ensure state
   goTo('c-matching');
+  const col = ridesCollection();
+  if(!col){ startMatchingSimulated(); return; }
+  const u = currentUser.c;
+  lastHandledRideStatus = null;
+  col.add({
+    status: 'searching',
+    clientName: u.name, clientPhone: u.phone,
+    origin: document.getElementById('c-origin').value || 'A minha localização atual',
+    destination: document.getElementById('c-dest').value || 'destino',
+    vehicleId: selectedVehicle.id, vehicleName: selectedVehicle.model || selectedVehicle.name,
+    price: selectedVehicle.price,
+    createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+  }).then(function(ref){
+    currentRideId = ref.id;
+    listenToRide(ref.id);
+  }).catch(function(e){
+    console.warn('Falha ao criar pedido real — a usar modo demonstração:', e);
+    startMatchingSimulated();
+  });
+}
+function startMatchingSimulated(){
   const t = setTimeout(()=>{
     document.getElementById('found-car-name').textContent = selectedVehicle.model || selectedVehicle.name;
     document.getElementById('found-plate').textContent = '00-XX-00';
@@ -1766,8 +2044,85 @@ function startMatching(){
 }
 function cancelMatching(){
   clearAllTimers();
+  if(currentRideId){
+    const col = ridesCollection();
+    if(col){
+      col.doc(currentRideId).set({ status:'cancelled', updatedAt: firebase.firestore.FieldValue.serverTimestamp() }, { merge:true }).catch(function(){});
+    }
+    stopListeningToRide();
+    currentRideId = null; currentRide = null; lastHandledRideStatus = null;
+  }
   goTo('c-home');
 }
+
+/* ===================== CHAT AO VIVO (Firestore) =====================
+   Mensagens em tempo real entre cliente e motorista, ligadas à subcoleção
+   rides/{rideId}/messages. Sem viagem real ativa, o chat mostra um aviso
+   e fica bloqueado para escrita (não há ninguém do outro lado a ouvir). */
+let chatUnsub = null;
+function chatCollection(){
+  if(!currentRideId) return null;
+  const col = ridesCollection();
+  return col ? col.doc(currentRideId).collection('messages') : null;
+}
+function chatInitials(name){
+  return (name || '').split(' ').filter(Boolean).slice(0,2).map(w=>w[0].toUpperCase()).join('') || '?';
+}
+function openChat(){
+  const driverName = (currentRide && currentRide.driverName) ? currentRide.driverName : ((currentUser.d && currentUser.d.name) || 'Motorista');
+  const nameEl = document.getElementById('chat-name');
+  const avatarEl = document.getElementById('chat-avatar');
+  if(nameEl) nameEl.textContent = driverName;
+  if(avatarEl) avatarEl.textContent = chatInitials(driverName);
+  document.getElementById('chat-overlay').classList.add('show');
+  const list = document.getElementById('chat-messages');
+  const input = document.getElementById('chat-input');
+  const sendBtn = document.getElementById('chat-send-btn');
+  list.innerHTML = '';
+  const col = chatCollection();
+  if(!col){
+    list.innerHTML = '<div class="chat-empty">O chat fica disponível assim que a viagem real com o motorista começar.</div>';
+    if(input) input.disabled = true;
+    if(sendBtn) sendBtn.disabled = true;
+    return;
+  }
+  if(input) input.disabled = false;
+  if(sendBtn) sendBtn.disabled = false;
+  if(chatUnsub) chatUnsub();
+  chatUnsub = col.orderBy('createdAt','asc').onSnapshot(function(snapshot){
+    list.innerHTML = '';
+    if(snapshot.empty){
+      list.innerHTML = '<div class="chat-empty">Ainda não há mensagens. Diz olá! 👋</div>';
+    } else {
+      snapshot.forEach(function(doc){
+        const m = doc.data();
+        const el = document.createElement('div');
+        el.className = 'chat-bubble ' + (m.sender === 'client' ? 'mine' : 'theirs');
+        el.textContent = m.text || '';
+        list.appendChild(el);
+      });
+    }
+    list.scrollTop = list.scrollHeight;
+  }, function(e){ console.warn('Falha ao ouvir mensagens do chat:', e); });
+}
+function closeChat(){
+  document.getElementById('chat-overlay').classList.remove('show');
+  if(chatUnsub){ chatUnsub(); chatUnsub = null; }
+}
+function sendChatMessage(){
+  const input = document.getElementById('chat-input');
+  const text = (input.value || '').trim();
+  if(!text) return;
+  const col = chatCollection();
+  if(!col) return;
+  input.value = '';
+  col.add({
+    sender: 'client',
+    text: text,
+    createdAt: firebase.firestore.FieldValue.serverTimestamp()
+  }).catch(function(e){ console.warn('Falha ao enviar mensagem:', e); });
+}
+
 let pickupSecondsLeft = 4;
 function startPickupCountdown(){
   pickupSecondsLeft = 4;
@@ -1798,24 +2153,30 @@ function startTrip(){
   }
   let s = 6;
   document.getElementById('trip-eta').textContent = s+' min';
+  // Em modo real (currentRideId ativo), quem termina a viagem é o motorista — o ETA aqui é só decorativo.
   const iv = setInterval(()=>{
     s--;
     if(s<=0){
       clearInterval(iv);
-      showClientSummary();
+      if(!currentRideId) showClientSummary();
+      else document.getElementById('trip-eta').textContent = 'A chegar';
     } else {
       document.getElementById('trip-eta').textContent = s+' min';
     }
   }, 900);
 }
 function showClientSummary(){
-  document.getElementById('sum-base').textContent = fmtEur(selectedVehicle.price);
+  const base = (currentRide && currentRide.status==='completed' && currentRide.totalFare!=null)
+    ? (currentRide.totalFare - (currentRide.waitFee||0))
+    : (selectedVehicle ? selectedVehicle.price : 0);
+  document.getElementById('sum-base').textContent = fmtEur(base);
   updateTotals();
   goTo('c-complete');
 }
 function updateTotals(){
-  const base = selectedVehicle ? selectedVehicle.price : 0;
-  const wait = (typeof waitOverageFee !== 'undefined') ? waitOverageFee : 0;
+  const hasRealFare = currentRide && currentRide.status==='completed' && currentRide.totalFare!=null;
+  const base = hasRealFare ? (currentRide.totalFare - (currentRide.waitFee||0)) : (selectedVehicle ? selectedVehicle.price : 0);
+  const wait = hasRealFare ? (currentRide.waitFee||0) : ((typeof waitOverageFee !== 'undefined') ? waitOverageFee : 0);
   const waitRow = document.getElementById('sum-wait-row');
   if(waitRow) waitRow.style.display = wait > 0 ? 'flex' : 'none';
   const waitEl = document.getElementById('sum-wait');
@@ -1837,6 +2198,8 @@ function selectTip(el, val){
   updateTotals();
 }
 function finishClientTrip(){
+  stopListeningToRide();
+  currentRideId = null; currentRide = null; lastHandledRideStatus = null;
   resetClientFlow();
 }
 

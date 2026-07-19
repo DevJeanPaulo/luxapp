@@ -11,7 +11,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <!-- Google Maps (mapa real dos ecrãs de viagem + partilha de localização) -->
-<script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyBpV5Plv5j6RnpOokgqVm6MJ55321Vul08&loading=async" async defer></script>
+<script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyBpV5Plv5j6RnpOokgqVm6MJ55321Vul08&libraries=places&loading=async" async defer></script>
 <style>
   :root{
     --bg:#07080a;
@@ -37,12 +37,12 @@
     --panel:#ffffff;
     --panel2:#f1eee6;
     --panel3:#e7e1d3;
-    --gold:#D99A2B;
-    --gold-dim:#B8862A;
+    --gold:#C48A22;
+    --gold-dim:#A6741C;
     --text:#191a1d;
-    --muted:#6b7078;
-    --muted2:#9a9fa8;
-    --line:#e3ddcd;
+    --muted:#565b62;
+    --muted2:#787d85;
+    --line:#ada085;
   }
   [data-theme="light"] .btn-gold{ color:#fff; }
   [data-theme="light"] .radar .core, [data-theme="light"] .car-marker{ color:#fff; }
@@ -494,6 +494,66 @@
     width:100%; background:var(--panel); border-radius:24px 24px 0 0;
     padding:20px 20px calc(20px + var(--safe-bottom)); border-top:1px solid var(--gold);
   }
+  .chat-overlay{
+    position:absolute; inset:0; background:var(--bg); z-index:90;
+    display:none; flex-direction:column;
+  }
+  .chat-overlay.show{ display:flex; }
+  .chat-header{
+    display:flex; align-items:center; gap:12px;
+    padding:calc(14px + var(--safe-top)) 16px 14px; border-bottom:1px solid var(--line);
+    background:var(--panel); flex-shrink:0;
+  }
+  .chat-header .avatar{
+    width:38px; height:38px; border-radius:50%; background:var(--panel3);
+    display:flex; align-items:center; justify-content:center; font-weight:700; font-size:13px;
+    color:var(--gold); flex-shrink:0;
+  }
+  .chat-header .info{ flex:1; min-width:0; }
+  .chat-header .info .name{ font-size:14.5px; font-weight:700; color:var(--text); }
+  .chat-header .info .status{ font-size:11.5px; color:var(--muted); }
+  .chat-header .close-btn{
+    width:34px; height:34px; border-radius:50%; background:var(--panel2);
+    display:flex; align-items:center; justify-content:center; cursor:pointer;
+    font-size:15px; color:var(--text); flex-shrink:0;
+  }
+  .chat-messages{
+    flex:1; overflow-y:auto; padding:16px; display:flex; flex-direction:column; gap:8px;
+  }
+  .chat-bubble{
+    max-width:78%; padding:10px 13px; border-radius:16px; font-size:14px; line-height:1.4;
+    word-wrap:break-word; white-space:pre-wrap;
+  }
+  .chat-bubble.mine{
+    align-self:flex-end; background:var(--gold); color:#1a1408; border-bottom-right-radius:4px;
+  }
+  .chat-bubble.theirs{
+    align-self:flex-start; background:var(--panel2); color:var(--text); border-bottom-left-radius:4px;
+    border:1px solid var(--line);
+  }
+  .chat-empty{
+    text-align:center; color:var(--muted); font-size:13px; margin-top:30px; padding:0 24px;
+  }
+  .chat-input-row{
+    display:flex; gap:8px; padding:12px 16px calc(12px + var(--safe-bottom));
+    border-top:1px solid var(--line); background:var(--panel); flex-shrink:0;
+  }
+  .chat-input-row input{
+    flex:1; background:var(--panel2); border:1px solid var(--line); border-radius:99px;
+    padding:11px 16px; color:var(--text); font-size:14px; outline:none; min-width:0;
+  }
+  .chat-input-row input::placeholder{ color:var(--muted2); }
+  .chat-input-row input:disabled{ opacity:.5; }
+  .chat-send-btn{
+    width:42px; height:42px; border-radius:50%; background:var(--gold); color:#1a1408;
+    display:flex; align-items:center; justify-content:center; font-size:17px; cursor:pointer;
+    flex-shrink:0; border:none;
+  }
+  .chat-send-btn:disabled{ opacity:.5; cursor:default; }
+  @media (max-width:380px){
+    .chat-bubble{ max-width:85%; font-size:13.5px; }
+    .chat-header .info .name{ font-size:13.5px; }
+  }
   .req-timer{
     display:flex; align-items:center; justify-content:center; gap:10px; margin-bottom:14px;
   }
@@ -694,6 +754,22 @@
   .wait-warning.show{ display:block; }
 
   ::-webkit-scrollbar{ display:none; }
+
+  /* Dropdown do Google Places Autocomplete (origem/destino) — tema escuro
+     a condizer com o resto da app, e maior/mais espaçado em ecrãs táteis. */
+  .pac-container{
+    background:var(--panel2); border:1px solid var(--line); border-radius:var(--radius-md);
+    box-shadow:0 12px 32px rgba(0,0,0,.55); margin-top:6px; overflow:hidden; font-family:inherit;
+  }
+  .pac-item{ padding:12px 14px; border-top:1px solid var(--line); color:var(--text); font-size:14px; cursor:pointer; }
+  .pac-item:first-child{ border-top:none; }
+  .pac-item:hover, .pac-item-selected{ background:var(--panel3); }
+  .pac-icon{ filter:invert(1) brightness(1.6); opacity:.7; }
+  .pac-item-query{ color:var(--text); font-size:14px; }
+  .pac-matched{ color:var(--gold); }
+  @media (max-width:480px){
+    .pac-item{ padding:14px 16px; font-size:15px; }
+  }
 </style>
 </head>
 <body>
@@ -873,8 +949,6 @@
             <div class="chips">
               <div class="chip" onclick="quickDest('Aeroporto de Lisboa (LIS)')">✈️ Aeroporto Lisboa</div>
               <div class="chip" onclick="quickDest('Aeroporto Francisco Sá Carneiro, Porto')">✈️ Aeroporto Porto</div>
-              <div class="chip" onclick="quickDest('Hotel Four Seasons Ritz, Lisboa')">🏨 Ritz Lisboa</div>
-              <div class="chip" onclick="quickDest('Terminal de Cruzeiros de Lisboa')">🛳️ Terminal Cruzeiros</div>
             </div>
           </div>
           <button class="btn btn-gold" id="c-request-btn" disabled onclick="goTo('c-vehicles')">Pedir viagem</button>
@@ -950,8 +1024,8 @@
               <div class="meta"><span class="star">★</span> 4.9 · <span id="found-car-name">Mercedes Classe E</span></div>
             </div>
             <div class="card-actions">
-              <div class="icon-btn" onclick="toast('c-found','A ligar...')">📞</div>
-              <div class="icon-btn" onclick="toast('c-found','Mensagem enviada')">💬</div>
+              <div class="icon-btn" onclick="callDriverReal()">📞</div>
+              <div class="icon-btn" onclick="openClientChat()">💬</div>
             </div>
           </div>
           <button class="btn btn-danger-text" onclick="goTo('c-home')">Cancelar viagem</button>
@@ -1036,6 +1110,22 @@
             <button class="btn btn-ghost-text" onclick="closePayment('c')">Cancelar</button>
             <p class="stripe-badge">🔒 Pagamento processado com segurança pela Stripe</p>
           </div>
+        </div>
+      </div>
+
+      <div class="chat-overlay" id="c-chat-overlay">
+        <div class="chat-header">
+          <div class="avatar" id="c-chat-avatar">RA</div>
+          <div class="info">
+            <div class="name" id="c-chat-name">Motorista</div>
+            <div class="status">Chat da viagem</div>
+          </div>
+          <div class="close-btn" onclick="closeClientChat()">✕</div>
+        </div>
+        <div class="chat-messages" id="c-chat-messages"></div>
+        <div class="chat-input-row">
+          <input id="c-chat-input" placeholder="Escreve uma mensagem..." onkeydown="if(event.key==='Enter') sendClientChatMessage()" />
+          <button class="chat-send-btn" id="c-chat-send-btn" onclick="sendClientChatMessage()">➤</button>
         </div>
       </div>
 
@@ -1323,8 +1413,8 @@
               <div class="meta">Av. da Liberdade, Lisboa</div>
             </div>
             <div class="card-actions">
-              <div class="icon-btn">📞</div>
-              <div class="icon-btn">💬</div>
+              <div class="icon-btn" onclick="callClientReal()">📞</div>
+              <div class="icon-btn" onclick="openDriverChat()">💬</div>
             </div>
           </div>
           <div class="nav-row">
@@ -1360,8 +1450,8 @@
               <div class="meta">Av. da Liberdade, Lisboa</div>
             </div>
             <div class="card-actions">
-              <div class="icon-btn">📞</div>
-              <div class="icon-btn">💬</div>
+              <div class="icon-btn" onclick="callClientReal()">📞</div>
+              <div class="icon-btn" onclick="openDriverChat()">💬</div>
             </div>
           </div>
           <button class="btn btn-gold" onclick="startTripFromWaiting()">Iniciar viagem</button>
@@ -1412,6 +1502,22 @@
           <div class="summary-row"><span>Comissão Lux Transfers (10%)</span><span id="d-commission-amount">-2,24€</span></div>
           <div class="summary-row total"><span>Novo saldo de comissão</span><span id="d-newbalance-amount">1,76€</span></div>
           <button class="btn btn-gold" style="margin-top:14px;" onclick="backToDriverHome()">Continuar online</button>
+        </div>
+      </div>
+
+      <div class="chat-overlay" id="d-chat-overlay">
+        <div class="chat-header">
+          <div class="avatar" id="d-chat-avatar">JP</div>
+          <div class="info">
+            <div class="name" id="d-chat-name">Cliente</div>
+            <div class="status">Chat da viagem</div>
+          </div>
+          <div class="close-btn" onclick="closeDriverChat()">✕</div>
+        </div>
+        <div class="chat-messages" id="d-chat-messages"></div>
+        <div class="chat-input-row">
+          <input id="d-chat-input" placeholder="Escreve uma mensagem..." onkeydown="if(event.key==='Enter') sendDriverChatMessage()" />
+          <button class="chat-send-btn" id="d-chat-send-btn" onclick="sendDriverChatMessage()">➤</button>
         </div>
       </div>
 
@@ -1490,6 +1596,36 @@ const LUX_MAP_STYLE = [
   { featureType:'water', elementType:'geometry', stylers:[{ color:'#07080a' }] }
 ];
 function gmapsAvailable(){ return typeof google !== 'undefined' && !!(google.maps && google.maps.Map); }
+/* Autocomplete de moradas (Google Places) nos campos de origem/destino do
+   cliente, restrito a Portugal. Só liga uma vez (placesAutocompleteBound)
+   e é chamado sempre que o ecrã inicial é mostrado (initHomeMap), tal como
+   o resto dos mapas — se a livraria "places" ainda não tiver carregado
+   (script async), simplesmente tenta de novo na próxima chamada. */
+let placesAutocompleteBound = false;
+function initPlacesAutocomplete(){
+  if(placesAutocompleteBound) return true;
+  if(!(typeof google !== 'undefined' && google.maps && google.maps.places)) return false;
+  const opts = { componentRestrictions:{ country:'pt' }, fields:['formatted_address','name'] };
+  const originInput = document.getElementById('c-origin');
+  const destInput = document.getElementById('c-dest');
+  if(originInput){
+    const acOrigin = new google.maps.places.Autocomplete(originInput, opts);
+    acOrigin.addListener('place_changed', function(){
+      const place = acOrigin.getPlace();
+      if(place && (place.formatted_address || place.name)) originInput.value = place.formatted_address || place.name;
+    });
+  }
+  if(destInput){
+    const acDest = new google.maps.places.Autocomplete(destInput, opts);
+    acDest.addListener('place_changed', function(){
+      const place = acDest.getPlace();
+      if(place && (place.formatted_address || place.name)) destInput.value = place.formatted_address || place.name;
+      onDestInput();
+    });
+  }
+  placesAutocompleteBound = true;
+  return true;
+}
 function initRealMap(containerId, center, zoom){
   if(!gmapsAvailable()) return null;
   const el = document.getElementById(containerId);
@@ -1697,6 +1833,12 @@ function doLogout(p){
     isOnline = false;
     if(typeof waitInterval!=='undefined' && waitInterval) clearInterval(waitInterval);
     if(typeof stopSharingLocation==='function') stopSharingLocation();
+    if(typeof stopListeningForRides==='function') stopListeningForRides();
+    driverRideId = null; driverRideData = null;
+  }
+  if(p==='c'){
+    if(typeof stopListeningToClientRide==='function') stopListeningToClientRide();
+    clientRideId = null; clientRide = null; clientLastHandledRideStatus = null;
   }
   goTo(p+'-auth-welcome');
 }
@@ -1728,7 +1870,7 @@ function initDriverApp(){ goTo('d-auth-welcome'); }
 
 /* ===================== STRIPE (frontend) ===================== */
 // TODO: substitui pela tua chave publicável Stripe real (pk_live_... em produção, pk_test_... em testes).
-const STRIPE_PUBLISHABLE_KEY = 'pk_test_TODO_REPLACE_WITH_YOUR_KEY';
+const STRIPE_PUBLISHABLE_KEY = 'pk_test_51TuuIeGWsn8hhaSkrr62CNYXet0MELmV3hr9SYnoXkXUkyXpQgyqnsxdTjesZRE1svWxF7aiZXdtnX66peoPKqSy00b';
 // TODO: substitui pelo URL real da tua Cloud Function que cria o PaymentIntent no backend (ver ficheiro functions/index.js).
 const CREATE_PAYMENT_INTENT_URL = 'https://REGION-YOUR-PROJECT.cloudfunctions.net/createPaymentIntent';
 
@@ -1806,26 +1948,28 @@ async function submitPayment(scope){
   }
 }
 function payAndFinishTrip(){
-  const wait = (typeof waitOverageFee !== 'undefined') ? waitOverageFee : 0;
-  const total = (selectedVehicle ? selectedVehicle.price : 0) + wait + selectedTip;
+  const hasRealFare = clientRide && clientRide.status==='completed' && clientRide.totalFare!=null;
+  const base = hasRealFare ? (clientRide.totalFare - (clientRide.waitFee||0)) : (selectedVehicle ? selectedVehicle.price : 0);
+  const wait = hasRealFare ? (clientRide.waitFee||0) : ((typeof waitOverageFee !== 'undefined') ? waitOverageFee : 0);
+  const total = base + wait + selectedTip;
   openPayment('c', total, function(){ finishClientTrip(); });
 }
 window.addEventListener('load', initStripe);
 
 /* ===================== FIREBASE PUSH (frontend) ===================== */
-// Configuração real do projeto Firebase "Lux Transfers" (lux-transfers-3327d).
+// Configuração real do projeto Firebase "Lux Transfers" (lux-transfers-47cb2).
 // Nota: este ficheiro combinado usa o appId da app "Lux Cliente Web" para a demonstração;
 // os ficheiros standalone lux-cliente.html / luxdriver-motorista.html usam cada um o seu próprio appId.
 const FIREBASE_CONFIG = {
-  apiKey: 'AIzaSyC-AgjcPJvgktgK_6ctSF7DyBD6u-EQzMs',
-  authDomain: 'lux-transfers-3327d.firebaseapp.com',
-  projectId: 'lux-transfers-3327d',
-  storageBucket: 'lux-transfers-3327d.firebasestorage.app',
-  messagingSenderId: '612200636206',
-  appId: '1:612200636206:web:7765946c7da6f7d24c64bf',
-  measurementId: 'G-0TYTSDZ2FK'
+  apiKey: 'AIzaSyCZdkmtYcjzGu93l0miV1iKfIcc55IC7Tc',
+  authDomain: 'lux-transfers-47cb2.firebaseapp.com',
+  projectId: 'lux-transfers-47cb2',
+  storageBucket: 'lux-transfers-47cb2.firebasestorage.app',
+  messagingSenderId: '11041025655',
+  appId: '1:11041025655:web:6777d9bcf46e2c79d16072',
+  measurementId: 'G-K2ND96WHM3'
 };
-const FIREBASE_VAPID_KEY = 'BPAWGXvChltUwIdGhxZxLQJVG-FE-QZ_HIXxrme2SosPFeKqhtRn1-JwG3czvDF4Ev2XYwe9zb6G6l20avo9YwE';
+const FIREBASE_VAPID_KEY = 'BLXZepPKAGRjfUxddp9mij17tHetNUEllsrkirzAB80JD8YNQiyhJFI2HaWnfWkiqIo8NaZ_1OdOlwcDis2xwoo';
 
 let firebaseMessaging = null;
 let pushEnabled = { c:false, d:false };
@@ -2166,19 +2310,49 @@ function setMode(mode){
 }
 
 /* ===================== CLIENT FLOW ===================== */
+/* Tabela de tarifas — tarifa inicial + preço por km + preço por minuto.
+   O preço final de cada classe é calculado dinamicamente a partir da
+   distância/duração reais da rota (Google Directions), com um fallback
+   estimado (FALLBACK_ROUTE_KM/MINUTES) quando o Maps não está disponível. */
 const VEHICLES = [
-  {id:'eco', name:'Económico', icon:'🚗', pax:4, bags:3, eta:'6 min', price:18},
-  {id:'sedan', name:'Executivo Sedan', icon:'🚘', pax:4, bags:3, eta:'4 min', price:28, model:'Mercedes Classe E'},
-  {id:'suv', name:'SUV Premium', icon:'🚙', pax:4, bags:4, eta:'5 min', price:38, model:'Volvo XC90'},
-  {id:'van', name:'Business Van', icon:'🚐', pax:7, bags:6, eta:'8 min', price:48, model:'Mercedes V-Class'},
+  {id:'eco', name:'Económico', icon:'🚗', pax:4, bags:2, eta:'6 min', base:1.00, perKm:0.80, perMinute:0.12},
+  {id:'exec', name:'Executivo', icon:'🚘', pax:4, bags:3, eta:'5 min', base:1.50, perKm:0.96, perMinute:0.14, model:'Mercedes Classe E'},
+  {id:'business', name:'Negócios', icon:'🚙', pax:4, bags:3, eta:'5 min', base:2.00, perKm:1.04, perMinute:0.16, model:'Mercedes Classe S'},
+  {id:'premium', name:'Premium', icon:'🚖', pax:4, bags:4, eta:'6 min', base:2.50, perKm:1.12, perMinute:0.18, model:'BMW Série 7'},
+  {id:'vip', name:'VIP', icon:'🚐', pax:6, bags:6, eta:'8 min', base:3.00, perKm:1.28, perMinute:0.22, model:'Mercedes V-Class'},
 ];
+const FALLBACK_ROUTE_KM = 15;
+const FALLBACK_ROUTE_MINUTES = 25;
+let routeKm = null;
+let routeMinutes = null;
+let myCurrentLatLng = null;
 let selectedVehicle = null;
 let selectedTip = 0;
 
+function calcFare(v, km, minutes){
+  const raw = v.base + (km * v.perKm) + (minutes * v.perMinute);
+  return Math.round(raw * 100) / 100;
+}
+function estimateRouteMetrics(origin, dest, cb){
+  if(!gmapsAvailable() || !origin || !dest || dest==='destino'){ cb(null); return; }
+  try{
+    new google.maps.DirectionsService().route({ origin:origin, destination:dest, travelMode:'DRIVING' }, function(result, status){
+      if(status !== 'OK' || !result.routes[0] || !result.routes[0].legs[0]){ cb(null); return; }
+      const leg = result.routes[0].legs[0];
+      cb({ km: leg.distance.value/1000, minutes: leg.duration.value/60 });
+    });
+  }catch(e){ cb(null); }
+}
+
 function initHomeMap(){
+  if(!initPlacesAutocomplete()){
+    // livraria "places" ainda não carregou — tenta outra vez daqui a pouco
+    setTimeout(initPlacesAutocomplete, 1500);
+  }
   if(navigator.geolocation){
     navigator.geolocation.getCurrentPosition(function(pos){
-      showRealSingleLocation('map-home', { lat:pos.coords.latitude, lng:pos.coords.longitude });
+      myCurrentLatLng = { lat:pos.coords.latitude, lng:pos.coords.longitude };
+      showRealSingleLocation('map-home', myCurrentLatLng);
     }, function(){
       showRealSingleLocation('map-home', LUX_PLACES.pickup);
     }, { timeout:4000 });
@@ -2193,6 +2367,8 @@ function resetClientFlow(){
   document.getElementById('c-request-btn').disabled = true;
   selectedVehicle = null;
   selectedTip = 0;
+  routeKm = null;
+  routeMinutes = null;
   document.getElementById('c-confirm-btn').disabled = true;
   document.querySelectorAll('#stars-row .s').forEach(s=>s.classList.remove('on'));
   document.querySelectorAll('#tip-row .chip').forEach(c=>c.classList.remove('selected'));
@@ -2204,14 +2380,14 @@ function quickDest(name){
   document.getElementById('c-dest').value = name;
   onDestInput();
 }
-function renderVehicleList(){
-  const dest = document.getElementById('c-dest').value || 'destino';
-  document.getElementById('route-summary').textContent = `A minha localização → ${dest}`;
+function paintVehicleList(){
   const list = document.getElementById('vehicle-list');
   list.innerHTML = '';
   VEHICLES.forEach(v=>{
+    v.price = calcFare(v, routeKm, routeMinutes);
     const el = document.createElement('div');
     el.className = 'vehicle';
+    el.dataset.vehicleId = v.id;
     el.onclick = ()=>selectVehicle(v.id, el);
     el.innerHTML = `
       <div class="v-icon">${v.icon}</div>
@@ -2220,10 +2396,30 @@ function renderVehicleList(){
         <div class="v-meta">${v.model ? v.model+' · ' : ''}${v.pax} pax · ${v.bags} malas</div>
       </div>
       <div class="v-price">
-        <div class="amount">${v.price}€</div>
+        <div class="amount">${fmtEur(v.price)}</div>
         <div class="eta">${v.eta}</div>
       </div>`;
     list.appendChild(el);
+  });
+  if(selectedVehicle){
+    const match = list.querySelector(`[data-vehicle-id="${selectedVehicle.id}"]`);
+    if(match){
+      match.classList.add('selected');
+      selectedVehicle = VEHICLES.find(v=>v.id===selectedVehicle.id);
+      const btn = document.getElementById('c-confirm-btn');
+      if(btn) btn.textContent = `Confirmar ${selectedVehicle.name} · ${fmtEur(selectedVehicle.price)}`;
+    }
+  }
+}
+function renderVehicleList(){
+  const originVal = document.getElementById('c-origin').value || 'A minha localização atual';
+  const dest = document.getElementById('c-dest').value || 'destino';
+  document.getElementById('route-summary').textContent = `${originVal} → ${dest}`;
+  if(routeKm==null){ routeKm = FALLBACK_ROUTE_KM; routeMinutes = FALLBACK_ROUTE_MINUTES; }
+  paintVehicleList();
+  const originForRoute = (originVal === 'A minha localização atual' && myCurrentLatLng) ? myCurrentLatLng : originVal;
+  estimateRouteMetrics(originForRoute, dest, function(metrics){
+    if(metrics){ routeKm = metrics.km; routeMinutes = metrics.minutes; paintVehicleList(); }
   });
   if(!showRealRoute('map-vehicles', LUX_PLACES.pickup, LUX_PLACES.airport, 0)){
     drawRoute(document.getElementById('svg-route-vehicles'), 20,70,80,30,'#FFC94D');
@@ -2236,11 +2432,92 @@ function selectVehicle(id, el){
   el.classList.add('selected');
   const btn = document.getElementById('c-confirm-btn');
   btn.disabled = false;
-  btn.textContent = `Confirmar ${selectedVehicle.name} · ${selectedVehicle.price}€`;
+  btn.textContent = `Confirmar ${selectedVehicle.name} · ${fmtEur(selectedVehicle.price)}`;
+}
+/* ===================== VIAGENS AO VIVO (Firestore) =====================
+   Liga o pedido real do cliente à receção pelo motorista noutro dispositivo,
+   através da coleção "rides" no Firestore. Se o Firestore não estiver
+   disponível (offline/config por preencher), cai automaticamente no fluxo
+   simulado que já existia (startMatchingSimulated). Nomes de variáveis
+   prefixados com "client" para não colidir com o equivalente do motorista
+   (driverRideId/driverRideData), já que este ficheiro combinado partilha
+   um único scope de JavaScript entre os dois fluxos. */
+let clientRideId = null;
+let clientRide = null;
+let clientRideUnsub = null;
+let clientLastHandledRideStatus = null;
+function ridesCollection(){
+  const db = initFirestore();
+  return db ? db.collection('rides') : null;
+}
+function stopListeningToClientRide(){
+  if(clientRideUnsub){ clientRideUnsub(); clientRideUnsub = null; }
+}
+function listenToClientRide(rideId){
+  const col = ridesCollection();
+  if(!col) return;
+  stopListeningToClientRide();
+  clientRideUnsub = col.doc(rideId).onSnapshot(function(doc){
+    if(!doc.exists) return;
+    handleClientRideUpdate(doc.data());
+  }, function(err){ console.warn('Falha ao ouvir a viagem:', err); });
+}
+function handleClientRideUpdate(ride){
+  clientRide = ride;
+  if(ride.status === clientLastHandledRideStatus) return;
+  clientLastHandledRideStatus = ride.status;
+  if(ride.status === 'accepted'){
+    document.getElementById('found-car-name').textContent = ride.driverName || (selectedVehicle && (selectedVehicle.model||selectedVehicle.name)) || 'Motorista';
+    document.getElementById('found-plate').textContent = '00-XX-00';
+    document.getElementById('pickup-eta').textContent = 'A caminho';
+    goTo('c-found');
+    toast('c-found', 'Motorista encontrado!');
+    if(!showRealRoute('map-found', LUX_PLACES.near, LUX_PLACES.pickup, 4200)){
+      drawRoute(document.getElementById('svg-route-found'), 65,75,35,35,'#FFC94D');
+      placePins(document.getElementById('map-found'), 35,35,35,35);
+      const car = document.getElementById('car-found');
+      car.style.left='65%'; car.style.top='75%';
+      animateMarker(car, 65,75, 35,35, 4200);
+    }
+  } else if(ride.status === 'arrived'){
+    document.getElementById('pickup-eta').textContent = 'Chegou';
+    toast('c-found', 'O motorista chegou ao local de recolha');
+  } else if(ride.status === 'in_progress'){
+    startTrip();
+  } else if(ride.status === 'completed'){
+    showClientSummary();
+  } else if(ride.status === 'cancelled'){
+    toast('c-home', 'A viagem foi cancelada');
+    stopListeningToClientRide();
+    clientRideId = null; clientRide = null; clientLastHandledRideStatus = null;
+    goTo('c-home');
+  }
 }
 function startMatching(){
   goTo('c-vehicles'); // ensure state
   goTo('c-matching');
+  const col = ridesCollection();
+  if(!col){ startMatchingSimulated(); return; }
+  const u = currentUser.c;
+  clientLastHandledRideStatus = null;
+  col.add({
+    status: 'searching',
+    clientName: u.name, clientPhone: u.phone,
+    origin: document.getElementById('c-origin').value || 'A minha localização atual',
+    destination: document.getElementById('c-dest').value || 'destino',
+    vehicleId: selectedVehicle.id, vehicleName: selectedVehicle.model || selectedVehicle.name,
+    price: selectedVehicle.price,
+    createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+  }).then(function(ref){
+    clientRideId = ref.id;
+    listenToClientRide(ref.id);
+  }).catch(function(e){
+    console.warn('Falha ao criar pedido real — a usar modo demonstração:', e);
+    startMatchingSimulated();
+  });
+}
+function startMatchingSimulated(){
   const t = setTimeout(()=>{
     document.getElementById('found-car-name').textContent = selectedVehicle.model || selectedVehicle.name;
     document.getElementById('found-plate').textContent = '00-XX-00';
@@ -2259,8 +2536,90 @@ function startMatching(){
 }
 function cancelMatching(){
   clearAllTimers();
+  if(clientRideId){
+    const col = ridesCollection();
+    if(col){
+      col.doc(clientRideId).set({ status:'cancelled', updatedAt: firebase.firestore.FieldValue.serverTimestamp() }, { merge:true }).catch(function(){});
+    }
+    stopListeningToClientRide();
+    clientRideId = null; clientRide = null; clientLastHandledRideStatus = null;
+  }
   goTo('c-home');
 }
+
+/* ===================== COMUNICAÇÃO — CLIENTE (chamada real + chat) =====================
+   Chamada real via tel: e chat em tempo real (Firestore) com o motorista da
+   viagem real. Nomes prefixados "Client"/"c-" para não colidir com o
+   equivalente do motorista, já que este ficheiro partilha um único scope. */
+function callDriverReal(){
+  const phone = (clientRide && clientRide.driverPhone) ? clientRide.driverPhone : (currentUser.d && currentUser.d.phone);
+  if(!phone) return;
+  window.location.href = 'tel:' + phone.replace(/[^\d+]/g,'');
+}
+let clientChatUnsub = null;
+function clientChatCollection(){
+  if(!clientRideId) return null;
+  const col = ridesCollection();
+  return col ? col.doc(clientRideId).collection('messages') : null;
+}
+function chatInitials(name){
+  return (name || '').split(' ').filter(Boolean).slice(0,2).map(w=>w[0].toUpperCase()).join('') || '?';
+}
+function openClientChat(){
+  const driverName = (clientRide && clientRide.driverName) ? clientRide.driverName : ((currentUser.d && currentUser.d.name) || 'Motorista');
+  const nameEl = document.getElementById('c-chat-name');
+  const avatarEl = document.getElementById('c-chat-avatar');
+  if(nameEl) nameEl.textContent = driverName;
+  if(avatarEl) avatarEl.textContent = chatInitials(driverName);
+  document.getElementById('c-chat-overlay').classList.add('show');
+  const list = document.getElementById('c-chat-messages');
+  const input = document.getElementById('c-chat-input');
+  const sendBtn = document.getElementById('c-chat-send-btn');
+  list.innerHTML = '';
+  const col = clientChatCollection();
+  if(!col){
+    list.innerHTML = '<div class="chat-empty">O chat fica disponível assim que a viagem real com o motorista começar.</div>';
+    if(input) input.disabled = true;
+    if(sendBtn) sendBtn.disabled = true;
+    return;
+  }
+  if(input) input.disabled = false;
+  if(sendBtn) sendBtn.disabled = false;
+  if(clientChatUnsub) clientChatUnsub();
+  clientChatUnsub = col.orderBy('createdAt','asc').onSnapshot(function(snapshot){
+    list.innerHTML = '';
+    if(snapshot.empty){
+      list.innerHTML = '<div class="chat-empty">Ainda não há mensagens. Diz olá! 👋</div>';
+    } else {
+      snapshot.forEach(function(doc){
+        const m = doc.data();
+        const el = document.createElement('div');
+        el.className = 'chat-bubble ' + (m.sender === 'client' ? 'mine' : 'theirs');
+        el.textContent = m.text || '';
+        list.appendChild(el);
+      });
+    }
+    list.scrollTop = list.scrollHeight;
+  }, function(e){ console.warn('Falha ao ouvir mensagens do chat:', e); });
+}
+function closeClientChat(){
+  document.getElementById('c-chat-overlay').classList.remove('show');
+  if(clientChatUnsub){ clientChatUnsub(); clientChatUnsub = null; }
+}
+function sendClientChatMessage(){
+  const input = document.getElementById('c-chat-input');
+  const text = (input.value || '').trim();
+  if(!text) return;
+  const col = clientChatCollection();
+  if(!col) return;
+  input.value = '';
+  col.add({
+    sender: 'client',
+    text: text,
+    createdAt: firebase.firestore.FieldValue.serverTimestamp()
+  }).catch(function(e){ console.warn('Falha ao enviar mensagem:', e); });
+}
+
 let pickupSecondsLeft = 4;
 function startPickupCountdown(){
   pickupSecondsLeft = 4;
@@ -2291,24 +2650,30 @@ function startTrip(){
   }
   let s = 6;
   document.getElementById('trip-eta').textContent = s+' min';
+  // Em modo real (clientRideId ativo), quem termina a viagem é o motorista — o ETA aqui é só decorativo.
   const iv = setInterval(()=>{
     s--;
     if(s<=0){
       clearInterval(iv);
-      showClientSummary();
+      if(!clientRideId) showClientSummary();
+      else document.getElementById('trip-eta').textContent = 'A chegar';
     } else {
       document.getElementById('trip-eta').textContent = s+' min';
     }
   }, 900);
 }
 function showClientSummary(){
-  document.getElementById('sum-base').textContent = fmtEur(selectedVehicle.price);
+  const base = (clientRide && clientRide.status==='completed' && clientRide.totalFare!=null)
+    ? (clientRide.totalFare - (clientRide.waitFee||0))
+    : (selectedVehicle ? selectedVehicle.price : 0);
+  document.getElementById('sum-base').textContent = fmtEur(base);
   updateTotals();
   goTo('c-complete');
 }
 function updateTotals(){
-  const base = selectedVehicle ? selectedVehicle.price : 0;
-  const wait = (typeof waitOverageFee !== 'undefined') ? waitOverageFee : 0;
+  const hasRealFare = clientRide && clientRide.status==='completed' && clientRide.totalFare!=null;
+  const base = hasRealFare ? (clientRide.totalFare - (clientRide.waitFee||0)) : (selectedVehicle ? selectedVehicle.price : 0);
+  const wait = hasRealFare ? (clientRide.waitFee||0) : ((typeof waitOverageFee !== 'undefined') ? waitOverageFee : 0);
   const waitRow = document.getElementById('sum-wait-row');
   if(waitRow) waitRow.style.display = wait > 0 ? 'flex' : 'none';
   const waitEl = document.getElementById('sum-wait');
@@ -2330,6 +2695,8 @@ function selectTip(el, val){
   updateTotals();
 }
 function finishClientTrip(){
+  stopListeningToClientRide();
+  clientRideId = null; clientRide = null; clientLastHandledRideStatus = null;
   resetClientFlow();
 }
 
@@ -2378,6 +2745,148 @@ function renderBalanceUI(){
   document.getElementById('balance-fill').style.width = Math.max(0, Math.min(100, (driverBalance/MAX_BALANCE)*100)) + '%';
   document.getElementById('balance-card').classList.toggle('low', low);
 }
+
+/* ===================== COMUNICAÇÃO — MOTORISTA (chamada real + chat) =====================
+   Chamada real via tel: e chat em tempo real (Firestore) com o cliente da
+   viagem real. Nomes prefixados "Driver"/"d-" para não colidir com o
+   equivalente do cliente, já que este ficheiro partilha um único scope. */
+function callClientReal(){
+  const phone = (driverRideData && driverRideData.clientPhone) ? driverRideData.clientPhone : (currentUser.c && currentUser.c.phone);
+  if(!phone) return;
+  window.location.href = 'tel:' + phone.replace(/[^\d+]/g,'');
+}
+let driverChatUnsub = null;
+function driverChatCollection(){
+  if(!driverRideId) return null;
+  const col = ridesCollection();
+  return col ? col.doc(driverRideId).collection('messages') : null;
+}
+function openDriverChat(){
+  const clientName = (driverRideData && driverRideData.clientName) ? driverRideData.clientName : ((currentUser.c && currentUser.c.name) || 'Cliente');
+  const nameEl = document.getElementById('d-chat-name');
+  const avatarEl = document.getElementById('d-chat-avatar');
+  if(nameEl) nameEl.textContent = clientName;
+  if(avatarEl) avatarEl.textContent = chatInitials(clientName);
+  document.getElementById('d-chat-overlay').classList.add('show');
+  const list = document.getElementById('d-chat-messages');
+  const input = document.getElementById('d-chat-input');
+  const sendBtn = document.getElementById('d-chat-send-btn');
+  list.innerHTML = '';
+  const col = driverChatCollection();
+  if(!col){
+    list.innerHTML = '<div class="chat-empty">O chat fica disponível assim que a viagem real com o cliente começar.</div>';
+    if(input) input.disabled = true;
+    if(sendBtn) sendBtn.disabled = true;
+    return;
+  }
+  if(input) input.disabled = false;
+  if(sendBtn) sendBtn.disabled = false;
+  if(driverChatUnsub) driverChatUnsub();
+  driverChatUnsub = col.orderBy('createdAt','asc').onSnapshot(function(snapshot){
+    list.innerHTML = '';
+    if(snapshot.empty){
+      list.innerHTML = '<div class="chat-empty">Ainda não há mensagens. Diz olá! 👋</div>';
+    } else {
+      snapshot.forEach(function(doc){
+        const m = doc.data();
+        const el = document.createElement('div');
+        el.className = 'chat-bubble ' + (m.sender === 'driver' ? 'mine' : 'theirs');
+        el.textContent = m.text || '';
+        list.appendChild(el);
+      });
+    }
+    list.scrollTop = list.scrollHeight;
+  }, function(e){ console.warn('Falha ao ouvir mensagens do chat:', e); });
+}
+function closeDriverChat(){
+  document.getElementById('d-chat-overlay').classList.remove('show');
+  if(driverChatUnsub){ driverChatUnsub(); driverChatUnsub = null; }
+}
+function sendDriverChatMessage(){
+  const input = document.getElementById('d-chat-input');
+  const text = (input.value || '').trim();
+  if(!text) return;
+  const col = driverChatCollection();
+  if(!col) return;
+  input.value = '';
+  col.add({
+    sender: 'driver',
+    text: text,
+    createdAt: firebase.firestore.FieldValue.serverTimestamp()
+  }).catch(function(e){ console.warn('Falha ao enviar mensagem:', e); });
+}
+
+/* ===================== PEDIDOS DE VIAGEM (Firestore) =====================
+   Liga a receção real do motorista ao pedido criado pelo cliente noutro
+   dispositivo, através da coleção "rides" no Firestore. Se o Firestore não
+   estiver disponível, cai automaticamente no pedido simulado
+   (triggerIncomingRequest) que já existia. Nomes de variáveis prefixados
+   com "driver" para não colidir com o equivalente do cliente
+   (clientRideId/clientRide), já que este ficheiro combinado partilha um
+   único scope de JavaScript entre os dois fluxos. Nota de segurança: mesmo
+   esquema de regras abertas já usado em driver_locations (sem Firebase
+   Authentication real ainda) — ver GUIA-CONFIGURACAO-STRIPE-FIREBASE.md
+   antes de ires para produção. */
+let ridesListUnsub = null;
+let driverRideId = null;
+let driverRideData = null;
+let declinedRideIds = new Set();
+function startListeningForRides(){
+  const col = ridesCollection();
+  if(!col) return false;
+  if(ridesListUnsub) return true; // já a ouvir
+  ridesListUnsub = col.where('status','==','searching').onSnapshot(function(snapshot){
+    if(!isOnline || driverRideId || document.getElementById('req-overlay').classList.contains('show')) return;
+    let picked = null;
+    snapshot.forEach(function(doc){
+      if(picked || declinedRideIds.has(doc.id)) return;
+      picked = { id:doc.id, data:doc.data() };
+    });
+    if(picked) showRealIncomingRequest(picked.id, picked.data);
+  }, function(err){ console.warn('Falha ao ouvir pedidos de viagem:', err); });
+  return true;
+}
+function stopListeningForRides(){
+  if(ridesListUnsub){ ridesListUnsub(); ridesListUnsub = null; }
+}
+function checkForNextRide(){
+  const col = ridesCollection();
+  if(!col) return;
+  col.where('status','==','searching').get().then(function(snapshot){
+    if(!isOnline || driverRideId) return;
+    let picked = null;
+    snapshot.forEach(function(doc){
+      if(picked || declinedRideIds.has(doc.id)) return;
+      picked = { id:doc.id, data:doc.data() };
+    });
+    if(picked) showRealIncomingRequest(picked.id, picked.data);
+  }).catch(function(){});
+}
+function showRealIncomingRequest(rideId, data){
+  driverRideId = rideId;
+  driverRideData = data;
+  const originEl = document.getElementById('req-origin');
+  const destEl = document.getElementById('req-dest');
+  if(originEl) originEl.textContent = data.origin || 'Localização do cliente';
+  if(destEl) destEl.textContent = data.destination || 'Destino';
+  const nameEl = document.querySelector('#req-overlay .driver-card .name');
+  if(nameEl) nameEl.textContent = data.clientName || 'Cliente Lux';
+  const fareEl = document.querySelector('#req-overlay .req-fare .amount');
+  if(fareEl) fareEl.textContent = fmtEur(data.price || 0);
+  document.getElementById('req-overlay').classList.add('show');
+  let s = 15;
+  const ring = document.getElementById('req-ring');
+  ring.setAttribute('data-s', s);
+  ring.style.setProperty('--pct', 100);
+  if(reqCountdown) clearInterval(reqCountdown);
+  reqCountdown = setInterval(()=>{
+    s--;
+    ring.setAttribute('data-s', s);
+    ring.style.setProperty('--pct', Math.max(0, (s/15)*100));
+    if(s<=0){ clearInterval(reqCountdown); declineRequest(); }
+  }, 1000);
+}
+
 function toggleOnline(){
   if(!isOnline && driverBalance < MIN_BALANCE_TO_RECEIVE){
     openRecharge();
@@ -2389,10 +2898,13 @@ function toggleOnline(){
   updateDriverFrames();
   if(isOnline){
     startSharingLocation();
-    const t = setTimeout(()=>triggerIncomingRequest(), 2600);
-    activeTimers.push(t);
+    if(!startListeningForRides()){
+      const t = setTimeout(()=>triggerIncomingRequest(), 2600);
+      activeTimers.push(t);
+    }
   } else {
     stopSharingLocation();
+    stopListeningForRides();
   }
 }
 function openRecharge(){
@@ -2417,8 +2929,11 @@ function confirmRecharge(){
       document.getElementById('online-switch').classList.add('on');
       document.getElementById('online-status-text').textContent = 'Online';
       updateDriverFrames();
-      const t = setTimeout(()=>triggerIncomingRequest(), 2200);
-      activeTimers.push(t);
+      startSharingLocation();
+      if(!startListeningForRides()){
+        const t = setTimeout(()=>triggerIncomingRequest(), 2200);
+        activeTimers.push(t);
+      }
     } else {
       updateDriverFrames();
     }
@@ -2453,6 +2968,13 @@ function triggerIncomingRequest(){
 function declineRequest(){
   if(reqCountdown) clearInterval(reqCountdown);
   document.getElementById('req-overlay').classList.remove('show');
+  if(driverRideId){
+    declinedRideIds.add(driverRideId);
+    driverRideId = null;
+    driverRideData = null;
+    checkForNextRide();
+    return;
+  }
   if(isOnline){
     const t = setTimeout(()=>triggerIncomingRequest(), 5000);
     activeTimers.push(t);
@@ -2462,6 +2984,18 @@ function acceptRequest(){
   if(reqCountdown) clearInterval(reqCountdown);
   document.getElementById('req-overlay').classList.remove('show');
   goTo('d-to-pickup');
+  if(driverRideId){
+    const col = ridesCollection();
+    if(col){
+      col.doc(driverRideId).set({
+        status:'accepted', driverName: currentUser.d.name, driverPhone: currentUser.d.phone,
+        acceptedAt: firebase.firestore.FieldValue.serverTimestamp(),
+        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+      }, { merge:true }).catch(function(e){ console.warn('Falha ao aceitar pedido real:', e); });
+    }
+    const nameEl = document.querySelector('#d-to-pickup .driver-card .name');
+    if(nameEl && driverRideData) nameEl.textContent = driverRideData.clientName || 'Cliente Lux';
+  }
   if(!showRealRoute('map-d-pickup', LUX_PLACES.near, LUX_PLACES.pickup, 3800)){
     drawRoute(document.getElementById('svg-route-d-pickup'), 30,25,70,70,'#FFC94D');
     placePins(document.getElementById('map-d-pickup'), 70,70,70,70);
@@ -2480,6 +3014,10 @@ function acceptRequest(){
 let arrivedFillTimer = null;
 function markArrived(el){
   el.classList.add('filled');
+  if(driverRideId){
+    const col = ridesCollection();
+    if(col) col.doc(driverRideId).set({ status:'arrived', updatedAt: firebase.firestore.FieldValue.serverTimestamp() }, { merge:true }).catch(function(){});
+  }
   const t = setTimeout(()=>{
     goTo('d-waiting');
     showRealSingleLocation('map-d-waiting', LUX_PLACES.pickup);
@@ -2492,8 +3030,8 @@ function markArrived(el){
    minutes of free waiting after arrival, then automatic per-minute billing
    of extra waiting time (added to the final fare), plus the option to
    cancel with a no-show fee if the passenger never shows up at all. */
-const FREE_WAIT_SECONDS = 300; // 5:00 gratuitos
-const WAIT_FEE_PER_MINUTE = 0.30; // €/min cobrado após o tempo gratuito
+const FREE_WAIT_SECONDS = 180; // 3:00 gratuitos
+const WAIT_FEE_PER_MINUTE = 0.20; // €/min cobrado após o tempo gratuito (igual em todas as classes)
 let waitInterval = null;
 let waitSecondsLeft = FREE_WAIT_SECONDS;
 let waitOverageSeconds = 0;
@@ -2532,6 +3070,10 @@ function startWaitingTimer(){
 }
 function startTripFromWaiting(){
   if(waitInterval) clearInterval(waitInterval);
+  if(driverRideId){
+    const col = ridesCollection();
+    if(col) col.doc(driverRideId).set({ status:'in_progress', updatedAt: firebase.firestore.FieldValue.serverTimestamp() }, { merge:true }).catch(function(){});
+  }
   goTo('d-trip');
   toast('d-trip','Passageiro a bordo');
   if(!showRealRoute('map-d-trip', LUX_PLACES.pickup, LUX_PLACES.airport, 5200)){
@@ -2551,16 +3093,22 @@ function startTripFromWaiting(){
 }
 function cancelWaitingTrip(){
   if(waitInterval) clearInterval(waitInterval);
+  if(driverRideId){
+    const col = ridesCollection();
+    if(col) col.doc(driverRideId).set({ status:'cancelled', updatedAt: firebase.firestore.FieldValue.serverTimestamp() }, { merge:true }).catch(function(){});
+    driverRideId = null; driverRideData = null;
+  }
   document.querySelectorAll('#d-to-pickup .swipe-btn').forEach(b=>b.classList.remove('filled'));
   toast('d-home','Viagem cancelada — taxa de não comparência aplicada');
   goTo('d-home');
 }
-const CURRENT_RIDE_FARE = 22.40;
+const CURRENT_RIDE_FARE = 22.40; // tarifa de demonstração — usada só quando não há pedido real (driverRideData)
 function markTripComplete(el){
   el.classList.add('filled');
   const t = setTimeout(()=>{
     const wait = (typeof waitOverageFee !== 'undefined') ? waitOverageFee : 0;
-    const totalFare = CURRENT_RIDE_FARE + wait;
+    const baseFare = (driverRideData && driverRideData.price!=null) ? driverRideData.price : CURRENT_RIDE_FARE;
+    const totalFare = baseFare + wait;
     const commission = totalFare * COMMISSION_RATE;
     driverEarnings += totalFare;
     driverTrips += 1;
@@ -2575,6 +3123,16 @@ function markTripComplete(el){
     document.getElementById('stat-earn').textContent = maskedOrValue(driverEarnings);
     document.getElementById('stat-trips').textContent = driverTrips;
     renderBalanceUI();
+    if(driverRideId){
+      const col = ridesCollection();
+      if(col){
+        col.doc(driverRideId).set({
+          status:'completed', totalFare: totalFare, waitFee: wait, commission: commission,
+          updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+        }, { merge:true }).catch(function(){});
+      }
+      driverRideId = null; driverRideData = null; declinedRideIds.clear();
+    }
     goTo('d-complete');
   }, 500);
   activeTimers.push(t);

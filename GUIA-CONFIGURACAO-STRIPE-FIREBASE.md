@@ -4,10 +4,11 @@ Este ficheiro explica o que precisas de preencher para ativar pagamentos reais (
 
 ## 1. Firebase — já configurado ✅
 
-Projeto real criado e ligado aos 4 ficheiros do projeto:
+Projeto real criado e ligado aos ficheiros do projeto:
 
-- **Projeto:** Lux Transfers (`lux-transfers-3327d`)
-- **Firestore:** ativado, região `eur3 (Europe)`. Regras fechadas por predefinição, com **uma exceção**: a coleção `driver_locations` está aberta a leitura/escrita pública (ver secção 1b) — todo o resto continua bloqueado.
+- **Conta Google:** jn.paulo2020@gmail.com
+- **Projeto:** Lux Transfers (`lux-transfers-47cb2`)
+- **Firestore:** ativado, região `eur3 (Europe)`. Regras fechadas por predefinição, com **três exceções**: as coleções `driver_locations` e `rides`, e a subcoleção `rides/{rideId}/messages`, estão abertas a leitura/escrita pública (ver secções 1b, 1c e 1d) — todo o resto continua bloqueado.
 - **Cloud Messaging (FCM):** ativado, com chave VAPID gerada
 - **Apps Web registadas:** "Lux Cliente Web" e "LuxDriver Web" (cada uma com o seu próprio `appId`, para poderes distinguir a origem dos pushes/eventos no futuro)
 
@@ -15,15 +16,21 @@ A configuração real já está aplicada em:
 
 - `lux-cliente.html` — constante `FIREBASE_CONFIG` e `FIREBASE_VAPID_KEY`
 - `luxdriver-motorista.html` — constante `FIREBASE_CONFIG` e `FIREBASE_VAPID_KEY`
+- `admin-panel.html` — constante `FIREBASE_CONFIG`
 - `sw-lux.js` — objeto passado a `firebase.initializeApp(...)`
 - `sw-luxdriver.js` — objeto passado a `firebase.initializeApp(...)`
 - `luxtransfers-app-prototipo.html` — ficheiro combinado (fonte de verdade), mesma configuração
+- `.firebaserc` — projeto por defeito para os comandos `firebase` (Cloud Functions)
 
 O alternador **Notificações push** nas Definições de cada app já pede permissão ao browser a sério e regista o dispositivo (o token FCM continua a ir apenas para o `console.log`, ver nota abaixo).
 
 > O token de cada dispositivo (`FCM token`) fica apenas no `console.log` por agora — no `functions/index.js` tens um exemplo de como guardar esse token em `users/{uid}.fcmToken` e usá-lo para notificar o utilizador certo. Vais precisar de ligar isso ao teu sistema de contas real (idealmente Firebase Authentication, substituindo o login simulado que existe hoje nos apps). Nesse momento também vais querer apertar as regras do Firestore (atualmente fechadas a qualquer leitura/escrita direta do cliente).
 
-> **Nota de segurança:** o projeto Firebase pré-existente "luxtransfersgemini" (e a respetiva conta de Analytics "LuxTransfers Travel Solutions") não foi tocado — este novo projeto "Lux Transfers" é totalmente independente.
+> **Nota de segurança:** os projetos Firebase pré-existentes "luxtransfersgemini"/"LuxTransfersGemini" (e a respetiva conta de Analytics "LuxTransfers Travel Solutions") não foram tocados — este projeto "Lux Transfers" é totalmente independente.
+>
+> **Nota sobre o projeto anterior:** este projeto substitui o anterior `lux-transfers-3327d` (conta jn.paulo@gmail.com), criado numa sessão anterior. Esse projeto antigo continua a existir no Firebase mas os apps já não apontam para ele — podes eliminá-lo manualmente na consola se não precisares dele, ou deixá-lo (não gera custos parado no plano gratuito).
+>
+> **Plano de faturação:** este projeto ainda está no plano gratuito Spark. Para usares a Cloud Function de pagamentos (secção 2), o Firebase exige o upgrade para o plano Blaze (pago-conforme-usas, com camada gratuita generosa) — isto aplica-se a qualquer conta/projeto, não é específico desta conta.
 
 ## 1b. Google Maps + acompanhamento ao vivo — já configurado ✅
 
@@ -39,13 +46,35 @@ A tua chave da Maps JavaScript API já está aplicada em `lux-cliente.html`, `lu
 - **A regra do Firestore para `driver_locations` está aberta a qualquer leitura/escrita**, porque os apps ainda usam um login simulado (não Firebase Authentication real). Isto é aceitável para uma demonstração, mas antes de lançares a app a sério deves: (1) ligar Firebase Authentication real, e (2) trocar a regra para só permitir que cada motorista escreva o seu próprio documento (`allow write: if request.auth.uid == driverId`).
 - A ativação da **Maps JavaScript API**, **Directions API** e **Geocoding API** têm de estar ligadas no teu projeto do Google Cloud associado à chave — se o mapa não aparecer, confirma isso primeiro em [Google Cloud Console → APIs ativadas](https://console.cloud.google.com/apis/dashboard).
 
-## 2. Stripe — a tua conta separada
+## 1c. Pedidos de viagem em tempo real — já configurado ✅
 
-Confirma que a conta Stripe que vais criar está em modo **de teste** até validares tudo.
+O cliente e o motorista agora comunicam de verdade através da coleção `rides` no Firestore — dá para testar o fluxo completo com dois telemóveis diferentes (um a correr `applux.luxtransfers.pt`, outro `motorista.luxtransfers.pt`).
 
-1. Na [dashboard da Stripe](https://dashboard.stripe.com/apikeys), copia a **chave publicável** (`pk_test_...` ou `pk_live_...`) e a **chave secreta** (`sk_test_...` ou `sk_live_...`).
-2. A chave **publicável** vai no frontend — substitui `STRIPE_PUBLISHABLE_KEY` em `lux-cliente.html` e `luxdriver-motorista.html`.
-3. A chave **secreta** nunca vai para o frontend — fica só no backend (Cloud Functions), configurada como secret:
+**Como funciona:**
+1. O cliente escolhe um veículo e confirma → cria um documento em `rides` com `status:'searching'`, origem, destino, nome/telefone do cliente e o preço escolhido.
+2. Todos os motoristas online que estejam a ouvir essa coleção recebem o pedido em tempo real (o primeiro a aceitar "ganha" o pedido — os outros continuam a ver pedidos seguintes).
+3. Cada ação do motorista (aceitar, chegou ao local, iniciar viagem, terminar viagem, cancelar) atualiza o campo `status` do documento, e o cliente reage a essas mudanças automaticamente (avança de ecrã, mostra o nome do motorista, mostra a tarifa real no resumo final).
+4. Se o Firestore estiver indisponível (offline, chave por preencher), ambos os apps caem automaticamente no fluxo simulado que já existia — nada parte.
+
+**Antes de ires para produção:** a regra da coleção `rides` está aberta a qualquer leitura/escrita, pelo mesmo motivo que `driver_locations` (sem Firebase Authentication real ligado ainda). Depois de ligares autenticação real, aperta esta regra para só permitir que o cliente crie/cancele os seus próprios pedidos e o motorista só edite pedidos que já aceitou.
+
+## 1d. Chat em tempo real (chamada real + mensagens) — já configurado ✅
+
+Os ícones 📞 e 💬 nos ecrãs de viagem (cliente e motorista) agora funcionam a sério:
+
+- **Chamada (📞):** abre o marcador do telemóvel (`tel:`) com o número real da outra pessoa quando existe uma viagem real em curso, ou o número de demonstração caso contrário.
+- **Chat (💬):** abre um ecrã de mensagens ligado à subcoleção `rides/{rideId}/messages` no Firestore, com `onSnapshot` para atualização em tempo real entre os dois dispositivos. Sem uma viagem real ativa, o chat mostra um aviso e fica bloqueado para escrita (não haveria ninguém do outro lado a receber a mensagem).
+
+**Antes de ires para produção:** a regra da subcoleção `rides/{rideId}/messages` está aberta a qualquer leitura/escrita, pelo mesmo motivo e com a mesma recomendação das secções 1b/1c — depois de ligares Firebase Authentication real, aperta esta regra para só permitir leitura/escrita a quem participa nessa viagem (cliente ou motorista do documento `rides/{rideId}`).
+
+## 2. Stripe — a tua conta separada (modo de teste)
+
+- **Chave publicável (`pk_test_...`) — já aplicada ✅** em `lux-cliente.html`, `luxdriver-motorista.html` e no ficheiro combinado (constante `STRIPE_PUBLISHABLE_KEY`). Isto liga o Stripe.js no frontend, mas os pagamentos só ficam 100% reais depois de completares os passos 3-5 abaixo (a chave secreta e o deploy da função). Até lá, os apps continuam em modo demonstração para pagamentos.
+- **Chave secreta (`sk_test_...`) — falta configurar**, de propósito: por segurança, não introduzo chaves secretas em ficheiros nem comandos por ti. Vais precisar de a colar tu mesmo no terminal, no passo 3.
+
+1. Confirma que a conta Stripe está em modo **de teste** (interruptor "Modo de teste" no canto do dashboard) até validares tudo.
+2. Já não precisas de repetir este passo — a chave publicável já está aplicada.
+3. A chave **secreta** nunca vai para o frontend — fica só no backend (Cloud Functions), configurada como secret. Copia-a de [dashboard.stripe.com/test/apikeys](https://dashboard.stripe.com/test/apikeys) e corre:
 
    ```
    cd functions
