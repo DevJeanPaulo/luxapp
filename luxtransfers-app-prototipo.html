@@ -1763,7 +1763,7 @@ let currentUser = {
    verificadas no backend (Cloud Function checkSpecialAccount, ver
    functions/index.js), que compara com o secret SPECIAL_ACCOUNTS_JSON. */
 // TODO: substitui pelo URL real da tua Cloud Function checkSpecialAccount (ver functions/index.js).
-const CHECK_SPECIAL_ACCOUNT_URL = 'https://REGION-YOUR-PROJECT.cloudfunctions.net/checkSpecialAccount';
+const CHECK_SPECIAL_ACCOUNT_URL = 'https://us-central1-lux-transfers-47cb2.cloudfunctions.net/checkSpecialAccount';
 let unlimitedAccount = { c:false, d:false };
 const COUNTRIES = [
   {flag:'🇵🇹',name:'Portugal',dial:'+351'},
@@ -2121,9 +2121,9 @@ function initDriverApp(){ goTo('d-auth-welcome'); }
 /* ===================== STRIPE (frontend) ===================== */
 const STRIPE_PUBLISHABLE_KEY = 'pk_live_51LzS4GGvTv5FeVcivmRKG7lS1sBOluHfuyniDykbUxM7df1vtgtbydV5MwasroXbxHNkDlT3muXC8MAB7x4LTMyx00SIS4e1Tb';
 // TODO: substitui pelo URL real da tua Cloud Function que cria o PaymentIntent no backend (ver ficheiro functions/index.js).
-const CREATE_PAYMENT_INTENT_URL = 'https://REGION-YOUR-PROJECT.cloudfunctions.net/createPaymentIntent';
+const CREATE_PAYMENT_INTENT_URL = 'https://us-central1-lux-transfers-47cb2.cloudfunctions.net/createPaymentIntent';
 // TODO: substitui pelo URL real da tua Cloud Function que cria o SetupIntent (guardar cartão sem cobrar).
-const CREATE_SETUP_INTENT_URL = 'https://REGION-YOUR-PROJECT.cloudfunctions.net/createSetupIntent';
+const CREATE_SETUP_INTENT_URL = 'https://us-central1-lux-transfers-47cb2.cloudfunctions.net/createSetupIntent';
 
 let stripeInstance = null;
 let cardElements = { c:null, d:null };
