@@ -2177,6 +2177,58 @@ function initFirebase(){
    GUIA-CONFIGURACAO-STRIPE-FIREBASE.md antes de ires para produção. */
 let firestoreDb = null;
 let geoWatchId = null;
+let lastDriverLatLng = null;
+
+/* ===================== ETA EM TEMPO REAL (Haversine + trânsito) =====================
+   Mesma lógica usada no app do cliente: base instantânea por Haversine +
+   velocidade média configurável, refinada com o Google Directions (com
+   trânsito) quando disponível — resiliente, cai sempre para o cálculo
+   simples se o Maps falhar. */
+const ETA_AVG_SPEED_KMH = 28;
+function haversineKm(lat1, lng1, lat2, lng2){
+  if([lat1,lng1,lat2,lng2].some(function(v){ return v==null || isNaN(v); })) return null;
+  const R = 6371;
+  const dLat = (lat2-lat1) * Math.PI/180;
+  const dLng = (lng2-lng1) * Math.PI/180;
+  const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLng/2)**2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+function calcEtaMinutes(lat1, lng1, lat2, lng2, avgSpeedKmh){
+  const km = haversineKm(lat1, lng1, lat2, lng2);
+  if(km==null) return null;
+  const speed = avgSpeedKmh || ETA_AVG_SPEED_KMH;
+  return Math.max(1, Math.round((km / speed) * 60));
+}
+let etaDirectionsService = null;
+const etaTrafficLastFetch = {};
+function fetchTrafficEtaMinutes(key, lat1, lng1, lat2, lng2, cb){
+  if(!(typeof google !== 'undefined' && google.maps)){ cb(null); return; }
+  const now = Date.now();
+  if(etaTrafficLastFetch[key] && (now - etaTrafficLastFetch[key]) < 12000){ cb(null); return; }
+  etaTrafficLastFetch[key] = now;
+  try{
+    if(!etaDirectionsService) etaDirectionsService = new google.maps.DirectionsService();
+    etaDirectionsService.route({
+      origin: { lat:lat1, lng:lng1 },
+      destination: { lat:lat2, lng:lng2 },
+      travelMode: google.maps.TravelMode.DRIVING,
+      drivingOptions: { departureTime: new Date(), trafficModel: 'bestguess' }
+    }, function(result, status){
+      if(status === 'OK' && result.routes[0] && result.routes[0].legs[0]){
+        const leg = result.routes[0].legs[0];
+        const secs = leg.duration_in_traffic ? leg.duration_in_traffic.value : leg.duration.value;
+        cb(Math.max(1, Math.round(secs/60)));
+      } else cb(null);
+    });
+  }catch(e){ cb(null); }
+}
+function calcEtaSmart(key, lat1, lng1, lat2, lng2, onUpdate){
+  const fallback = calcEtaMinutes(lat1, lng1, lat2, lng2);
+  if(fallback!=null) onUpdate(fallback, false);
+  fetchTrafficEtaMinutes(key, lat1, lng1, lat2, lng2, function(mins){
+    if(mins!=null) onUpdate(mins, true);
+  });
+}
 function initFirestore(){
   if(typeof firebase === 'undefined' || !firebase.firestore) return null;
   if(!FIREBASE_CONFIG.apiKey || FIREBASE_CONFIG.apiKey.indexOf('TODO')>=0) return null;
@@ -2291,6 +2343,10 @@ function initAuth(){
   return luxAuth;
 }
 function driverLocationId(){
+  // Usa o mesmo ID (derivado do email) da coleção drivers/, para que a
+  // corrida aceite (que grava driverId: driverDocId(email)) consiga ouvir
+  // exatamente este documento de localização ao vivo e calcular o ETA real.
+  if(currentUser.d && currentUser.d.email) return driverDocId(currentUser.d.email);
   let id = null;
   try{ id = localStorage.getItem('lux_driver_location_id'); }catch(e){}
   if(!id){
@@ -2307,14 +2363,28 @@ function startSharingLocation(){
   if(geoWatchId!==null) navigator.geolocation.clearWatch(geoWatchId);
   geoWatchId = navigator.geolocation.watchPosition(function(pos){
     const lat = pos.coords.latitude, lng = pos.coords.longitude;
+    lastDriverLatLng = { lat: lat, lng: lng };
     db.collection('driver_locations').doc(id).set({
       name: u.name, lat: lat, lng: lng, online: true,
       updatedAt: firebase.firestore.FieldValue.serverTimestamp()
     }, { merge:true }).catch(function(e){ console.warn('Falha ao gravar localização:', e); });
     showRealSingleLocation('map-driver-home', { lat:lat, lng:lng });
+    updateDriverPickupEtaDisplay(lat, lng);
   }, function(err){
     console.warn('Geolocalização indisponível:', err);
   }, { enableHighAccuracy:true, maximumAge:5000, timeout:10000 });
+}
+/* ETA real ao vivo (lado motorista): a cada atualização de GPS, se estiver
+   a caminho da recolha de uma corrida aceite, recalcula a distância/ETA
+   até ao ponto de recolha do cliente e atualiza #d-pickup-eta. */
+function updateDriverPickupEtaDisplay(driverLat, driverLng){
+  const etaEl = document.getElementById('d-pickup-eta');
+  if(!etaEl || !currentRideData) return;
+  const pLat = currentRideData.pickupLat, pLng = currentRideData.pickupLng;
+  if(pLat==null || pLng==null) return;
+  calcEtaSmart('driver-pickup-eta', driverLat, driverLng, pLat, pLng, function(mins){
+    etaEl.textContent = mins + ' min';
+  });
 }
 function stopSharingLocation(){
   if(geoWatchId!==null && navigator.geolocation){ navigator.geolocation.clearWatch(geoWatchId); geoWatchId = null; }
@@ -2954,13 +3024,21 @@ function acceptRequest(){
     car.style.left='30%'; car.style.top='25%';
     animateMarker(car, 30,25, 70,70, 3800);
   }
-  let s=3;
-  document.getElementById('d-pickup-eta').textContent = s+' min';
-  const iv = setInterval(()=>{
-    s--;
-    if(s<=0){ clearInterval(iv); document.getElementById('d-pickup-eta').textContent = 'Chegou'; }
-    else document.getElementById('d-pickup-eta').textContent = s+' min';
-  }, 900);
+  // ETA real: se já houver posição GPS conhecida e coordenadas reais de
+  // recolha na corrida, mostra logo o ETA calculado (Haversine/trânsito);
+  // caso contrário mantém a contagem de demonstração como recurso visual.
+  const hasRealPickupCoords = currentRideData && currentRideData.pickupLat!=null && currentRideData.pickupLng!=null;
+  if(hasRealPickupCoords && lastDriverLatLng){
+    updateDriverPickupEtaDisplay(lastDriverLatLng.lat, lastDriverLatLng.lng);
+  } else {
+    let s=3;
+    document.getElementById('d-pickup-eta').textContent = s+' min';
+    const iv = setInterval(()=>{
+      s--;
+      if(s<=0){ clearInterval(iv); document.getElementById('d-pickup-eta').textContent = 'Chegou'; }
+      else document.getElementById('d-pickup-eta').textContent = s+' min';
+    }, 900);
+  }
 }
 let arrivedFillTimer = null;
 function markArrived(el){
