@@ -222,7 +222,7 @@
 <header class="topbar">
   <div>
     <div class="brand"><span>Lux</span> Transfers · Admin</div>
-    <div class="sub">Verificação de candidaturas de motoristas TVDE</div>
+    <div class="sub">Verificação de candidaturas de motoristas</div>
   </div>
   <div class="actions">
     <div class="view-switch" id="view-switch">
@@ -303,8 +303,8 @@
 </div>
 
 <script>
-const TVDE_DOCS = [
-  { key:'tvde',   name:'Cartão de Motorista TVDE', desc:'Emitido pelo IMT — comprovativo de habilitação para TVDE.' },
+const DRIVER_DOCS = [
+  { key:'licenca', name:'Cartão de Motorista', desc:'Emitido pelo IMT — comprovativo de habilitação profissional.' },
   { key:'cc',     name:'Carta de Condução', desc:'Válida, categoria B.' },
   { key:'crc',    name:'Certificado de Registo Criminal', desc:'Emitido há menos de 90 dias.' },
   { key:'dua',    name:'Documento Único Automóvel (DUA)', desc:'Documento de identificação do veículo.' },
@@ -643,6 +643,22 @@ async function resolveNameRequest(reqId, status){
   const db = initFirestore();
   if(!db) return;
   try{
+    // Ao aprovar, atualiza também o nome na coleção drivers/{id} — é essa
+    // coleção que alimenta as listas do admin (ex: Financeiro), por isso o
+    // pedido só ficar marcado como "approved" não bastava: o nome via a
+    // ficar "aprovado" mas continuava por atualizar aqui até o motorista
+    // reabrir a app dele (o próprio dispositivo do motorista atualiza-se
+    // sozinho ao ouvir este pedido, mas o painel do admin não).
+    if(status === 'approved'){
+      const reqSnap = await db.collection('driver_name_requests').doc(reqId).get();
+      const reqData = reqSnap.exists ? reqSnap.data() : null;
+      if(reqData && reqData.driverEmail && reqData.newName){
+        const driversSnap = await db.collection('drivers').where('email','==', reqData.driverEmail).limit(1).get();
+        if(!driversSnap.empty){
+          await driversSnap.docs[0].ref.set({ name: reqData.newName }, { merge:true });
+        }
+      }
+    }
     await db.collection('driver_name_requests').doc(reqId).set({
       status, resolvedAt: firebase.firestore.FieldValue.serverTimestamp()
     }, { merge:true });
@@ -921,7 +937,7 @@ function rejectDoc(id, key){
 function approveApplication(id){
   updateApplication(id, app => {
     app.overallStatus = 'approved';
-    TVDE_DOCS.forEach(d => { app.documents[d.key].status = 'approved'; app.documents[d.key].note = ''; });
+    DRIVER_DOCS.forEach(d => { app.documents[d.key].status = 'approved'; app.documents[d.key].note = ''; });
   });
 }
 function rejectApplication(id){
@@ -929,7 +945,7 @@ function rejectApplication(id){
   if(note===null) return;
   updateApplication(id, app => {
     app.overallStatus = 'rejected';
-    TVDE_DOCS.forEach(d => {
+    DRIVER_DOCS.forEach(d => {
       if(app.documents[d.key].status !== 'rejected'){
         app.documents[d.key].status = 'rejected';
         app.documents[d.key].note = note || 'Candidatura rejeitada.';
@@ -944,8 +960,8 @@ function renderDetail(){
     panel.innerHTML = '<div class="empty-state"><div class="emoji">🗂️</div><p>Seleciona uma candidatura na lista para reveres os documentos.</p></div>';
     return;
   }
-  const allApproved = TVDE_DOCS.every(d => app.documents[d.key].status === 'approved');
-  const anyMissing = TVDE_DOCS.some(d => app.documents[d.key].status === 'missing');
+  const allApproved = DRIVER_DOCS.every(d => app.documents[d.key].status === 'approved');
+  const anyMissing = DRIVER_DOCS.some(d => app.documents[d.key].status === 'missing');
   const isEditing = editingAppId === app.id;
 
   panel.innerHTML = `
@@ -988,7 +1004,7 @@ function renderDetail(){
     </div>
 
     <div id="doc-rows">
-      ${TVDE_DOCS.map(d => {
+      ${DRIVER_DOCS.map(d => {
         const doc = app.documents[d.key];
         return `
           <div class="doc-row">

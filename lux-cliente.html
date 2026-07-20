@@ -692,7 +692,7 @@
   }
   .payment-summary-row .amt{ font-size:20px; font-weight:700; color:var(--gold); }
 
-  /* ---------- TVDE documents (driver only) ---------- */
+  /* ---------- Documentos do motorista (driver only) ---------- */
   .doc-card{
     background:var(--panel2); border:1px solid var(--line); border-radius:var(--radius-md);
     padding:14px; margin-bottom:10px;
@@ -1342,9 +1342,32 @@ function initRealMap(containerId, center, zoom){
 function gDotIcon(color, scale){
   return { path:google.maps.SymbolPath.CIRCLE, scale:scale||7, fillColor:color, fillOpacity:1, strokeColor:'#0b0d11', strokeWeight:2 };
 }
-function gCarIcon(){
-  return { path:google.maps.SymbolPath.FORWARD_CLOSED_ARROW, scale:5, fillColor:'#FFC94D', fillOpacity:1, strokeColor:'#0b0d11', strokeWeight:1 };
+/* Ícone do carro em forma de seta: recebe o "rumo" (heading, em graus) para
+   rodar sempre na direção real do movimento — como o marcador do Uber/Bolt,
+   que roda suavemente para acompanhar a curva da estrada em vez de ficar
+   sempre virado para o mesmo lado. */
+function gCarIcon(rotation){
+  return {
+    path:google.maps.SymbolPath.FORWARD_CLOSED_ARROW, scale:5,
+    fillColor:'#FFC94D', fillOpacity:1, strokeColor:'#0b0d11', strokeWeight:1,
+    rotation: rotation||0, anchor: new google.maps.Point(0, 2.6)
+  };
 }
+/* Rumo (bearing) entre duas coordenadas, em graus (0-360). */
+function bearingDeg(lat1, lng1, lat2, lng2){
+  const toRad = d => d * Math.PI/180, toDeg = r => r*180/Math.PI;
+  const y = Math.sin(toRad(lng2-lng1)) * Math.cos(toRad(lat2));
+  const x = Math.cos(toRad(lat1))*Math.sin(toRad(lat2)) - Math.sin(toRad(lat1))*Math.cos(toRad(lat2))*Math.cos(toRad(lng2-lng1));
+  return (toDeg(Math.atan2(y, x)) + 360) % 360;
+}
+/* Interpola a rotação pelo caminho mais curto (evita a seta "girar ao
+   contrário" quando passa de 350° para 10°, por exemplo) e suaviza a
+   transição entre segmentos da rota, em vez de saltar bruscamente. */
+function lerpHeading(from, to, t){
+  let diff = ((to - from + 540) % 360) - 180;
+  return (from + diff*t + 360) % 360;
+}
+function easeInOutQuad(t){ return t<0.5 ? 2*t*t : 1-Math.pow(-2*t+2,2)/2; }
 function showRealSingleLocation(containerId, place){
   const map = initRealMap(containerId, place, 15);
   if(!map) return false;
@@ -1375,11 +1398,16 @@ function showRealRoute(containerId, originPlace, destPlace, carDurationMs){
 }
 function animateCarAlongPath(map, path, durationMs){
   if(!path || path.length<2) return;
-  const marker = new google.maps.Marker({ position:path[0], map:map, icon:gCarIcon(), zIndex:999 });
+  let heading = bearingDeg(path[0].lat(), path[0].lng(), path[1].lat(), path[1].lng());
+  const marker = new google.maps.Marker({ position:path[0], map:map, icon:gCarIcon(heading), zIndex:999 });
   const total = path.length - 1;
   const start = performance.now();
   function step(now){
-    const t = Math.min(1, (now-start)/durationMs);
+    // easeInOutQuad em vez de tempo linear: acelera e desacelera de forma
+    // suave (tal como o Uber/Bolt), em vez de um movimento robótico a
+    // velocidade constante.
+    const rawT = Math.min(1, (now-start)/durationMs);
+    const t = easeInOutQuad(rawT);
     const pos = t*total;
     const idx = Math.min(total-1, Math.floor(pos));
     const segT = pos - idx;
@@ -1387,7 +1415,10 @@ function animateCarAlongPath(map, path, durationMs){
     const lat = p1.lat() + (p2.lat()-p1.lat())*segT;
     const lng = p1.lng() + (p2.lng()-p1.lng())*segT;
     marker.setPosition({ lat:lat, lng:lng });
-    if(t<1){ requestAnimationFrame(step); }
+    const targetHeading = bearingDeg(p1.lat(), p1.lng(), p2.lat(), p2.lng());
+    heading = lerpHeading(heading, targetHeading, 0.25);
+    marker.setIcon(gCarIcon(heading));
+    if(rawT<1){ requestAnimationFrame(step); }
   }
   requestAnimationFrame(step);
 }
@@ -2269,14 +2300,14 @@ goTo = function(id){
   if(id==='d-documents' && typeof renderDocumentsScreen==='function') renderDocumentsScreen();
 };
 
-/* ===================== TVDE DOCUMENTS (driver only) =====================
+/* ===================== DOCUMENTOS DO MOTORISTA (driver only) =====================
    Demonstração: usa localStorage como "backend" partilhado entre esta app
    e o painel de administração (admin-panel.html), para simulares o fluxo
    completo de submissão/aprovação sem precisares de configurar já o Firebase.
    Em produção, substitui estas funções por leituras/escritas no Firestore
    (ver o exemplo em functions/index.js). */
-const TVDE_DOCS = [
-  { key:'tvde',   name:'Cartão de Motorista TVDE', desc:'Emitido pelo IMT — comprovativo de habilitação para TVDE.' },
+const DRIVER_DOCS = [
+  { key:'licenca', name:'Cartão de Motorista', desc:'Emitido pelo IMT — comprovativo de habilitação profissional.' },
   { key:'cc',     name:'Carta de Condução', desc:'Válida, categoria B.' },
   { key:'crc',    name:'Certificado de Registo Criminal', desc:'Emitido há menos de 90 dias.' },
   { key:'dua',    name:'Documento Único Automóvel (DUA)', desc:'Documento de identificação do veículo.' },
@@ -2301,7 +2332,7 @@ function getCurrentDriverApplication(){
 function createDriverApplication(){
   const u = currentUser.d;
   const documents = {};
-  TVDE_DOCS.forEach(d=>{ documents[d.key] = { fileName:null, status:'missing', note:'' }; });
+  DRIVER_DOCS.forEach(d=>{ documents[d.key] = { fileName:null, status:'missing', note:'' }; });
   const app = {
     id: 'app_' + Date.now(),
     name: u.name, email: u.email, phone: u.phone,
@@ -2342,8 +2373,8 @@ function onDocFileSelected(key, input){
 function updateSubmitButtonState(app){
   const btn = document.getElementById('d-documents-submit');
   if(!btn) return;
-  const allUploaded = TVDE_DOCS.every(d => app.documents[d.key].fileName);
-  const anyRejected = TVDE_DOCS.some(d => app.documents[d.key].status === 'rejected');
+  const allUploaded = DRIVER_DOCS.every(d => app.documents[d.key].fileName);
+  const anyRejected = DRIVER_DOCS.some(d => app.documents[d.key].status === 'rejected');
   if(app.overallStatus === 'incomplete' || app.overallStatus === 'rejected'){
     btn.style.display = (allUploaded && !anyRejected) ? 'block' : 'none';
     btn.textContent = app.overallStatus === 'rejected' ? 'Reenviar candidatura' : 'Submeter candidatura';
@@ -2355,7 +2386,7 @@ function updateSubmitButtonState(app){
 function submitDriverApplication(){
   updateCurrentDriverApplication(function(app){
     app.overallStatus = 'pending';
-    TVDE_DOCS.forEach(function(d){ if(app.documents[d.key].status !== 'approved') app.documents[d.key].status = 'pending'; });
+    DRIVER_DOCS.forEach(function(d){ if(app.documents[d.key].status !== 'approved') app.documents[d.key].status = 'pending'; });
   });
   renderDocumentsScreen();
 }
@@ -2420,7 +2451,7 @@ function renderDocumentsScreen(){
     : '';
 
   const statusLabels = { missing:'Por enviar', pending:'Enviado', approved:'Aprovado', rejected:'Rejeitado' };
-  list.innerHTML = TVDE_DOCS
+  list.innerHTML = DRIVER_DOCS
     .filter(function(d){ return !isRejected || app.documents[d.key].status === 'rejected'; })
     .map(function(d){
       const doc = app.documents[d.key];
