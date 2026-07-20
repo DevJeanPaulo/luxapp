@@ -329,15 +329,22 @@
   }
   .vehicle.selected{ border-color:var(--gold); background:#1c1810; }
   .vehicle .v-icon{
-    width:52px; height:52px; border-radius:12px; background:var(--panel3);
-    display:flex; align-items:center; justify-content:center; font-size:26px; flex-shrink:0;
+    width:76px; height:54px; border-radius:12px; background:var(--panel3);
+    display:flex; align-items:center; justify-content:center; flex-shrink:0;
+    overflow:hidden;
   }
+  .vehicle .v-icon svg{ width:100%; height:100%; }
   .vehicle .v-info{ flex:1; min-width:0; }
-  .vehicle .v-name{ font-size:14.5px; font-weight:700; }
-  .vehicle .v-meta{ font-size:12px; color:var(--muted); margin-top:2px; }
+  .vehicle .v-name{ font-size:14.5px; font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .vehicle .v-meta{ font-size:12px; color:var(--muted); margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .vehicle .v-price{ text-align:right; flex-shrink:0; }
   .vehicle .v-price .amount{ font-size:15.5px; font-weight:700; color:var(--gold); }
   .vehicle .v-price .eta{ font-size:11px; color:var(--muted); }
+  @media (max-width:380px){
+    .vehicle{ gap:9px; padding:10px; }
+    .vehicle .v-icon{ width:60px; height:46px; }
+    .vehicle .v-name{ font-size:13.5px; }
+  }
 
   /* Matching overlay */
   .matching{
@@ -519,7 +526,6 @@
     mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
     mask-composite:exclude;
     pointer-events:none;
-    animation:rotate-current 3.2s linear infinite;
     transition:opacity .3s ease;
     z-index:1;
   }
@@ -1913,6 +1919,66 @@ function animateCarAlongPath(map, path, durationMs){
   requestAnimationFrame(step);
 }
 
+/* Tabela de tarifas — tarifa inicial + preço por km + preço por minuto.
+   O preço final de cada classe é calculado dinamicamente a partir da
+   distância/duração reais da rota (Google Directions), com um fallback
+   estimado (FALLBACK_ROUTE_KM/MINUTES) quando o Maps não está disponível.
+   Declarado aqui (antes do AUTH/sessão persistente) porque completeAuth()
+   chama resetClientFlow(), que precisa destas variáveis já inicializadas
+   assim que a página carrega com uma sessão guardada. */
+/* Ícones de veículo: ilustrações SVG mais detalhadas (perfil lateral com
+   carroçaria em gradiente "pintura metalizada", vidros com tonalidade,
+   jantes com raios e sombra de piso) para uma leitura mais realista e
+   premium do que um ícone plano, coerente com a identidade dourada da app. */
+const VEH_ICON_SEDAN_BODY = 'M6 38C4 38 3 33 7 31L13 29C16 21 23 15 32 14L46 13L52 7C55 4 60 3 65 3L85 3C91 3 96 6 99 11L104 15C111 16 115 20 116 27L116 33C116 37 113 38 109 38Z';
+const VEH_ICON_SEDAN_GLASS = 'M34 21L42 13L64 9L84 9L98 14L101 20L96 21Z';
+const VEH_ICON_VAN_BODY = 'M6 38C6 38 6 21 12 18L96 16C105 16 111 21 114 28L114 33C114 37 111 38 107 38Z';
+const VEH_ICON_VAN_GLASS = 'M16 25L20 19L94 17L104 22L104 27L16 27Z';
+function vehIconWheel(cx){
+  return '<g>'
+    + '<circle cx="'+cx+'" cy="38" r="9" fill="#0c0c0e"/>'
+    + '<circle cx="'+cx+'" cy="38" r="4.4" fill="#c9cbd0"/>'
+    + '<circle cx="'+cx+'" cy="38" r="1.3" fill="#0c0c0e"/>'
+    + '<line x1="'+cx+'" y1="34.5" x2="'+cx+'" y2="41.5" stroke="#0c0c0e" stroke-width="0.9"/>'
+    + '<line x1="'+(cx-3)+'" y1="40" x2="'+(cx+3)+'" y2="36" stroke="#0c0c0e" stroke-width="0.9"/>'
+    + '<line x1="'+(cx-3)+'" y1="36" x2="'+(cx+3)+'" y2="40" stroke="#0c0c0e" stroke-width="0.9"/>'
+    + '</g>';
+}
+function vehIcon(gradFrom, gradTo, gradId, isVan, accentOpacity){
+  const body = isVan ? VEH_ICON_VAN_BODY : VEH_ICON_SEDAN_BODY;
+  const glass = isVan ? VEH_ICON_VAN_GLASS : VEH_ICON_SEDAN_GLASS;
+  const wx1 = isVan ? 23 : 27;
+  const wx2 = isVan ? 97 : 93;
+  return '<svg viewBox="0 0 122 52" xmlns="http://www.w3.org/2000/svg">'
+    + '<defs>'
+    + '<linearGradient id="'+gradId+'" x1="0" y1="0" x2="0" y2="1">'
+    + '<stop offset="0" stop-color="'+gradFrom+'"/><stop offset="1" stop-color="'+gradTo+'"/></linearGradient>'
+    + '<linearGradient id="'+gradId+'glass" x1="0" y1="0" x2="1" y2="1">'
+    + '<stop offset="0" stop-color="#5b6472"/><stop offset="1" stop-color="#20242b"/></linearGradient>'
+    + '</defs>'
+    + '<ellipse cx="61" cy="47" rx="48" ry="4" fill="#000" opacity="0.32"/>'
+    + '<path d="'+body+'" fill="url(#'+gradId+')" stroke="#FFC94D" stroke-width="0.6" stroke-opacity="'+accentOpacity+'"/>'
+    + '<path d="'+glass+'" fill="url(#'+gradId+'glass)"/>'
+    + '<ellipse cx="112" cy="20" rx="3" ry="2" fill="#ffe9b0"/>'
+    + '<ellipse cx="9" cy="25" rx="2.3" ry="1.8" fill="#7a1414"/>'
+    + vehIconWheel(wx1) + vehIconWheel(wx2)
+    + '</svg>';
+}
+const VEHICLES = [
+  {id:'eco', name:'Económico', icon:vehIcon('#f2f3f5','#c7cad0','gEco',false,0.3), pax:4, bags:2, eta:'6 min', base:1.00, perKm:0.80, perMinute:0.12},
+  {id:'exec', name:'Executivo', icon:vehIcon('#e3e5e8','#a4a8b0','gExec',false,0.35), pax:4, bags:3, eta:'5 min', base:1.50, perKm:0.96, perMinute:0.14, model:'Mercedes Classe E'},
+  {id:'business', name:'Negócios', icon:vehIcon('#3a3a3d','#0d0d0f','gBiz',false,0.4), pax:4, bags:3, eta:'5 min', base:2.00, perKm:1.04, perMinute:0.16, model:'Mercedes Classe S'},
+  {id:'premium', name:'Premium', icon:vehIcon('#fbfcfe','#c9cdd6','gPrem',false,0.45), pax:4, bags:4, eta:'6 min', base:2.50, perKm:1.12, perMinute:0.18, model:'BMW Série 7'},
+  {id:'vip', name:'VIP', icon:vehIcon('#2c2c30','#0a0a0c','gVip',true,0.6), pax:6, bags:6, eta:'8 min', base:3.00, perKm:1.28, perMinute:0.22, model:'Mercedes V-Class'},
+];
+const FALLBACK_ROUTE_KM = 15;
+const FALLBACK_ROUTE_MINUTES = 25;
+let routeKm = null;
+let routeMinutes = null;
+let myCurrentLatLng = null;
+let selectedVehicle = null;
+let selectedTip = 0;
+
 /* ===================== AUTH + SETTINGS + THEME ===================== */
 let pendingAuth = { c:null, d:null };
 let realAuthActive = { c:false, d:false };
@@ -2190,6 +2256,7 @@ function restoreSession(p){
 function completeAuth(p){
   updateSettingsUI(p);
   saveSession(p);
+  if(typeof enforceSingleSession==='function') enforceSingleSession(p);
   if(p==='c'){ resetClientFlow(); } else { resetDriverFlow(); }
 }
 async function doLogin(p){
@@ -2331,6 +2398,7 @@ function doReset(p){
 }
 function doLogout(p){
   clearAllTimers();
+  if(typeof stopSingleSessionWatch==='function') stopSingleSessionWatch(p);
   if(p==='d'){
     isOnline = false;
     if(typeof waitInterval!=='undefined' && waitInterval) clearInterval(waitInterval);
@@ -2473,12 +2541,18 @@ function initDriverApp(){ goTo('d-auth-welcome'); }
   setLanguage(savedLang);
   loadUserPhotos();
   updateSettingsUI('c'); updateSettingsUI('d');
-  ['c','d'].forEach(function(p){
-    if(document.getElementById(p+'-home') && restoreSession(p)){
-      completeAuth(p);
-    }
-  });
-  if(typeof listenPricingSync==='function') listenPricingSync();
+  /* Adiado com setTimeout: garante que todo o script (incluindo variáveis
+     declaradas mais abaixo, como VEHICLES/selectedVehicle ou o estado do
+     motorista) já foi totalmente inicializado antes de restaurar a sessão
+     e religar o fluxo — evita erros "Cannot access before initialization". */
+  setTimeout(function(){
+    ['c','d'].forEach(function(p){
+      if(document.getElementById(p+'-home') && restoreSession(p)){
+        completeAuth(p);
+      }
+    });
+    if(typeof listenPricingSync==='function') listenPricingSync();
+  }, 0);
 })();
 
 /* ===================== STRIPE (frontend) ===================== */
@@ -2676,6 +2750,55 @@ function initFirestore(){
     firestoreDb = firebase.firestore();
   }catch(e){ console.warn('Firestore init falhou:', e); return null; }
   return firestoreDb;
+}
+
+/* ===================== SESSÃO ÚNICA POR CONTA =====================
+   Impede que a mesma conta esteja ligada em mais do que um aparelho ao
+   mesmo tempo. Cada início de sessão grava um carimbo aleatório em
+   active_sessions/{papel}_{email}; este aparelho fica a "ouvir" esse
+   documento em tempo real. Se outro aparelho iniciar sessão com a mesma
+   conta (o que substitui o carimbo), este aparelho deteta a diferença e
+   termina a sessão automaticamente aqui. Se o Firestore não estiver
+   disponível, a funcionalidade fica simplesmente inativa — não bloqueia
+   o uso normal da app (mesma resiliência usada no resto do projeto). */
+let activeSessionUnsub = { c:null, d:null };
+let mySessionId = { c:null, d:null };
+function sanitizeSessionKey(str){
+  return String(str||'').toLowerCase().replace(/[^a-z0-9]/g,'_').slice(0,120);
+}
+function newSessionId(){
+  try{ return crypto.randomUUID(); }catch(e){ return Date.now()+'-'+Math.random().toString(36).slice(2); }
+}
+function stopSingleSessionWatch(p){
+  if(activeSessionUnsub[p]){ try{ activeSessionUnsub[p](); }catch(e){} activeSessionUnsub[p] = null; }
+  mySessionId[p] = null;
+}
+function enforceSingleSession(p){
+  const db = initFirestore();
+  const email = currentUser[p] && currentUser[p].email;
+  if(!db || !email) return;
+  const sid = newSessionId();
+  mySessionId[p] = sid;
+  const docId = p + '_' + sanitizeSessionKey(email);
+  const ref = db.collection('active_sessions').doc(docId);
+  if(activeSessionUnsub[p]){ try{ activeSessionUnsub[p](); }catch(e){} activeSessionUnsub[p] = null; }
+  ref.set({
+    sessionId: sid,
+    updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+    device: (navigator.userAgent || '').slice(0, 120)
+  }).catch(function(e){ console.warn('Falha ao registar sessão única:', e); });
+  activeSessionUnsub[p] = ref.onSnapshot(function(doc){
+    if(!doc.exists) return;
+    const data = doc.data();
+    if(data && data.sessionId && mySessionId[p] && data.sessionId !== mySessionId[p]){
+      stopSingleSessionWatch(p);
+      clearSession(p);
+      clearAllTimers();
+      if(p === 'd' && typeof isOnline !== 'undefined'){ isOnline = false; }
+      goTo(p + '-auth-welcome');
+      alert('A tua conta foi iniciada noutro aparelho. Por segurança, a sessão foi terminada aqui.');
+    }
+  }, function(err){ console.warn('Falha ao vigiar sessão única:', err); });
 }
 
 let luxAuth = null;
@@ -2991,25 +3114,6 @@ function setMode(mode){
 }
 
 /* ===================== CLIENT FLOW ===================== */
-/* Tabela de tarifas — tarifa inicial + preço por km + preço por minuto.
-   O preço final de cada classe é calculado dinamicamente a partir da
-   distância/duração reais da rota (Google Directions), com um fallback
-   estimado (FALLBACK_ROUTE_KM/MINUTES) quando o Maps não está disponível. */
-const VEHICLES = [
-  {id:'eco', name:'Económico', icon:'🚗', pax:4, bags:2, eta:'6 min', base:1.00, perKm:0.80, perMinute:0.12},
-  {id:'exec', name:'Executivo', icon:'🚘', pax:4, bags:3, eta:'5 min', base:1.50, perKm:0.96, perMinute:0.14, model:'Mercedes Classe E'},
-  {id:'business', name:'Negócios', icon:'🚙', pax:4, bags:3, eta:'5 min', base:2.00, perKm:1.04, perMinute:0.16, model:'Mercedes Classe S'},
-  {id:'premium', name:'Premium', icon:'🚖', pax:4, bags:4, eta:'6 min', base:2.50, perKm:1.12, perMinute:0.18, model:'BMW Série 7'},
-  {id:'vip', name:'VIP', icon:'🚐', pax:6, bags:6, eta:'8 min', base:3.00, perKm:1.28, perMinute:0.22, model:'Mercedes V-Class'},
-];
-const FALLBACK_ROUTE_KM = 15;
-const FALLBACK_ROUTE_MINUTES = 25;
-let routeKm = null;
-let routeMinutes = null;
-let myCurrentLatLng = null;
-let selectedVehicle = null;
-let selectedTip = 0;
-
 function calcFare(v, km, minutes){
   const raw = v.base + (km * v.perKm) + (minutes * v.perMinute);
   return Math.round(raw * 100) / 100;

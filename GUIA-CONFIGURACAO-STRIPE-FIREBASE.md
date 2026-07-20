@@ -8,7 +8,7 @@ Projeto real criado e ligado aos ficheiros do projeto:
 
 - **Conta Google:** jn.paulo2020@gmail.com
 - **Projeto:** Lux Transfers (`lux-transfers-47cb2`)
-- **Firestore:** ativado, região `eur3 (Europe)`. Regras fechadas por predefinição, com **três exceções**: as coleções `driver_locations` e `rides`, e a subcoleção `rides/{rideId}/messages`, estão abertas a leitura/escrita pública (ver secções 1b, 1c e 1d) — todo o resto continua bloqueado.
+- **Firestore:** ativado, região `eur3 (Europe)`. Regras fechadas por predefinição, com **cinco exceções**: as coleções `driver_locations`, `rides`, `driver_name_requests` e `pricing`, e a subcoleção `rides/{rideId}/messages`, estão abertas a leitura/escrita pública (ver secções 1b, 1c, 1d e 1e) — todo o resto continua bloqueado.
 - **Cloud Messaging (FCM):** ativado, com chave VAPID gerada
 - **Apps Web registadas:** "Lux Cliente Web" e "LuxDriver Web" (cada uma com o seu próprio `appId`, para poderes distinguir a origem dos pushes/eventos no futuro)
 
@@ -66,6 +66,14 @@ Os ícones 📞 e 💬 nos ecrãs de viagem (cliente e motorista) agora funciona
 - **Chat (💬):** abre um ecrã de mensagens ligado à subcoleção `rides/{rideId}/messages` no Firestore, com `onSnapshot` para atualização em tempo real entre os dois dispositivos. Sem uma viagem real ativa, o chat mostra um aviso e fica bloqueado para escrita (não haveria ninguém do outro lado a receber a mensagem).
 
 **Antes de ires para produção:** a regra da subcoleção `rides/{rideId}/messages` está aberta a qualquer leitura/escrita, pelo mesmo motivo e com a mesma recomendação das secções 1b/1c — depois de ligares Firebase Authentication real, aperta esta regra para só permitir leitura/escrita a quem participa nessa viagem (cliente ou motorista do documento `rides/{rideId}`).
+
+## 1e. Painel admin: login, tarifário e pedidos de nome — já configurado ✅
+
+- **Login do admin:** a password real nunca fica no frontend — é verificada pela Cloud Function `checkAdminLogin`, que compara com o secret `ADMIN_CREDENTIALS_JSON` (Secret Manager).
+- **Tarifário (💶):** a coleção `pricing` guarda a tarifa base/km/minuto de cada classe de veículo. Quando o admin guarda uma alteração no painel, o `lux-cliente.html` (e o ficheiro combinado) ouvem essa coleção em tempo real e atualizam os preços mostrados ao cliente na hora.
+- **Pedidos de nome (✎):** a coleção `driver_name_requests` guarda os pedidos de alteração de nome enviados pelos motoristas; o admin aprova ou rejeita no painel, e o app do motorista aplica o novo nome automaticamente assim que é aprovado.
+
+**Antes de ires para produção:** as regras das coleções `driver_name_requests` e `pricing` estão abertas a qualquer leitura/escrita, pelo mesmo motivo das secções 1b/1c/1d (sem Firebase Authentication real ligado ainda). Depois de ligares autenticação real, aperta a regra de `pricing` para só permitir escrita a partir do login do admin, e a de `driver_name_requests` para só permitir que o motorista crie os seus próprios pedidos e apenas o admin altere o campo `status`.
 
 ## 2. Stripe — a tua conta separada (modo de teste)
 

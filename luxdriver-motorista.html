@@ -522,7 +522,6 @@
     mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
     mask-composite:exclude;
     pointer-events:none;
-    animation:rotate-current 3.2s linear infinite;
     transition:opacity .3s ease;
     z-index:1;
   }
@@ -1717,6 +1716,7 @@ function restoreSession(p){
 function completeAuth(p){
   updateSettingsUI(p);
   saveSession(p);
+  if(typeof enforceSingleSession==='function') enforceSingleSession(p);
   if(p==='c'){ resetClientFlow(); } else { resetDriverFlow(); }
 }
 async function doLogin(p){
@@ -1858,6 +1858,7 @@ function doReset(p){
 }
 function doLogout(p){
   clearAllTimers();
+  if(typeof stopSingleSessionWatch==='function') stopSingleSessionWatch(p);
   if(p==='d'){
     isOnline = false;
     if(typeof waitInterval!=='undefined' && waitInterval) clearInterval(waitInterval);
@@ -1985,11 +1986,17 @@ function initDriverApp(){ goTo('d-auth-welcome'); }
   setLanguage(savedLang);
   loadUserPhotos();
   updateSettingsUI('c'); updateSettingsUI('d');
-  ['c','d'].forEach(function(p){
-    if(document.getElementById(p+'-home') && restoreSession(p)){
-      completeAuth(p);
-    }
-  });
+  /* Adiado com setTimeout: garante que todo o script (incluindo estado do
+     motorista como isOnline/driverBalance/currentRideId, declarado mais
+     abaixo) já foi totalmente inicializado antes de restaurar a sessão e
+     religar o fluxo — evita erros "Cannot access before initialization". */
+  setTimeout(function(){
+    ['c','d'].forEach(function(p){
+      if(document.getElementById(p+'-home') && restoreSession(p)){
+        completeAuth(p);
+      }
+    });
+  }, 0);
 })();
 
 /* ===================== STRIPE (frontend) ===================== */
@@ -2178,6 +2185,55 @@ function initFirestore(){
     firestoreDb = firebase.firestore();
   }catch(e){ console.warn('Firestore init falhou:', e); return null; }
   return firestoreDb;
+}
+
+/* ===================== SESSÃO ÚNICA POR CONTA =====================
+   Impede que a mesma conta esteja ligada em mais do que um aparelho ao
+   mesmo tempo. Cada início de sessão grava um carimbo aleatório em
+   active_sessions/{papel}_{email}; este aparelho fica a "ouvir" esse
+   documento em tempo real. Se outro aparelho iniciar sessão com a mesma
+   conta (o que substitui o carimbo), este aparelho deteta a diferença e
+   termina a sessão automaticamente aqui. Se o Firestore não estiver
+   disponível, a funcionalidade fica simplesmente inativa — não bloqueia
+   o uso normal da app (mesma resiliência usada no resto do projeto). */
+let activeSessionUnsub = { c:null, d:null };
+let mySessionId = { c:null, d:null };
+function sanitizeSessionKey(str){
+  return String(str||'').toLowerCase().replace(/[^a-z0-9]/g,'_').slice(0,120);
+}
+function newSessionId(){
+  try{ return crypto.randomUUID(); }catch(e){ return Date.now()+'-'+Math.random().toString(36).slice(2); }
+}
+function stopSingleSessionWatch(p){
+  if(activeSessionUnsub[p]){ try{ activeSessionUnsub[p](); }catch(e){} activeSessionUnsub[p] = null; }
+  mySessionId[p] = null;
+}
+function enforceSingleSession(p){
+  const db = initFirestore();
+  const email = currentUser[p] && currentUser[p].email;
+  if(!db || !email) return;
+  const sid = newSessionId();
+  mySessionId[p] = sid;
+  const docId = p + '_' + sanitizeSessionKey(email);
+  const ref = db.collection('active_sessions').doc(docId);
+  if(activeSessionUnsub[p]){ try{ activeSessionUnsub[p](); }catch(e){} activeSessionUnsub[p] = null; }
+  ref.set({
+    sessionId: sid,
+    updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+    device: (navigator.userAgent || '').slice(0, 120)
+  }).catch(function(e){ console.warn('Falha ao registar sessão única:', e); });
+  activeSessionUnsub[p] = ref.onSnapshot(function(doc){
+    if(!doc.exists) return;
+    const data = doc.data();
+    if(data && data.sessionId && mySessionId[p] && data.sessionId !== mySessionId[p]){
+      stopSingleSessionWatch(p);
+      clearSession(p);
+      clearAllTimers();
+      if(p === 'd' && typeof isOnline !== 'undefined'){ isOnline = false; }
+      goTo(p + '-auth-welcome');
+      alert('A tua conta foi iniciada noutro aparelho. Por segurança, a sessão foi terminada aqui.');
+    }
+  }, function(err){ console.warn('Falha ao vigiar sessão única:', err); });
 }
 
 let luxAuth = null;
