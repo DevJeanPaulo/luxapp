@@ -172,6 +172,9 @@
     color:var(--text); font-size:13.5px; padding:8px 10px; width:100px;
   }
   .pricing-table .cls-name{ font-weight:700; font-size:13.5px; }
+  .pricing-table tfoot td{ border-top:2px solid var(--line); border-bottom:none; padding-top:12px; }
+  .table-scroll{ overflow-x:auto; -webkit-overflow-scrolling:touch; }
+  .table-scroll .pricing-table{ min-width:620px; }
 
   /* ---------- Pedidos de nome ---------- */
   .name-req-card{
@@ -194,6 +197,8 @@
     .overall-actions{ flex-direction:column; }
     .overall-actions button{ width:100%; }
     #live-map{ min-height:280px; }
+    .table-scroll .pricing-table{ min-width:560px; }
+    .pricing-table th, .pricing-table td{ padding:8px 9px; font-size:12.5px; }
   }
 </style>
 </head>
@@ -225,6 +230,7 @@
       <button data-v="live" onclick="switchView('live')">🔴 Ao vivo</button>
       <button data-v="pricing" onclick="switchView('pricing')">💶 Tarifário</button>
       <button data-v="names" onclick="switchView('names')">✎ Pedidos de nome</button>
+      <button data-v="finance" onclick="switchView('finance')">💰 Financeiro</button>
     </div>
     <button class="btn btn-outline" onclick="renderAll()">↻ Atualizar</button>
     <button class="btn btn-danger" onclick="doAdminLogout()">Sair</button>
@@ -278,6 +284,19 @@
     <h2 style="margin:0 0 6px;">Pedidos de alteração de nome (motoristas)</h2>
     <p class="sub" style="margin:0 0 20px;">Aprova ou rejeita pedidos de mudança de nome enviados pelos motoristas.</p>
     <div id="name-requests-list"></div>
+  </div>
+</div>
+
+<div class="layout" id="view-finance" style="display:none;">
+  <div class="col-list">
+    <div class="live-status" id="finance-status">A ligar ao Firestore…</div>
+    <div id="finance-driver-list"></div>
+  </div>
+  <div class="col-detail" id="finance-detail">
+    <div class="empty-state">
+      <div class="emoji">💰</div>
+      <p>Seleciona um motorista na lista para veres o financeiro mensal (recargas, corridas, comissão e valor a repassar).</p>
+    </div>
   </div>
 </div>
 
@@ -427,9 +446,11 @@ function switchView(view){
   document.getElementById('view-live').style.display = view==='live' ? 'flex' : 'none';
   document.getElementById('view-pricing').style.display = view==='pricing' ? 'flex' : 'none';
   document.getElementById('view-names').style.display = view==='names' ? 'flex' : 'none';
+  document.getElementById('view-finance').style.display = view==='finance' ? 'flex' : 'none';
   if(view==='live') initLiveTracking();
   if(view==='pricing') initPricingView();
   if(view==='names') initNameRequestsView();
+  if(view==='finance') initFinanceView();
 }
 function initLiveTracking(){
   const statusEl = document.getElementById('live-status');
@@ -630,6 +651,159 @@ async function resolveNameRequest(reqId, status){
   }
 }
 
+/* ===================== FINANCEIRO POR MOTORISTA =====================
+   Lista todos os motoristas registados (drivers/{id}, gravado automaticamente
+   pela app do motorista em cada início de sessão) e, para o motorista
+   selecionado, agrega por mês: recargas de saldo (receita direta da
+   plataforma, coleção driver_recharges), corridas concluídas e o respetivo
+   valor bruto (coleção rides, status "completed"), a comissão de 10% do site
+   e o valor a repassar ao motorista (bruto − comissão). Novos motoristas que
+   se registarem aparecem automaticamente, sem qualquer ação manual. */
+const FINANCE_COMMISSION_RATE = 0.10;
+let financeDriversUnsub = null;
+let financeDrivers = [];
+let selectedFinanceDriverId = null;
+
+function initFinanceView(){
+  const statusEl = document.getElementById('finance-status');
+  const db = initFirestore();
+  if(!db){
+    if(statusEl) statusEl.textContent = 'Firestore indisponível (configuração por preencher ou offline).';
+    return;
+  }
+  if(financeDriversUnsub) return; // já a ouvir
+  if(statusEl) statusEl.textContent = 'A carregar motoristas…';
+  financeDriversUnsub = db.collection('drivers').onSnapshot(function(snapshot){
+    financeDrivers = [];
+    snapshot.forEach(function(doc){ financeDrivers.push(Object.assign({ id: doc.id }, doc.data())); });
+    financeDrivers.sort(function(a,b){ return (a.name||'').localeCompare(b.name||''); });
+    renderFinanceDriverList();
+    if(statusEl) statusEl.textContent = financeDrivers.length + (financeDrivers.length===1 ? ' motorista registado' : ' motoristas registados');
+    if(selectedFinanceDriverId && !financeDrivers.some(function(d){ return d.id===selectedFinanceDriverId; })){
+      selectedFinanceDriverId = null;
+    }
+  }, function(err){
+    console.warn('Falha ao ouvir drivers:', err);
+    if(statusEl) statusEl.textContent = 'Erro ao ligar ao Firestore — verifica as regras de segurança.';
+  });
+}
+function renderFinanceDriverList(){
+  const el = document.getElementById('finance-driver-list');
+  if(!el) return;
+  if(financeDrivers.length===0){
+    el.innerHTML = '<div class="empty-state"><div class="emoji">🧑‍✈️</div><p>Ainda não há motoristas registados.</p></div>';
+    return;
+  }
+  el.innerHTML = financeDrivers.map(function(d){
+    const sel = d.id===selectedFinanceDriverId ? ' selected' : '';
+    return '<div class="app-card' + sel + '" onclick="selectFinanceDriver(\'' + d.id + '\')">' +
+      '<div class="row"><div class="name">' + (d.name || 'Motorista') + '</div></div>' +
+      '<div class="meta">' + (d.email || '') + '</div>' +
+    '</div>';
+  }).join('');
+}
+async function selectFinanceDriver(driverId){
+  selectedFinanceDriverId = driverId;
+  renderFinanceDriverList();
+  const driver = financeDrivers.find(function(d){ return d.id===driverId; });
+  const detail = document.getElementById('finance-detail');
+  if(!detail || !driver) return;
+  detail.innerHTML = '<div class="empty-state"><div class="emoji">⏳</div><p>A calcular financeiro…</p></div>';
+  const db = initFirestore();
+  if(!db) return;
+  try{
+    const [rechargesSnap, ridesSnap] = await Promise.all([
+      db.collection('driver_recharges').where('driverId', '==', driverId).get(),
+      db.collection('rides').where('driverId', '==', driverId).where('status', '==', 'completed').get()
+    ]);
+    if(selectedFinanceDriverId !== driverId) return; // utilizador já selecionou outro motorista entretanto
+    const monthly = {};
+    function bucket(key){
+      if(!monthly[key]) monthly[key] = { recharges:0, trips:0, gross:0, commission:0 };
+      return monthly[key];
+    }
+    rechargesSnap.forEach(function(doc){
+      const d = doc.data();
+      bucket(financeMonthKey(d.createdAt)).recharges += Number(d.amount) || 0;
+    });
+    ridesSnap.forEach(function(doc){
+      const d = doc.data();
+      const b = bucket(financeMonthKey(d.completedAt || d.updatedAt));
+      b.trips += 1;
+      const gross = Number(d.totalFare) || 0;
+      b.gross += gross;
+      b.commission += (d.commission != null ? Number(d.commission) : gross * FINANCE_COMMISSION_RATE);
+    });
+    renderFinanceDetail(driver, monthly);
+  }catch(e){
+    console.warn('Falha ao calcular financeiro do motorista:', e);
+    if(selectedFinanceDriverId === driverId){
+      detail.innerHTML = '<div class="empty-state"><div class="emoji">⚠️</div><p>Erro ao carregar os dados financeiros — verifica as regras de segurança do Firestore.</p></div>';
+    }
+  }
+}
+function financeMonthKey(ts){
+  let dt;
+  if(ts && typeof ts.toDate === 'function') dt = ts.toDate();
+  else if(ts) dt = new Date(ts);
+  else dt = new Date();
+  return dt.getFullYear() + '-' + String(dt.getMonth() + 1).padStart(2, '0');
+}
+function financeMonthLabel(key){
+  const MESES = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+  const parts = key.split('-');
+  return MESES[parseInt(parts[1], 10) - 1] + ' de ' + parts[0];
+}
+function fmtEurAdmin(v){
+  return (Number(v) || 0).toLocaleString('pt-PT', { style:'currency', currency:'EUR' });
+}
+function renderFinanceDetail(driver, monthly){
+  const detail = document.getElementById('finance-detail');
+  if(!detail) return;
+  const keys = Object.keys(monthly).sort().reverse();
+  const totals = { recharges:0, trips:0, gross:0, commission:0 };
+  keys.forEach(function(k){
+    totals.recharges += monthly[k].recharges;
+    totals.trips += monthly[k].trips;
+    totals.gross += monthly[k].gross;
+    totals.commission += monthly[k].commission;
+  });
+  const rowsHtml = keys.length === 0
+    ? '<tr><td colspan="6" style="text-align:center; color:var(--muted); padding:24px;">Sem movimentos registados ainda.</td></tr>'
+    : keys.map(function(k){
+        const m = monthly[k];
+        const repasse = m.gross - m.commission;
+        return '<tr>' +
+          '<td class="cls-name">' + financeMonthLabel(k) + '</td>' +
+          '<td>' + fmtEurAdmin(m.recharges) + '</td>' +
+          '<td>' + m.trips + '</td>' +
+          '<td>' + fmtEurAdmin(m.gross) + '</td>' +
+          '<td>' + fmtEurAdmin(m.commission) + '</td>' +
+          '<td style="color:var(--gold); font-weight:700;">' + fmtEurAdmin(repasse) + '</td>' +
+        '</tr>';
+      }).join('');
+  const totalRepasse = totals.gross - totals.commission;
+  detail.innerHTML =
+    '<div class="detail-header"><div class="detail-header-info">' +
+      '<h1>' + (driver.name || 'Motorista') + '</h1>' +
+      '<div class="meta-line"><span>' + (driver.email || '') + '</span><span>' + (driver.phone || '') + '</span></div>' +
+    '</div></div>' +
+    '<div class="live-status" style="margin-bottom:14px;">Registado ' + fmtRelativeTime(driver.registeredAt) + ' · comissão do site: ' + Math.round(FINANCE_COMMISSION_RATE * 100) + '%</div>' +
+    '<div class="table-scroll"><table class="pricing-table">' +
+      '<thead><tr><th>Mês</th><th>Recargas</th><th>Corridas</th><th>Valor bruto</th><th>Comissão (' + Math.round(FINANCE_COMMISSION_RATE * 100) + '%)</th><th>A repassar ao motorista</th></tr></thead>' +
+      '<tbody>' + rowsHtml + '</tbody>' +
+      (keys.length > 0 ? '<tfoot><tr style="font-weight:700;">' +
+        '<td class="cls-name">Total geral</td>' +
+        '<td>' + fmtEurAdmin(totals.recharges) + '</td>' +
+        '<td>' + totals.trips + '</td>' +
+        '<td>' + fmtEurAdmin(totals.gross) + '</td>' +
+        '<td>' + fmtEurAdmin(totals.commission) + '</td>' +
+        '<td style="color:var(--gold);">' + fmtEurAdmin(totalRepasse) + '</td>' +
+      '</tr></tfoot>' : '') +
+    '</table></div>' +
+    '<p class="sub" style="margin-top:16px; max-width:640px;">Recargas: valor pago pelo motorista para carregar saldo — receita direta da plataforma. Comissão: ' + Math.round(FINANCE_COMMISSION_RATE * 100) + '% retido sobre o valor das corridas concluídas — também receita da plataforma. A repassar: valor das corridas menos a comissão — valor a transferir ao motorista.</p>';
+}
+
 function loadApplications(){
   try{ return JSON.parse(localStorage.getItem(DRIVER_APPS_KEY)) || []; }catch(e){ return []; }
 }
@@ -668,6 +842,7 @@ function setFilter(f){
 function renderAll(){
   renderList();
   renderDetail();
+  if(selectedFinanceDriverId) selectFinanceDriver(selectedFinanceDriverId);
 }
 function renderList(){
   const list = loadApplications()

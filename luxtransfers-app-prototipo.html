@@ -2257,6 +2257,7 @@ function completeAuth(p){
   updateSettingsUI(p);
   saveSession(p);
   if(typeof enforceSingleSession==='function') enforceSingleSession(p);
+  if(p==='d' && typeof upsertDriverProfile==='function') upsertDriverProfile();
   if(p==='c'){ resetClientFlow(); } else { resetDriverFlow(); }
 }
 async function doLogin(p){
@@ -2750,6 +2751,48 @@ function initFirestore(){
     firestoreDb = firebase.firestore();
   }catch(e){ console.warn('Firestore init falhou:', e); return null; }
   return firestoreDb;
+}
+
+/* ===================== PERFIL DO MOTORISTA + FINANCEIRO =====================
+   Grava/atualiza drivers/{id} sempre que o motorista inicia sessão, para que o
+   painel de administração liste automaticamente todos os motoristas registados
+   (incluindo novos registos) e calcule o financeiro por mês. Cada recarga de
+   saldo fica registada em driver_recharges/{autoId} (receita direta da
+   plataforma) e cada corrida concluída (rides/{rideId}) passa a incluir
+   driverId/driverEmail, para o admin conseguir somar o valor bruto das
+   corridas, a comissão de 10% e o valor a repassar ao motorista, por mês. */
+function driverDocId(email){
+  return sanitizeSessionKey(email);
+}
+async function upsertDriverProfile(){
+  const db = initFirestore();
+  if(!db || !currentUser.d || !currentUser.d.email) return;
+  try{
+    const id = driverDocId(currentUser.d.email);
+    const ref = db.collection('drivers').doc(id);
+    const snap = await ref.get();
+    const payload = {
+      name: currentUser.d.name || '',
+      email: currentUser.d.email,
+      phone: currentUser.d.phone || '',
+      lastLoginAt: firebase.firestore.FieldValue.serverTimestamp()
+    };
+    if(!snap.exists) payload.registeredAt = firebase.firestore.FieldValue.serverTimestamp();
+    await ref.set(payload, { merge:true });
+  }catch(e){ console.warn('Não foi possível guardar o perfil do motorista:', e); }
+}
+async function recordDriverRecharge(amount){
+  const db = initFirestore();
+  if(!db || !currentUser.d || !currentUser.d.email) return;
+  try{
+    await db.collection('driver_recharges').add({
+      driverId: driverDocId(currentUser.d.email),
+      driverEmail: currentUser.d.email,
+      driverName: currentUser.d.name || '',
+      amount: amount,
+      createdAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+  }catch(e){ console.warn('Não foi possível registar a recarga:', e); }
 }
 
 /* ===================== SESSÃO ÚNICA POR CONTA =====================
@@ -3780,6 +3823,7 @@ function confirmRecharge(){
   openPayment('d', pendingRechargeAmount, function(){
     driverBalance += pendingRechargeAmount;
     renderBalanceUI();
+    if(typeof recordDriverRecharge==='function') recordDriverRecharge(pendingRechargeAmount);
     toast('d-home', `Saldo recarregado: +${fmtEur(pendingRechargeAmount)}`);
     if(!isOnline){
       isOnline = true;
@@ -3853,6 +3897,7 @@ function acceptRequest(){
     if(col){
       col.doc(driverRideId).set({
         status:'accepted', driverName: currentUser.d.name, driverPhone: currentUser.d.phone,
+        driverEmail: currentUser.d.email, driverId: driverDocId(currentUser.d.email),
         acceptedAt: firebase.firestore.FieldValue.serverTimestamp(),
         updatedAt: firebase.firestore.FieldValue.serverTimestamp()
       }, { merge:true }).catch(function(e){ console.warn('Falha ao aceitar pedido real:', e); });
@@ -3995,6 +4040,8 @@ function markTripComplete(el){
       if(col){
         col.doc(driverRideId).set({
           status:'completed', totalFare: totalFare, waitFee: wait, commission: commission,
+          driverEmail: currentUser.d.email, driverId: driverDocId(currentUser.d.email),
+          completedAt: firebase.firestore.FieldValue.serverTimestamp(),
           updatedAt: firebase.firestore.FieldValue.serverTimestamp()
         }, { merge:true }).catch(function(){});
       }
