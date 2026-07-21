@@ -263,6 +263,7 @@
   }
   .address-bar-top .field{ margin-bottom:0; border:none; border-radius:0; background:transparent; }
   .address-bar-top .field-divider{ height:1px; background:var(--line); margin:0 14px; }
+  .field .field-prefix{ flex-shrink:0; font-size:12px; font-weight:700; color:var(--muted); }
   .field .dot-marker{ width:9px; height:9px; border-radius:50%; flex-shrink:0; }
   .field .dot-marker.o{ background:#5b6473; }
   .field .dot-marker.d{ background:var(--gold); }
@@ -1039,12 +1040,14 @@
         <div class="address-bar-top glow-frame">
           <div class="field">
             <span class="dot-marker o"></span>
+            <span class="field-prefix">De</span>
             <input id="c-origin" value="A minha localização atual" />
           </div>
           <div id="c-stops-list"></div>
           <div class="field-divider"></div>
           <div class="field">
             <span class="dot-marker d"></span>
+            <span class="field-prefix">Para</span>
             <input id="c-dest" placeholder="Introduza o destino" oninput="onDestInput()" />
           </div>
         </div>
@@ -1405,11 +1408,23 @@ function gDotIcon(color, scale){
    rodar sempre na direção real do movimento — como o marcador do Uber/Bolt,
    que roda suavemente para acompanhar a curva da estrada em vez de ficar
    sempre virado para o mesmo lado. */
+/* Marcador "puck" ao estilo do novo mapa do motorista da Uber: círculo
+   claro com borda dourada Lux e seta escura a apontar o rumo real do
+   veículo (rotação embutida no próprio SVG, não na propriedade do símbolo,
+   para o círculo em si nunca rodar — só a seta lá dentro). Maior e mais
+   visível do que a antiga seta simples. */
 function gCarIcon(rotation){
+  const rot = rotation || 0;
+  const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="46" height="46" viewBox="0 0 46 46">'
+    + '<circle cx="23" cy="23" r="19" fill="#ffffff" stroke="#FFC94D" stroke-width="2.5"/>'
+    + '<g transform="rotate(' + rot + ' 23 23)">'
+    + '<path d="M23 9 L32 33 L23 27 L14 33 Z" fill="#12151b"/>'
+    + '</g>'
+    + '</svg>';
   return {
-    path:google.maps.SymbolPath.FORWARD_CLOSED_ARROW, scale:5,
-    fillColor:'#FFC94D', fillOpacity:1, strokeColor:'#0b0d11', strokeWeight:1,
-    rotation: rotation||0, anchor: new google.maps.Point(0, 2.6)
+    url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(svg),
+    scaledSize: new google.maps.Size(46, 46),
+    anchor: new google.maps.Point(23, 23)
   };
 }
 /* Rumo (bearing) entre duas coordenadas, em graus (0-360). */
@@ -1462,11 +1477,19 @@ function clearRouteCarMarker(containerId){
   if(cached && cached.marker) cached.marker.setMap(null);
   delete _routeCarMarkerCache[containerId];
 }
-function showRealRoute(containerId, originPlace, destPlace, showCar){
+function showRealRoute(containerId, originPlace, destPlace, showCar, stops){
   const map = initRealMap(containerId, originPlace, 13);
   if(!map) return false;
   new google.maps.Marker({ position:originPlace, map:map, icon:gDotIcon('#8b93a1',6) });
   new google.maps.Marker({ position:destPlace, map:map, icon:gDotIcon('#FFC94D',7) });
+  // Paradas intermédias: marcador azul no mapa + waypoint real na rota do
+  // Google Directions, para o caminho desenhado passar mesmo por elas em
+  // vez de ir direto da recolha ao destino.
+  const validStops = (Array.isArray(stops) ? stops : []).filter(function(s){ return s && s.lat!=null && s.lng!=null; });
+  validStops.forEach(function(s){
+    new google.maps.Marker({ position:{ lat:s.lat, lng:s.lng }, map:map, icon:gDotIcon('#2E8FFF',6) });
+  });
+  const waypoints = validStops.map(function(s){ return { location:{ lat:s.lat, lng:s.lng }, stopover:true }; });
   const directionsService = new google.maps.DirectionsService();
   const renderer = new google.maps.DirectionsRenderer({
     suppressMarkers:true, preserveViewport:true,
@@ -1477,7 +1500,7 @@ function showRealRoute(containerId, originPlace, destPlace, showCar){
   // (recebida via startListeningDriverLocationEta), nunca a animar sozinho
   // do início ao fim da rota.
   if(showCar) placeRouteCarMarker(containerId, map, (typeof lastKnownDriverLatLng!=='undefined' && lastKnownDriverLatLng) ? lastKnownDriverLatLng : originPlace);
-  directionsService.route({ origin:originPlace, destination:destPlace, travelMode:'DRIVING' }, function(result, status){
+  directionsService.route({ origin:originPlace, destination:destPlace, waypoints:waypoints, travelMode:'DRIVING' }, function(result, status){
     if(status !== 'OK' || !result.routes[0]) return;
     renderer.setDirections(result);
     const path = result.routes[0].overview_path;
@@ -2338,16 +2361,14 @@ async function submitPayment(scope){
   }
 }
 function payAndFinishTrip(){
-  // A tarifa base já foi cobrada no pedido (ver payThenRequestRide). Aqui só se
-  // cobra o que ainda não foi pago: tempo de espera extra (definido pelo
-  // motorista) + gorjeta escolhida agora. Se não houver nada em falta, conclui
-  // a viagem sem abrir o ecrã de pagamento outra vez.
-  const hasRealFare = currentRide && currentRide.status==='completed' && currentRide.totalFare!=null;
-  const wait = hasRealFare ? (currentRide.waitFee||0) : ((typeof waitOverageFee !== 'undefined') ? waitOverageFee : 0);
-  const extra = wait + selectedTip;
-  if(extra <= 0){ finishClientTrip(); return; }
-  if(unlimitedAccount.c){ finishClientTrip(); return; }
-  openPayment('c', extra, function(){ finishClientTrip(); });
+  // A tarifa base já foi cobrada no pedido (ver payThenRequestRide). O tempo de
+  // espera/paragem extra é cobrado automaticamente aqui, SEM mostrar o ecrã de
+  // pagamento (que tem botão "Cancelar") — o motorista ficou mesmo parado à
+  // espera e tem sempre de receber por isso; o cliente não pode fugir a essa
+  // cobrança. Só a gorjeta, que é uma escolha voluntária do cliente, ainda
+  // passa pelo ecrã de pagamento, se houver alguma.
+  if(unlimitedAccount.c || selectedTip<=0){ finishClientTrip(); return; }
+  openPayment('c', selectedTip, function(){ finishClientTrip(); });
 }
 window.addEventListener('load', initStripe);
 
@@ -3459,7 +3480,8 @@ function startTrip(){
   toast('c-trip', 'Motorista chegou — viagem iniciada');
   const pickupPos = (currentRide && currentRide.pickupLat!=null && currentRide.pickupLng!=null) ? { lat: currentRide.pickupLat, lng: currentRide.pickupLng } : LUX_PLACES.pickup;
   const dropoffPos = (currentRide && currentRide.dropoffLat!=null && currentRide.dropoffLng!=null) ? { lat: currentRide.dropoffLat, lng: currentRide.dropoffLng } : LUX_PLACES.airport;
-  if(!showRealRoute('map-trip', pickupPos, dropoffPos, true)){
+  const tripStopsForRoute = (currentRide && Array.isArray(currentRide.stops)) ? currentRide.stops : [];
+  if(!showRealRoute('map-trip', pickupPos, dropoffPos, true, tripStopsForRoute)){
     drawRoute(document.getElementById('svg-route-trip'), 25,80,75,20,'#FFC94D');
     placePins(document.getElementById('map-trip'), 25,80,75,20);
     const car = document.getElementById('car-trip');

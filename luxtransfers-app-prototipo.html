@@ -297,9 +297,22 @@
   }
   .address-bar-top .field{ margin-bottom:0; border:none; border-radius:0; background:transparent; }
   .address-bar-top .field-divider{ height:1px; background:var(--line); margin:0 14px; }
+  .field .field-prefix{ flex-shrink:0; font-size:12px; font-weight:700; color:var(--muted); }
   .field .dot-marker{ width:9px; height:9px; border-radius:50%; flex-shrink:0; }
   .field .dot-marker.o{ background:#5b6473; }
   .field .dot-marker.d{ background:var(--gold); }
+  .field .dot-marker.s{ background:#2E8FFF; }
+  .field .stop-remove{
+    flex-shrink:0; width:28px; height:28px; border-radius:50%; border:none;
+    background:var(--panel); color:var(--muted); font-size:14px; line-height:1;
+    display:flex; align-items:center; justify-content:center; cursor:pointer;
+    -webkit-tap-highlight-color:transparent;
+  }
+  .add-stop-btn{
+    display:flex; align-items:center; gap:6px; margin:0 16px 10px; padding:0 4px;
+    color:var(--gold); font-size:13px; font-weight:600; cursor:pointer; width:fit-content;
+    -webkit-tap-highlight-color:transparent;
+  }
   .field input{
     background:transparent; border:none; outline:none; color:var(--text);
     font-size:16px; width:100%;
@@ -1083,14 +1096,18 @@
         <div class="address-bar-top glow-frame">
           <div class="field">
             <span class="dot-marker o"></span>
+            <span class="field-prefix">De</span>
             <input id="c-origin" value="A minha localização atual" />
           </div>
+          <div id="c-stops-list"></div>
           <div class="field-divider"></div>
           <div class="field">
             <span class="dot-marker d"></span>
+            <span class="field-prefix">Para</span>
             <input id="c-dest" placeholder="Introduza o destino" oninput="onDestInput()" />
           </div>
         </div>
+        <div class="add-stop-btn" onclick="addTripStop()">+ Adicionar parada</div>
         <div class="map" id="map-home">
           <svg><line x1="0" y1="0" x2="0" y2="0"/></svg>
           <div class="me-dot" style="left:50%; top:46%;"></div>
@@ -1183,7 +1200,7 @@
               <div class="icon-btn" onclick="openClientChat()">💬<span class="chat-notify-dot" id="chat-notify-c-found"></span></div>
             </div>
           </div>
-          <button class="btn btn-danger-text" onclick="goTo('c-home')">Cancelar viagem</button>
+          <button class="btn btn-danger-text" id="c-found-cancel-btn" onclick="cancelAcceptedRide()">Cancelar viagem</button>
         </div>
       </div>
 
@@ -1711,12 +1728,18 @@
           <div class="sheet-handle"></div>
           <div class="eta-banner">
             <div><div class="lbl">Chegada estimada</div><div class="big" id="d-trip-eta">16 min</div></div>
-            <div style="text-align:right;"><div class="lbl">Destino</div><div style="font-size:13px; font-weight:700;">Aeroporto LIS</div></div>
+            <div style="text-align:right;"><div class="lbl">Destino</div><div style="font-size:13px; font-weight:700;" id="d-trip-dest-label">Aeroporto LIS</div></div>
           </div>
+          <div id="d-trip-stops-info" style="display:none; font-size:12px; color:var(--muted); margin:-6px 0 10px;"></div>
           <div class="nav-row">
             <div class="nav-btn" onclick="openNav('google','dest')"><span class="ic">🗺️</span>Google Maps</div>
             <div class="nav-btn" onclick="openNav('waze','dest')"><span class="ic">🧭</span>Waze</div>
           </div>
+          <div class="wait-timer-box" id="stop-timer-box" style="display:none;">
+            <div class="time" id="stop-timer-display">03:00</div>
+            <div class="lbl">Tempo de espera na parada</div>
+          </div>
+          <button class="btn btn-outline" id="stop-timer-btn" style="margin-bottom:10px;" onclick="toggleStopTimer()">▶ Iniciar parada</button>
           <div class="swipe-btn" id="complete-trip-btn" onclick="markTripComplete(this)"><div class="fill"></div><span>Terminar viagem</span></div>
         </div>
       </div>
@@ -1867,6 +1890,21 @@ const LUX_PLACES = {
   airport: { lat:38.7813, lng:-9.1359 }, // Aeroporto de Lisboa (LIS)
   near:    { lat:38.7275, lng:-9.1470 }  // ponto próximo simulado (motorista/veículo a caminho)
 };
+/* Devolvem a posição REAL de recolha/destino da corrida atribuída ao
+   motorista (driverRideData), com LUX_PLACES como fallback apenas quando
+   ainda não há dados reais (ex.: modo demonstração). */
+function ridePickupPos(){
+  if(typeof driverRideData!=='undefined' && driverRideData && driverRideData.pickupLat!=null && driverRideData.pickupLng!=null){
+    return { lat: driverRideData.pickupLat, lng: driverRideData.pickupLng };
+  }
+  return LUX_PLACES.pickup;
+}
+function rideDropoffPos(){
+  if(typeof driverRideData!=='undefined' && driverRideData && driverRideData.dropoffLat!=null && driverRideData.dropoffLng!=null){
+    return { lat: driverRideData.dropoffLat, lng: driverRideData.dropoffLng };
+  }
+  return LUX_PLACES.airport;
+}
 const LUX_MAP_STYLE = [
   { elementType:'geometry', stylers:[{ color:'#0e1116' }] },
   { elementType:'labels.text.stroke', stylers:[{ color:'#0e1116' }] },
@@ -1907,8 +1945,10 @@ function initPlacesAutocomplete(){
     acDest.addListener('place_changed', function(){
       const place = acDest.getPlace();
       if(place && (place.formatted_address || place.name)) destInput.value = place.formatted_address || place.name;
+      selectedDestLatLng = (place && place.geometry && place.geometry.location) ? { lat: place.geometry.location.lat(), lng: place.geometry.location.lng() } : null;
       onDestInput();
     });
+    destInput.addEventListener('input', function(){ selectedDestLatLng = null; });
   }
   placesAutocompleteBound = true;
   return true;
@@ -1930,11 +1970,23 @@ function gDotIcon(color, scale){
    rodar sempre na direção real do movimento — como o marcador do Uber/Bolt,
    que roda suavemente para acompanhar a curva da estrada em vez de ficar
    sempre virado para o mesmo lado. */
+/* Marcador "puck" ao estilo do novo mapa do motorista da Uber: círculo
+   claro com borda dourada Lux e seta escura a apontar o rumo real do
+   veículo (rotação embutida no próprio SVG, não na propriedade do símbolo,
+   para o círculo em si nunca rodar — só a seta lá dentro). Maior e mais
+   visível do que a antiga seta simples. */
 function gCarIcon(rotation){
+  const rot = rotation || 0;
+  const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="46" height="46" viewBox="0 0 46 46">'
+    + '<circle cx="23" cy="23" r="19" fill="#ffffff" stroke="#FFC94D" stroke-width="2.5"/>'
+    + '<g transform="rotate(' + rot + ' 23 23)">'
+    + '<path d="M23 9 L32 33 L23 27 L14 33 Z" fill="#12151b"/>'
+    + '</g>'
+    + '</svg>';
   return {
-    path:google.maps.SymbolPath.FORWARD_CLOSED_ARROW, scale:5,
-    fillColor:'#FFC94D', fillOpacity:1, strokeColor:'#0b0d11', strokeWeight:1,
-    rotation: rotation||0, anchor: new google.maps.Point(0, 2.6)
+    url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(svg),
+    scaledSize: new google.maps.Size(46, 46),
+    anchor: new google.maps.Point(23, 23)
   };
 }
 /* Rumo (bearing) entre duas coordenadas, em graus (0-360). */
@@ -1967,53 +2019,75 @@ function showRealSingleLocation(containerId, place){
   _singleLocationMapCache[containerId] = { map:map, marker:marker };
   return true;
 }
-function showRealRoute(containerId, originPlace, destPlace, carDurationMs){
+/* Marcador de carro ligado ao GPS REAL (substitui a antiga animação por
+   duração fixa) — o mesmo padrão usado em lux-cliente.html e
+   luxdriver-motorista.html: só se move quando chegam coordenadas reais via
+   Firestore (driver_locations), nunca por uma animação scriptada, tal como
+   Uber/Bolt. */
+const _routeCarMarkerCache = {};
+function placeRouteCarMarker(containerId, map, initialPos){
+  let entry = _routeCarMarkerCache[containerId];
+  if(entry && entry.map === map){
+    entry.marker.setPosition(initialPos);
+    return entry;
+  }
+  const marker = new google.maps.Marker({ position:initialPos, map:map, icon:gCarIcon(0), zIndex:999 });
+  entry = { map:map, marker:marker, heading:0, lastPos:initialPos };
+  _routeCarMarkerCache[containerId] = entry;
+  return entry;
+}
+function updateRouteCarPosition(containerId, lat, lng){
+  const entry = _routeCarMarkerCache[containerId];
+  if(!entry) return;
+  const newPos = { lat:lat, lng:lng };
+  if(entry.lastPos){
+    const targetHeading = bearingDeg(entry.lastPos.lat, entry.lastPos.lng, lat, lng);
+    if(entry.lastPos.lat !== lat || entry.lastPos.lng !== lng){
+      entry.heading = lerpHeading(entry.heading, targetHeading, 0.6);
+    }
+  }
+  entry.marker.setPosition(newPos);
+  entry.marker.setIcon(gCarIcon(entry.heading));
+  entry.map.panTo(newPos);
+  entry.lastPos = newPos;
+}
+function clearRouteCarMarker(containerId){
+  const entry = _routeCarMarkerCache[containerId];
+  if(entry){ entry.marker.setMap(null); delete _routeCarMarkerCache[containerId]; }
+}
+function showRealRoute(containerId, originPlace, destPlace, showCar, stops){
   const map = initRealMap(containerId, originPlace, 13);
   if(!map) return false;
   new google.maps.Marker({ position:originPlace, map:map, icon:gDotIcon('#8b93a1',6) });
   new google.maps.Marker({ position:destPlace, map:map, icon:gDotIcon('#FFC94D',7) });
+  // Paradas intermédias: marcador azul no mapa + waypoint real na rota do
+  // Google Directions, para o caminho desenhado passar mesmo por elas em
+  // vez de ir direto da recolha ao destino.
+  const validStops = (Array.isArray(stops) ? stops : []).filter(function(s){ return s && s.lat!=null && s.lng!=null; });
+  validStops.forEach(function(s){
+    new google.maps.Marker({ position:{ lat:s.lat, lng:s.lng }, map:map, icon:gDotIcon('#2E8FFF',6) });
+  });
+  const waypoints = validStops.map(function(s){ return { location:{ lat:s.lat, lng:s.lng }, stopover:true }; });
   const directionsService = new google.maps.DirectionsService();
   const renderer = new google.maps.DirectionsRenderer({
     suppressMarkers:true, preserveViewport:true,
     polylineOptions:{ strokeColor:'#FFC94D', strokeWeight:4, strokeOpacity:.85 }
   });
   renderer.setMap(map);
-  directionsService.route({ origin:originPlace, destination:destPlace, travelMode:'DRIVING' }, function(result, status){
+  directionsService.route({ origin:originPlace, destination:destPlace, waypoints:waypoints, travelMode:'DRIVING' }, function(result, status){
     if(status !== 'OK' || !result.routes[0]) return;
     renderer.setDirections(result);
     const path = result.routes[0].overview_path;
     const bounds = new google.maps.LatLngBounds();
     path.forEach(function(p){ bounds.extend(p); });
     map.fitBounds(bounds, 48);
-    if(carDurationMs) animateCarAlongPath(map, path, carDurationMs);
   });
-  return true;
-}
-function animateCarAlongPath(map, path, durationMs){
-  if(!path || path.length<2) return;
-  let heading = bearingDeg(path[0].lat(), path[0].lng(), path[1].lat(), path[1].lng());
-  const marker = new google.maps.Marker({ position:path[0], map:map, icon:gCarIcon(heading), zIndex:999 });
-  const total = path.length - 1;
-  const start = performance.now();
-  function step(now){
-    // easeInOutQuad em vez de tempo linear: acelera e desacelera de forma
-    // suave (tal como o Uber/Bolt), em vez de um movimento robótico a
-    // velocidade constante.
-    const rawT = Math.min(1, (now-start)/durationMs);
-    const t = easeInOutQuad(rawT);
-    const pos = t*total;
-    const idx = Math.min(total-1, Math.floor(pos));
-    const segT = pos - idx;
-    const p1 = path[idx], p2 = path[Math.min(total, idx+1)];
-    const lat = p1.lat() + (p2.lat()-p1.lat())*segT;
-    const lng = p1.lng() + (p2.lng()-p1.lng())*segT;
-    marker.setPosition({ lat:lat, lng:lng });
-    const targetHeading = bearingDeg(p1.lat(), p1.lng(), p2.lat(), p2.lng());
-    heading = lerpHeading(heading, targetHeading, 0.25);
-    marker.setIcon(gCarIcon(heading));
-    if(rawT<1){ requestAnimationFrame(step); }
+  if(showCar){
+    const seedPos = (typeof lastKnownDriverLatLng!=='undefined' && lastKnownDriverLatLng) ? lastKnownDriverLatLng
+      : (typeof lastDriverLatLng!=='undefined' && lastDriverLatLng) ? lastDriverLatLng : originPlace;
+    placeRouteCarMarker(containerId, map, seedPos);
   }
-  requestAnimationFrame(step);
+  return true;
 }
 
 /* Tabela de tarifas — tarifa inicial + preço por km + preço por minuto.
@@ -2074,6 +2148,7 @@ let routeKm = null;
 let routeMinutes = null;
 let myCurrentLatLng = null;
 let selectedOriginLatLng = null;
+let selectedDestLatLng = null;
 let selectedVehicle = null;
 let selectedTip = 0;
 
@@ -2545,7 +2620,8 @@ function completeAuth(p){
   if(typeof enforceSingleSession==='function') enforceSingleSession(p);
   if(typeof initPushAuto==='function') initPushAuto(p);
   if(p==='d' && typeof upsertDriverProfile==='function') upsertDriverProfile();
-  if(p==='c'){ resetClientFlow(); } else { resetDriverFlow(); }
+  if(p==='c'){ resetClientFlow(); if(typeof tryRestoreClientActiveRide==='function') tryRestoreClientActiveRide(); }
+  else { resetDriverFlow(); if(typeof tryRestoreActiveDriverRide==='function') tryRestoreActiveDriverRide(); }
 }
 async function doLogin(p){
   const user = (document.getElementById(p+'-login-user').value||'').trim();
@@ -2879,8 +2955,21 @@ function setOnlineStatusText(online){
   el.textContent = entry ? (entry[currentLang] || entry.pt) : (online ? 'Online' : 'Offline');
 }
 function openNav(provider, which){
-  const address = which==='pickup' ? 'Av. da Liberdade, Lisboa' : 'Aeroporto de Lisboa (LIS)';
-  const q = encodeURIComponent(address);
+  let dest;
+  if(which==='pickup'){
+    const pos = ridePickupPos();
+    dest = pos.lat + ',' + pos.lng;
+  } else {
+    if(driverRideData && driverRideData.dropoffLat!=null && driverRideData.dropoffLng!=null){
+      dest = driverRideData.dropoffLat + ',' + driverRideData.dropoffLng;
+    } else if(driverRideData && driverRideData.destination){
+      dest = driverRideData.destination;
+    } else {
+      const pos = rideDropoffPos();
+      dest = pos.lat + ',' + pos.lng;
+    }
+  }
+  const q = encodeURIComponent(dest);
   const url = provider==='waze'
     ? `https://waze.com/ul?q=${q}&navigate=yes`
     : `https://www.google.com/maps/dir/?api=1&destination=${q}&travelmode=driving`;
@@ -3044,16 +3133,14 @@ async function submitPayment(scope){
   }
 }
 function payAndFinishTrip(){
-  // A tarifa base já foi cobrada no pedido (ver payThenRequestRide). Aqui só se
-  // cobra o que ainda não foi pago: tempo de espera extra (definido pelo
-  // motorista) + gorjeta escolhida agora. Se não houver nada em falta, conclui
-  // a viagem sem abrir o ecrã de pagamento outra vez.
-  const hasRealFare = clientRide && clientRide.status==='completed' && clientRide.totalFare!=null;
-  const wait = hasRealFare ? (clientRide.waitFee||0) : ((typeof waitOverageFee !== 'undefined') ? waitOverageFee : 0);
-  const extra = wait + selectedTip;
-  if(extra <= 0){ finishClientTrip(); return; }
-  if(unlimitedAccount.c){ finishClientTrip(); return; }
-  openPayment('c', extra, function(){ finishClientTrip(); });
+  // A tarifa base já foi cobrada no pedido (ver payThenRequestRide). O tempo de
+  // espera/paragem extra é cobrado automaticamente aqui, SEM mostrar o ecrã de
+  // pagamento (que tem botão "Cancelar") — o motorista ficou mesmo parado à
+  // espera e tem sempre de receber por isso; o cliente não pode fugir a essa
+  // cobrança. Só a gorjeta, que é uma escolha voluntária do cliente, ainda
+  // passa pelo ecrã de pagamento, se houver alguma.
+  if(unlimitedAccount.c || selectedTip<=0){ finishClientTrip(); return; }
+  openPayment('c', selectedTip, function(){ finishClientTrip(); });
 }
 window.addEventListener('load', initStripe);
 
@@ -3244,6 +3331,8 @@ function startSharingLocation(){
     }, { merge:true }).catch(function(e){ console.warn('Falha ao gravar localização:', e); });
     showRealSingleLocation('map-driver-home', { lat:lat, lng:lng });
     updateDriverPickupEtaDisplay(lat, lng);
+    const activeMapId = (typeof activeRouteMapId==='function') ? activeRouteMapId() : null;
+    if(activeMapId) updateRouteCarPosition(activeMapId, lat, lng);
   }, function(err){
     console.warn('Geolocalização indisponível:', err);
   }, { enableHighAccuracy:true, maximumAge:5000, timeout:10000 });
@@ -3612,11 +3701,68 @@ function estimateRouteMetrics(origin, dest, cb){
   }catch(e){ cb(null); }
 }
 
+/* Paradas múltiplas (Task #180): botão "+ Adicionar parada" que gera campos
+   dinâmicos entre a recolha e o destino, cada um com o seu próprio
+   autocomplete Google Places (mesmo padrão do campo de destino). */
+let tripStops = []; // { uid, value, latLng }
+let tripStopSeq = 0;
+function addTripStop(){
+  tripStops.push({ uid: 'c-stop-'+(++tripStopSeq), value:'', latLng:null });
+  renderTripStops();
+}
+function removeTripStop(uid){
+  tripStops = tripStops.filter(function(s){ return s.uid !== uid; });
+  renderTripStops();
+}
+function clearTripStops(){
+  tripStops = [];
+  renderTripStops();
+}
+function renderTripStops(){
+  const list = document.getElementById('c-stops-list');
+  if(!list) return;
+  list.innerHTML = tripStops.map(function(s){
+    return '<div class="field-divider"></div>' +
+      '<div class="field">' +
+        '<span class="dot-marker s"></span>' +
+        '<input id="'+s.uid+'" placeholder="Parada" value="'+(s.value||'').replace(/"/g,'&quot;')+'" oninput="onTripStopInput(\''+s.uid+'\')">' +
+        '<button type="button" class="stop-remove" onclick="removeTripStop(\''+s.uid+'\')">✕</button>' +
+      '</div>';
+  }).join('');
+  tripStops.forEach(function(s){ bindStopAutocomplete(s.uid); });
+}
+function onTripStopInput(uid){
+  const s = tripStops.find(function(x){ return x.uid===uid; });
+  if(!s) return;
+  const el = document.getElementById(uid);
+  s.value = el ? el.value : '';
+  s.latLng = null;
+}
+function bindStopAutocomplete(uid){
+  if(!(typeof google !== 'undefined' && google.maps && google.maps.places)) return;
+  const el = document.getElementById(uid);
+  if(!el || el._acBound) return;
+  const opts = { componentRestrictions:{ country:'pt' }, fields:['formatted_address','name','geometry'] };
+  const ac = new google.maps.places.Autocomplete(el, opts);
+  ac.addListener('place_changed', function(){
+    const place = ac.getPlace();
+    const s = tripStops.find(function(x){ return x.uid===uid; });
+    if(!s) return;
+    if(place && (place.formatted_address || place.name)) el.value = place.formatted_address || place.name;
+    s.value = el.value;
+    s.latLng = (place && place.geometry && place.geometry.location) ? { lat: place.geometry.location.lat(), lng: place.geometry.location.lng() } : null;
+  });
+  el._acBound = true;
+}
+function bindAllStopAutocompletes(){
+  tripStops.forEach(function(s){ bindStopAutocomplete(s.uid); });
+}
 function initHomeMap(){
   if(!initPlacesAutocomplete()){
     // livraria "places" ainda não carregou — tenta outra vez daqui a pouco
     setTimeout(initPlacesAutocomplete, 1500);
   }
+  bindAllStopAutocompletes();
   if(navigator.geolocation){
     navigator.geolocation.getCurrentPosition(function(pos){
       myCurrentLatLng = { lat:pos.coords.latitude, lng:pos.coords.longitude };
@@ -3637,6 +3783,9 @@ function resetClientFlow(){
   selectedTip = 0;
   routeKm = null;
   routeMinutes = null;
+  selectedDestLatLng = null;
+  clientRideAcceptedAtMs = null;
+  clearTripStops();
   document.getElementById('c-confirm-btn').disabled = true;
   document.querySelectorAll('#stars-row .s').forEach(s=>s.classList.remove('on'));
   document.querySelectorAll('#tip-row .chip').forEach(c=>c.classList.remove('selected'));
@@ -3714,6 +3863,66 @@ let clientRideId = null;
 let clientRide = null;
 let clientRideUnsub = null;
 let clientLastHandledRideStatus = null;
+/* Regra de cancelamento: grátis até 2 min após o motorista aceitar; depois
+   disso aplica-se a taxa mínima (tarifa base da classe escolhida); deixa de
+   ser possível cancelar assim que a viagem entra em curso (in_progress). */
+const FREE_CANCEL_WINDOW_MS = 2 * 60 * 1000;
+let clientRideAcceptedAtMs = null;
+/* Persistência da corrida ativa do cliente (Task #178): grava o ID da
+   corrida em curso no localStorage para restaurar o estado se a app fechar
+   e reabrir a meio de uma viagem. */
+const CLIENT_ACTIVE_RIDE_STORAGE_KEY = 'lux_client_active_ride_id';
+function saveClientActiveRideStorage(rideId){
+  try{ localStorage.setItem(CLIENT_ACTIVE_RIDE_STORAGE_KEY, rideId); }catch(e){}
+}
+function clearClientActiveRideStorage(){
+  try{ localStorage.removeItem(CLIENT_ACTIVE_RIDE_STORAGE_KEY); }catch(e){}
+}
+function currentClientScreenId(){
+  const activeEl = document.querySelector('.screen.active');
+  return activeEl ? activeEl.id : null;
+}
+function tryRestoreClientActiveRide(){
+  let savedId = null;
+  try{ savedId = localStorage.getItem(CLIENT_ACTIVE_RIDE_STORAGE_KEY); }catch(e){}
+  if(!savedId) return;
+  const col = ridesCollection();
+  if(!col) return;
+  col.doc(savedId).get().then(function(doc){
+    if(!doc.exists){ clearClientActiveRideStorage(); return; }
+    const ride = doc.data();
+    if(ride.status === 'completed' || ride.status === 'cancelled'){ clearClientActiveRideStorage(); return; }
+    clientRideId = savedId;
+    clientLastHandledRideStatus = null;
+    if(ride.status !== 'searching' && ride.acceptedAt){
+      try{ clientRideAcceptedAtMs = (typeof ride.acceptedAt.toMillis === 'function') ? ride.acceptedAt.toMillis() : Date.now(); }
+      catch(e){ clientRideAcceptedAtMs = Date.now(); }
+    }
+    listenToClientRide(savedId);
+    if(ride.status === 'searching'){
+      goTo('c-matching');
+    } else if(ride.status === 'accepted' || ride.status === 'arrived'){
+      const vLabel = [ride.vehicleBrand, ride.vehicleModel].filter(Boolean).join(' ') || ride.vehicleName || 'Veículo Lux';
+      document.getElementById('found-car-name').textContent = vLabel + (ride.vehicleColor ? (' · '+ride.vehicleColor) : '');
+      document.getElementById('found-driver-name').textContent = ride.driverName || 'Motorista Lux';
+      document.getElementById('found-plate').textContent = ride.vehiclePlate || '—';
+      setDriverAvatar('found-avatar', ride.driverPhotoUrl, ride.driverName);
+      setDriverAvatar('trip-avatar', ride.driverPhotoUrl, ride.driverName);
+      document.getElementById('trip-driver-name').textContent = ride.driverName || 'Motorista Lux';
+      document.getElementById('complete-driver-name').textContent = ride.driverName || 'Motorista Lux';
+      goTo('c-found');
+      document.getElementById('pickup-eta').textContent = ride.status === 'arrived' ? 'Chegou' : 'A caminho';
+      const pickupPos0 = (ride.pickupLat!=null && ride.pickupLng!=null) ? { lat: ride.pickupLat, lng: ride.pickupLng } : LUX_PLACES.pickup;
+      if(!showRealRoute('map-found', LUX_PLACES.near, pickupPos0, true)){
+        drawRoute(document.getElementById('svg-route-found'), 65,75,35,35,'#FFC94D');
+        placePins(document.getElementById('map-found'), 35,35,35,35);
+      }
+      if(ride.driverId) startListeningDriverLocationEta(ride.driverId);
+      startClientChatWatch();
+    }
+    toast(currentClientScreenId() || 'c-home', 'Corrida em curso recuperada');
+  }).catch(function(err){ console.warn('Falha ao restaurar corrida ativa do cliente:', err); });
+}
 function ridesCollection(){
   const db = initFirestore();
   return db ? db.collection('rides') : null;
@@ -3737,8 +3946,28 @@ function startListeningDriverLocationEta(driverId){
   driverEtaUnsub = db.collection('driver_locations').doc(driverId).onSnapshot(function(doc){
     if(!doc.exists) return;
     const d = doc.data();
-    updatePickupEtaDisplay(d.lat, d.lng);
+    // O texto de ETA até à recolha só faz sentido enquanto o motorista ainda
+    // está a caminho (antes de "arrived") — mas o listener de GPS mantém-se
+    // ativo durante toda a viagem, só para a seta do carro continuar a
+    // mover-se com a posição real, mesmo depois de o motorista chegar/a
+    // viagem começar.
+    if(!clientRide || clientRide.status === 'accepted'){
+      updatePickupEtaDisplay(d.lat, d.lng);
+    }
+    if(d.lat!=null && d.lng!=null){
+      lastKnownDriverLatLng = { lat: d.lat, lng: d.lng };
+      const activeMapId = (typeof activeClientRouteMapId==='function') ? activeClientRouteMapId() : null;
+      if(activeMapId) updateRouteCarPosition(activeMapId, d.lat, d.lng);
+    }
   }, function(err){ console.warn('Falha ao ouvir localização do motorista:', err); });
+}
+let lastKnownDriverLatLng = null;
+function activeClientRouteMapId(){
+  const foundEl = document.getElementById('c-found');
+  if(foundEl && foundEl.classList.contains('active')) return 'map-found';
+  const tripEl = document.getElementById('c-trip');
+  if(tripEl && tripEl.classList.contains('active')) return 'map-trip';
+  return null;
 }
 function updatePickupEtaDisplay(driverLat, driverLng){
   const etaEl = document.getElementById('pickup-eta');
@@ -3754,6 +3983,7 @@ function updatePickupEtaDisplay(driverLat, driverLng){
 function listenToClientRide(rideId){
   const col = ridesCollection();
   if(!col) return;
+  saveClientActiveRideStorage(rideId);
   stopListeningToClientRide();
   clientRideUnsub = col.doc(rideId).onSnapshot(function(doc){
     if(!doc.exists) return;
@@ -3776,6 +4006,7 @@ function handleClientRideUpdate(ride){
   if(ride.status === 'accepted'){
     stopOfferWatchdog();
     hideNoDriversFoundPrompt();
+    if(!clientRideAcceptedAtMs) clientRideAcceptedAtMs = Date.now();
     const vLabel = [ride.vehicleBrand, ride.vehicleModel].filter(Boolean).join(' ') ||
       (selectedVehicle && (selectedVehicle.model||selectedVehicle.name)) || 'Veículo Lux';
     document.getElementById('found-car-name').textContent = vLabel + (ride.vehicleColor ? (' · '+ride.vehicleColor) : '');
@@ -3790,34 +4021,43 @@ function handleClientRideUpdate(ride){
     if(msgEl0) msgEl0.textContent = '';
     goTo('c-found');
     toast('c-found', 'Motorista encontrado!');
-    if(!showRealRoute('map-found', LUX_PLACES.near, LUX_PLACES.pickup, 4200)){
+    const driverPos = (ride.driverId && typeof lastKnownDriverLatLng!=='undefined' && lastKnownDriverLatLng) ? lastKnownDriverLatLng : LUX_PLACES.near;
+    const pickupPos = (ride.pickupLat!=null && ride.pickupLng!=null) ? { lat: ride.pickupLat, lng: ride.pickupLng } : LUX_PLACES.pickup;
+    if(!showRealRoute('map-found', driverPos, pickupPos, true)){
       drawRoute(document.getElementById('svg-route-found'), 65,75,35,35,'#FFC94D');
       placePins(document.getElementById('map-found'), 35,35,35,35);
       const car = document.getElementById('car-found');
       car.style.left='65%'; car.style.top='75%';
-      animateMarker(car, 65,75, 35,35, 4200);
     }
+    // ETA real: mantém-se ativo até a viagem terminar, para a seta seguir
+    // sempre a posição real, mesmo depois de "arrived"/"in_progress".
     if(ride.driverId) startListeningDriverLocationEta(ride.driverId);
     startClientChatWatch();
   } else if(ride.status === 'arrived'){
     document.getElementById('pickup-eta').textContent = 'Chegou';
     const msgEl1 = document.getElementById('pickup-eta-msg');
     if(msgEl1) msgEl1.textContent = 'O motorista chegou ao local de recolha';
-    stopListeningDriverLocationEta();
     toast('c-found', 'O motorista chegou ao local de recolha');
   } else if(ride.status === 'in_progress'){
-    stopListeningDriverLocationEta();
+    clearRouteCarMarker('map-found');
     startTrip();
   } else if(ride.status === 'completed'){
+    stopListeningDriverLocationEta();
+    clearRouteCarMarker('map-trip');
     stopClientChatWatch();
+    clearClientActiveRideStorage();
     showClientSummary();
   } else if(ride.status === 'cancelled'){
     stopOfferWatchdog();
     hideNoDriversFoundPrompt();
     toast('c-home', 'A viagem foi cancelada');
     stopListeningToClientRide();
+    stopListeningDriverLocationEta();
+    clearRouteCarMarker('map-found');
+    clearRouteCarMarker('map-trip');
     stopClientChatWatch();
-    clientRideId = null; clientRide = null; clientLastHandledRideStatus = null;
+    clearClientActiveRideStorage();
+    clientRideId = null; clientRide = null; clientLastHandledRideStatus = null; clientRideAcceptedAtMs = null;
     goTo('c-home');
   }
 }
@@ -3960,13 +4200,33 @@ async function startMatching(){
   if(!pickupLatLng && originValNow && originValNow !== 'A minha localização atual'){
     pickupLatLng = await geocodeAddress(originValNow);
   }
+  const destValNow = document.getElementById('c-dest').value || 'destino';
+  // Mesma lógica de rede de segurança do ponto de recolha: local escolhido
+  // no autocomplete > geocoding da morada escrita à mão — para o motorista
+  // ser sempre navegado até ao destino real, nunca a um ponto fixo de demo.
+  let dropoffLatLng = selectedDestLatLng;
+  if(!dropoffLatLng && destValNow && destValNow !== 'destino'){
+    dropoffLatLng = await geocodeAddress(destValNow);
+  }
+  // Geocodifica qualquer parada que ainda não tenha coordenadas (morada
+  // escrita à mão, sem passar pelo autocomplete) antes de gravar a corrida.
+  const stopsWithText = tripStops.filter(function(s){ return (s.value||'').trim().length>0; });
+  for(const s of stopsWithText){
+    if(!s.latLng) s.latLng = await geocodeAddress(s.value);
+  }
+  const stopsPayload = stopsWithText.map(function(s){
+    return { address: s.value, lat: s.latLng ? s.latLng.lat : null, lng: s.latLng ? s.latLng.lng : null };
+  });
   col.add({
     status: 'searching',
     clientName: u.name, clientPhone: u.phone,
     origin: originValNow,
-    destination: document.getElementById('c-dest').value || 'destino',
+    destination: destValNow,
     pickupLat: pickupLatLng ? pickupLatLng.lat : null,
     pickupLng: pickupLatLng ? pickupLatLng.lng : null,
+    dropoffLat: dropoffLatLng ? dropoffLatLng.lat : null,
+    dropoffLng: dropoffLatLng ? dropoffLatLng.lng : null,
+    stops: stopsPayload,
     offerDriverId: null,
     offeredDriverIds: [],
     declinedDriverIds: [],
@@ -4011,8 +4271,46 @@ function cancelMatching(){
     }
     stopListeningToClientRide();
     stopClientChatWatch();
-    clientRideId = null; clientRide = null; clientLastHandledRideStatus = null;
+    clearClientActiveRideStorage();
+    clientRideId = null; clientRide = null; clientLastHandledRideStatus = null; clientRideAcceptedAtMs = null;
   }
+  goTo('c-home');
+}
+/* Cancelamento pelo cliente depois de o motorista já ter aceitado a corrida
+   (ecrã "Motorista a caminho"). Grátis nos primeiros 2 minutos após a
+   aceitação; depois aplica-se a taxa mínima da classe escolhida; bloqueado
+   assim que a viagem estiver em curso. */
+function cancelAcceptedRide(){
+  if(!clientRide || !clientRideId){ goTo('c-home'); return; }
+  if(clientRide.status === 'in_progress'){
+    toast('c-found', 'Não é possível cancelar: a viagem já está em curso');
+    return;
+  }
+  const elapsedMs = clientRideAcceptedAtMs ? (Date.now() - clientRideAcceptedAtMs) : 0;
+  const withinFreeWindow = elapsedMs < FREE_CANCEL_WINDOW_MS;
+  let cancelFee = 0;
+  if(!withinFreeWindow){
+    const veh = VEHICLES.find(function(v){ return v.id === clientRide.vehicleId; }) || selectedVehicle;
+    cancelFee = veh ? veh.base : 0;
+  }
+  const msg = withinFreeWindow
+    ? 'Cancelar esta viagem agora? Ainda está dentro dos 2 minutos grátis, sem custo.'
+    : ('Já passaram mais de 2 minutos desde a aceitação. Será cobrada a taxa mínima de ' + fmtEur(cancelFee) + '. Cancelar mesmo assim?');
+  if(!window.confirm(msg)) return;
+  const col = ridesCollection();
+  if(col){
+    col.doc(clientRideId).set({
+      status:'cancelled', cancelledBy:'client', cancelFee: cancelFee,
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    }, { merge:true }).catch(function(){});
+  }
+  stopListeningToClientRide();
+  stopListeningDriverLocationEta();
+  clearRouteCarMarker('map-found');
+  stopClientChatWatch();
+  clearClientActiveRideStorage();
+  clientRideId = null; clientRide = null; clientLastHandledRideStatus = null; clientRideAcceptedAtMs = null;
+  toast('c-home', cancelFee>0 ? ('Viagem cancelada — taxa de ' + fmtEur(cancelFee) + ' aplicada') : 'Viagem cancelada sem custo');
   goTo('c-home');
 }
 
@@ -4155,16 +4453,18 @@ function startPickupCountdown(){
   }, 900);
 }
 function startTrip(){
-  const dest = document.getElementById('c-dest').value || 'destino';
+  const dest = (clientRide && clientRide.destination) || document.getElementById('c-dest').value || 'destino';
   document.getElementById('trip-dest-label').textContent = dest;
   goTo('c-trip');
   toast('c-trip', 'Motorista chegou — viagem iniciada');
-  if(!showRealRoute('map-trip', LUX_PLACES.pickup, LUX_PLACES.airport, 5200)){
+  const pickupPos = (clientRide && clientRide.pickupLat!=null && clientRide.pickupLng!=null) ? { lat: clientRide.pickupLat, lng: clientRide.pickupLng } : LUX_PLACES.pickup;
+  const dropoffPos = (clientRide && clientRide.dropoffLat!=null && clientRide.dropoffLng!=null) ? { lat: clientRide.dropoffLat, lng: clientRide.dropoffLng } : LUX_PLACES.airport;
+  const tripStopsForRoute = (clientRide && Array.isArray(clientRide.stops)) ? clientRide.stops : [];
+  if(!showRealRoute('map-trip', pickupPos, dropoffPos, true, tripStopsForRoute)){
     drawRoute(document.getElementById('svg-route-trip'), 25,80,75,20,'#FFC94D');
     placePins(document.getElementById('map-trip'), 25,80,75,20);
     const car = document.getElementById('car-trip');
     car.style.left='25%'; car.style.top='80%';
-    animateMarker(car, 25,80, 75,20, 5200);
   }
   let s = 6;
   document.getElementById('trip-eta').textContent = s+' min';
@@ -4412,9 +4712,23 @@ function sendDriverChatMessage(){
 let driverRidePhase = null; // null | 'pickup' | 'waiting' | 'trip'
 const RIDE_PHASE_SCREEN = { pickup:'d-to-pickup', waiting:'d-waiting', trip:'d-trip' };
 const RIDE_PHASE_LABEL = { pickup:'A caminho do cliente', waiting:'À espera do passageiro', trip:'Viagem em curso' };
+/* Persistência da corrida ativa do motorista (Task #178): grava fase+ID no
+   localStorage para restaurar o ecrã certo se o motorista fechar e reabrir
+   a app a meio de uma viagem. */
+const DRIVER_ACTIVE_RIDE_STORAGE_KEY = 'lux_driver_active_ride';
+function saveDriverActiveRideStorage(){
+  try{
+    if(driverRidePhase && driverRideId){
+      localStorage.setItem(DRIVER_ACTIVE_RIDE_STORAGE_KEY, JSON.stringify({ rideId: driverRideId, phase: driverRidePhase }));
+    } else {
+      localStorage.removeItem(DRIVER_ACTIVE_RIDE_STORAGE_KEY);
+    }
+  }catch(e){}
+}
 function setDriverRidePhase(phase){
   driverRidePhase = phase;
   updateFloatingWidget();
+  saveDriverActiveRideStorage();
 }
 function updateFloatingWidget(){
   const w = document.getElementById('ride-float-widget');
@@ -4431,11 +4745,84 @@ function goToActiveRideScreen(){
   if(!driverRidePhase) return;
   goTo(RIDE_PHASE_SCREEN[driverRidePhase]);
 }
+/* Devolve o containerId do mapa de ROTA (com seta de carro) correspondente à
+   fase atual da corrida, ou null se a fase não tiver mapa de rota (ex.:
+   'waiting' usa um mapa de ponto único, sem seta a mover). Usado por
+   startSharingLocation() para saber qual seta atualizar a cada GPS real. */
+const RIDE_PHASE_ROUTE_MAP = { pickup:'map-d-pickup', trip:'map-d-trip' };
+function activeRouteMapId(){
+  return RIDE_PHASE_ROUTE_MAP[driverRidePhase] || null;
+}
+function currentDriverScreenId(){
+  const activeEl = document.querySelector('.screen.active');
+  return activeEl ? activeEl.id : null;
+}
 
 let ridesListUnsub = null;
 let driverRideId = null;
 let driverRideData = null;
 let declinedRideIds = new Set(); // salvaguarda local extra (redundante com declinedDriverIds no Firestore)
+/* Restaura uma corrida ativa depois de o motorista fechar e reabrir a app
+   (Task #178). Usa o ESTADO REAL guardado no Firestore (não a fase local
+   gravada, que pode estar desatualizada) para decidir o ecrã a mostrar. */
+function tryRestoreActiveDriverRide(){
+  let saved = null;
+  try{
+    const raw = localStorage.getItem(DRIVER_ACTIVE_RIDE_STORAGE_KEY);
+    if(raw) saved = JSON.parse(raw);
+  }catch(e){}
+  if(!saved || !saved.rideId) return;
+  const col = ridesCollection();
+  if(!col) return;
+  col.doc(saved.rideId).get().then(function(doc){
+    if(!doc.exists){ try{ localStorage.removeItem(DRIVER_ACTIVE_RIDE_STORAGE_KEY); }catch(e){} return; }
+    const ride = doc.data();
+    if(ride.status === 'completed' || ride.status === 'cancelled'){
+      try{ localStorage.removeItem(DRIVER_ACTIVE_RIDE_STORAGE_KEY); }catch(e){}
+      return;
+    }
+    driverRideId = saved.rideId;
+    driverRideData = ride;
+    if(!isOnline){
+      isOnline = true;
+      const sw = document.getElementById('online-switch');
+      if(sw) sw.classList.add('on');
+      if(typeof setOnlineStatusText==='function') setOnlineStatusText(true);
+      updateDriverFrames();
+    }
+    startSharingLocation();
+    startDriverChatWatch();
+    if(ride.status === 'accepted'){
+      goTo('d-to-pickup');
+      setDriverRidePhase('pickup');
+      const nameEl = document.querySelector('#d-to-pickup .driver-card .name');
+      if(nameEl) nameEl.textContent = ride.clientName || 'Cliente Lux';
+      const pickupPos = ridePickupPos();
+      const originPos = (typeof lastDriverLatLng!=='undefined' && lastDriverLatLng) ? lastDriverLatLng : LUX_PLACES.near;
+      if(!showRealRoute('map-d-pickup', originPos, pickupPos, true)){
+        drawRoute(document.getElementById('svg-route-d-pickup'), 30,25,70,70,'#FFC94D');
+        placePins(document.getElementById('map-d-pickup'), 70,70,70,70);
+      }
+    } else if(ride.status === 'arrived'){
+      goTo('d-waiting');
+      setDriverRidePhase('waiting');
+      showRealSingleLocation('map-d-waiting', ridePickupPos());
+      startWaitingTimer();
+    } else if(ride.status === 'in_progress'){
+      goTo('d-trip');
+      setDriverRidePhase('trip');
+      const destLabelEl = document.getElementById('d-trip-dest-label');
+      if(destLabelEl && ride.destination) destLabelEl.textContent = ride.destination;
+      if(!showRealRoute('map-d-trip', ridePickupPos(), rideDropoffPos(), true, (Array.isArray(ride.stops) ? ride.stops : []))){
+        drawRoute(document.getElementById('svg-route-d-trip'), 25,75,75,25,'#FFC94D');
+        placePins(document.getElementById('map-d-trip'), 25,75,75,25);
+      }
+      if(typeof resetStopTimerState==='function') resetStopTimerState();
+      if(typeof renderTripStopsInfo==='function') renderTripStopsInfo();
+    }
+    toast(currentDriverScreenId() || 'd-home', 'Corrida em curso recuperada');
+  }).catch(function(err){ console.warn('Falha ao restaurar corrida do motorista:', err); });
+}
 // Raio máximo de emparelhamento motorista↔cliente (usado do lado do
 // cliente para escolher candidatos — mantido aqui só como referência).
 const MAX_MATCH_RADIUS_KM = 20;
@@ -4648,12 +5035,13 @@ function acceptRequest(){
     if(nameEl && driverRideData) nameEl.textContent = driverRideData.clientName || 'Cliente Lux';
     startDriverChatWatch();
   }
-  if(!showRealRoute('map-d-pickup', LUX_PLACES.near, LUX_PLACES.pickup, 3800)){
+  const pickupPos = ridePickupPos();
+  const originPos = (typeof lastDriverLatLng!=='undefined' && lastDriverLatLng) ? lastDriverLatLng : LUX_PLACES.near;
+  if(!showRealRoute('map-d-pickup', originPos, pickupPos, true)){
     drawRoute(document.getElementById('svg-route-d-pickup'), 30,25,70,70,'#FFC94D');
     placePins(document.getElementById('map-d-pickup'), 70,70,70,70);
     const car = document.getElementById('car-d-pickup');
     car.style.left='30%'; car.style.top='25%';
-    animateMarker(car, 30,25, 70,70, 3800);
   }
   // ETA real: se já houver posição GPS conhecida e coordenadas reais de
   // recolha na corrida, mostra logo o ETA calculado (Haversine/trânsito);
@@ -4678,10 +5066,11 @@ function markArrived(el){
     const col = ridesCollection();
     if(col) col.doc(driverRideId).set({ status:'arrived', updatedAt: firebase.firestore.FieldValue.serverTimestamp() }, { merge:true }).catch(function(){});
   }
+  clearRouteCarMarker('map-d-pickup');
   const t = setTimeout(()=>{
     goTo('d-waiting');
     setDriverRidePhase('waiting');
-    showRealSingleLocation('map-d-waiting', LUX_PLACES.pickup);
+    showRealSingleLocation('map-d-waiting', ridePickupPos());
     startWaitingTimer();
   }, 500);
   activeTimers.push(t);
@@ -4729,6 +5118,74 @@ function startWaitingTimer(){
     }
   }, 1000);
 }
+/* Temporizador de paradas intermédias — DIFERENTE do tempo de espera na
+   recolha: aqui não há minutos grátis. Assim que o motorista clica
+   "Iniciar parada", a cobrança de WAIT_FEE_PER_MINUTE começa logo, desde o
+   segundo 1. Acumulado por viagem em driverStopWaitFee e cobrado
+   automaticamente ao cliente quando a viagem terminar. */
+let stopWaitInterval = null;
+let stopWaitActive = false;
+let currentStopOverageSeconds = 0;
+let driverStopWaitFee = 0;
+function resetStopTimerState(){
+  if(stopWaitInterval) clearInterval(stopWaitInterval);
+  stopWaitInterval = null;
+  stopWaitActive = false;
+  currentStopOverageSeconds = 0;
+  driverStopWaitFee = 0;
+  const box = document.getElementById('stop-timer-box');
+  const btn = document.getElementById('stop-timer-btn');
+  if(box){ box.style.display='none'; box.classList.remove('expired'); }
+  if(btn){ btn.textContent = '▶ Iniciar parada'; }
+}
+function renderTripStopsInfo(){
+  const info = document.getElementById('d-trip-stops-info');
+  if(!info) return;
+  const stops = (driverRideData && Array.isArray(driverRideData.stops)) ? driverRideData.stops : [];
+  if(stops.length){
+    info.style.display = 'block';
+    info.textContent = 'Paradas: ' + stops.map(function(s){ return s && s.address; }).filter(Boolean).join(' → ');
+  } else {
+    info.style.display = 'none';
+    info.textContent = '';
+  }
+}
+function endActiveStopTimer(){
+  if(!stopWaitActive) return;
+  stopWaitActive = false;
+  if(stopWaitInterval){ clearInterval(stopWaitInterval); stopWaitInterval = null; }
+  const fee = Math.ceil(currentStopOverageSeconds/60) * WAIT_FEE_PER_MINUTE;
+  driverStopWaitFee += fee;
+  const box = document.getElementById('stop-timer-box');
+  const btn = document.getElementById('stop-timer-btn');
+  if(box) box.style.display = 'none';
+  if(btn) btn.textContent = '▶ Iniciar parada';
+  return fee;
+}
+function toggleStopTimer(){
+  const btn = document.getElementById('stop-timer-btn');
+  const box = document.getElementById('stop-timer-box');
+  const display = document.getElementById('stop-timer-display');
+  const labelEl = box ? box.querySelector('.lbl') : null;
+  if(!stopWaitActive){
+    stopWaitActive = true;
+    currentStopOverageSeconds = 0;
+    if(box){ box.style.display='block'; box.classList.add('expired'); }
+    if(btn) btn.textContent = '■ Terminar parada';
+    if(display) display.textContent = '+' + formatWaitTime(currentStopOverageSeconds);
+    if(labelEl) labelEl.textContent = 'A cobrar tempo de paragem';
+    if(stopWaitInterval) clearInterval(stopWaitInterval);
+    stopWaitInterval = setInterval(()=>{
+      currentStopOverageSeconds++;
+      if(display) display.textContent = '+' + formatWaitTime(currentStopOverageSeconds);
+      const runningFee = Math.ceil(currentStopOverageSeconds/60) * WAIT_FEE_PER_MINUTE;
+      if(labelEl) labelEl.textContent = 'A cobrar: ' + fmtEur(runningFee);
+    }, 1000);
+  } else {
+    const fee = endActiveStopTimer();
+    toast('d-trip', fee>0 ? ('Parada: +' + fmtEur(fee)) : 'Parada terminada');
+  }
+}
 function startTripFromWaiting(){
   if(waitInterval) clearInterval(waitInterval);
   if(driverRideId){
@@ -4738,12 +5195,17 @@ function startTripFromWaiting(){
   goTo('d-trip');
   setDriverRidePhase('trip');
   toast('d-trip','Passageiro a bordo');
-  if(!showRealRoute('map-d-trip', LUX_PLACES.pickup, LUX_PLACES.airport, 5200)){
+  clearRouteCarMarker('map-d-pickup');
+  const destLabelEl = document.getElementById('d-trip-dest-label');
+  if(destLabelEl && driverRideData && driverRideData.destination) destLabelEl.textContent = driverRideData.destination;
+  resetStopTimerState();
+  renderTripStopsInfo();
+  const tripStopsForRoute = (driverRideData && Array.isArray(driverRideData.stops)) ? driverRideData.stops : [];
+  if(!showRealRoute('map-d-trip', ridePickupPos(), rideDropoffPos(), true, tripStopsForRoute)){
     drawRoute(document.getElementById('svg-route-d-trip'), 25,75,75,25,'#FFC94D');
     placePins(document.getElementById('map-d-trip'), 25,75,75,25);
     const car = document.getElementById('car-d-trip');
     car.style.left='25%'; car.style.top='75%';
-    animateMarker(car, 25,75, 75,25, 5200);
   }
   let s=16;
   document.getElementById('d-trip-eta').textContent = s+' min';
@@ -4755,6 +5217,7 @@ function startTripFromWaiting(){
 }
 function cancelWaitingTrip(){
   if(waitInterval) clearInterval(waitInterval);
+  clearRouteCarMarker('map-d-pickup');
   if(driverRideId){
     const col = ridesCollection();
     if(col) col.doc(driverRideId).set({ status:'cancelled', updatedAt: firebase.firestore.FieldValue.serverTimestamp() }, { merge:true }).catch(function(){});
@@ -4769,8 +5232,11 @@ function cancelWaitingTrip(){
 const CURRENT_RIDE_FARE = 22.40; // tarifa de demonstração — usada só quando não há pedido real (driverRideData)
 function markTripComplete(el){
   el.classList.add('filled');
+  if(typeof stopWaitActive!=='undefined' && stopWaitActive) endActiveStopTimer();
   const t = setTimeout(()=>{
-    const wait = (typeof waitOverageFee !== 'undefined') ? waitOverageFee : 0;
+    const pickupWait = (typeof waitOverageFee !== 'undefined') ? waitOverageFee : 0;
+    const stopsWait = (typeof driverStopWaitFee !== 'undefined') ? driverStopWaitFee : 0;
+    const wait = pickupWait + stopsWait;
     const baseFare = (driverRideData && driverRideData.price!=null) ? driverRideData.price : CURRENT_RIDE_FARE;
     const totalFare = baseFare + wait;
     const commission = totalFare * COMMISSION_RATE;
@@ -4800,6 +5266,7 @@ function markTripComplete(el){
       stopDriverChatWatch();
       driverRideId = null; driverRideData = null; declinedRideIds.clear();
     }
+    clearRouteCarMarker('map-d-trip');
     setDriverRidePhase(null);
     goTo('d-complete');
   }, 500);
@@ -4817,8 +5284,13 @@ function backToDriverHome(){
     const t = setTimeout(()=>openRecharge(), 700);
     activeTimers.push(t);
   } else if(isOnline){
-    const t = setTimeout(()=>triggerIncomingRequest(), 4000);
-    activeTimers.push(t);
+    // Só simula um pedido falso se NÃO houver ligação real ao Firestore
+    // (modo demonstração). Com listener real ativo, esperamos por um pedido
+    // verdadeiro — nunca inventamos um a seguir a uma corrida real.
+    if(!startListeningForRides()){
+      const t = setTimeout(()=>triggerIncomingRequest(), 4000);
+      activeTimers.push(t);
+    }
   }
 }
 
