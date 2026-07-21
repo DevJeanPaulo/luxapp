@@ -1189,6 +1189,15 @@
         </div>
       </div>
 
+      <div class="req-overlay" id="no-drivers-overlay">
+        <div class="req-sheet">
+          <h1 class="title" style="text-align:center;">Sem motoristas por perto</h1>
+          <p style="text-align:center; color:var(--muted); margin:0 0 18px;">Não encontrámos nenhum motorista disponível perto de si neste momento. Quer continuar à procura?</p>
+          <button class="btn btn-gold" onclick="continueSearchingForDrivers()">Continuar à procura</button>
+          <button class="btn btn-ghost-text" onclick="cancelMatching()">Cancelar pedido</button>
+        </div>
+      </div>
+
       <div class="chat-overlay" id="chat-overlay">
         <div class="chat-header">
           <div class="avatar" id="chat-avatar">RA</div>
@@ -1491,6 +1500,7 @@ let selectedTip = 0;
    trânsito (mesmo padrão de resiliência usado em showRealRoute: tenta o
    Maps primeiro, cai para o cálculo simples se falhar ou não carregar). */
 const ETA_AVG_SPEED_KMH = 28; // velocidade média urbana configurável
+const MAX_MATCH_RADIUS_KM = 20; // raio máximo de emparelhamento motorista↔cliente
 function haversineKm(lat1, lng1, lat2, lng2){
   if([lat1,lng1,lat2,lng2].some(function(v){ return v==null || isNaN(v); })) return null;
   const R = 6371;
@@ -1750,6 +1760,7 @@ function completeAuth(p){
   updateSettingsUI(p);
   saveSession(p);
   if(typeof enforceSingleSession==='function') enforceSingleSession(p);
+  if(typeof initPushAuto==='function') initPushAuto(p);
   if(p==='c'){ resetClientFlow(); } else { resetDriverFlow(); }
 }
 async function doLogin(p){
@@ -2271,23 +2282,59 @@ function markPushEnabledUI(p, enabled){
   const sw = document.getElementById(p+'-push-switch');
   if(sw) sw.classList.toggle('on', enabled);
 }
+async function registerPushToken(p){
+  if(firebaseMessaging){
+    const reg = (typeof swRegistration !== 'undefined' && swRegistration) ? swRegistration : await navigator.serviceWorker.getRegistration();
+    const token = await firebaseMessaging.getToken({ vapidKey: FIREBASE_VAPID_KEY, serviceWorkerRegistration: reg });
+    console.log('FCM token ('+p+'):', token);
+    // TODO: envia este token para o teu backend/Firestore associado a este utilizador,
+    // para conseguires direcionar notificações (novo pedido, motorista a caminho, pagamento confirmado, etc.)
+  }
+}
 async function togglePush(p){
   if(pushEnabled[p]){ markPushEnabledUI(p, false); return; }
   try{
     if(!('Notification' in window)) throw new Error('Notificações não suportadas neste navegador');
     const permission = await Notification.requestPermission();
+    try{ localStorage.setItem('lux_push_asked_'+p, '1'); }catch(e){}
     if(permission !== 'granted') throw new Error('Permissão não concedida');
-    if(firebaseMessaging){
-      const reg = (typeof swRegistration !== 'undefined' && swRegistration) ? swRegistration : await navigator.serviceWorker.getRegistration();
-      const token = await firebaseMessaging.getToken({ vapidKey: FIREBASE_VAPID_KEY, serviceWorkerRegistration: reg });
-      console.log('FCM token ('+p+'):', token);
-      // TODO: envia este token para o teu backend/Firestore associado a este utilizador,
-      // para conseguires direcionar notificações (novo pedido, motorista a caminho, pagamento confirmado, etc.)
-    }
+    await registerPushToken(p);
     markPushEnabledUI(p, true);
   }catch(e){
     console.warn('Push indisponível (modo demonstração ou Firebase por configurar):', e);
     markPushEnabledUI(p, true); // modo demo: ativa visualmente mesmo sem backend real configurado
+  }
+}
+/* Ativa as notificações push automaticamente a seguir ao login — sem
+   depender do utilizador ir a Definições ligar o interruptor manualmente.
+   Só mostra o pedido de permissão nativo do browser da PRIMEIRA vez que
+   este papel (cliente/motorista) inicia sessão neste aparelho (controlado
+   por "lux_push_asked_{p}" no localStorage); nas sessões seguintes, se já
+   estiver concedida, regista o token em silêncio, e se tiver sido negada
+   ou nunca respondida, não volta a incomodar o utilizador com o popup. */
+async function initPushAuto(p){
+  try{
+    if(!('Notification' in window)) return;
+    let alreadyAsked = false;
+    try{ alreadyAsked = localStorage.getItem('lux_push_asked_'+p) === '1'; }catch(e){}
+    if(Notification.permission === 'granted'){
+      await registerPushToken(p);
+      markPushEnabledUI(p, true);
+      return;
+    }
+    if(Notification.permission === 'denied'){
+      markPushEnabledUI(p, false);
+      return; // o browser bloqueia novos pedidos — nada a fazer aqui
+    }
+    if(alreadyAsked) return; // já perguntámos uma vez neste aparelho; não voltar a insistir sozinho
+    const permission = await Notification.requestPermission();
+    try{ localStorage.setItem('lux_push_asked_'+p, '1'); }catch(e){}
+    if(permission === 'granted'){
+      await registerPushToken(p);
+      markPushEnabledUI(p, true);
+    }
+  }catch(e){
+    console.warn('Não foi possível iniciar push automaticamente:', e);
   }
 }
 window.addEventListener('load', initFirebase);
@@ -2673,11 +2720,21 @@ function listenToRide(rideId){
   }, function(err){ console.warn('Falha ao ouvir a viagem:', err); });
 }
 function handleRideUpdate(ride){
+  const prevRide = currentRide;
   currentRide = ride;
+  // Despacho sequencial: se a oferta ao motorista atual foi libertada
+  // (recusou explicitamente, ou o temporizador do lado do motorista já
+  // limpou o campo) enquanto ainda estamos "à procura", avança já para o
+  // próximo candidato — sem esperar pelo temporizador de segurança.
+  if(ride.status === 'searching' && !ride.offerDriverId && prevRide && prevRide.offerDriverId){
+    advanceRideOffer(currentRideId);
+  }
   if(ride.status === lastHandledRideStatus) return;
   lastHandledRideStatus = ride.status;
   playStatusBeep();
   if(ride.status === 'accepted'){
+    stopOfferWatchdog();
+    hideNoDriversFoundPrompt();
     document.getElementById('found-car-name').textContent = ride.driverName || (selectedVehicle && (selectedVehicle.model||selectedVehicle.name)) || 'Motorista';
     document.getElementById('found-plate').textContent = '00-XX-00';
     document.getElementById('pickup-eta').textContent = 'A caminho';
@@ -2706,6 +2763,8 @@ function handleRideUpdate(ride){
   } else if(ride.status === 'completed'){
     showClientSummary();
   } else if(ride.status === 'cancelled'){
+    stopOfferWatchdog();
+    hideNoDriversFoundPrompt();
     toast('c-home', 'A viagem foi cancelada');
     stopListeningToRide();
     currentRideId = null; currentRide = null; lastHandledRideStatus = null;
@@ -2721,7 +2780,121 @@ function payThenRequestRide(){
   if(unlimitedAccount.c){ startMatching(); return; }
   openPayment('c', selectedVehicle.price, function(){ startMatching(); });
 }
-function startMatching(){
+let _geocoder = null;
+/* Geocodifica uma morada de texto livre em coordenadas reais, usando o
+   Google Geocoder (restrito a Portugal). Serve de última rede de segurança
+   para garantir que quase sempre temos pickupLat/pickupLng reais — mesmo
+   quando o cliente escreve a morada à mão em vez de escolher uma sugestão
+   do autocomplete — porque é isso que alimenta o filtro de raio de 20km do
+   lado do motorista (sem coordenadas, esse filtro não teria como funcionar). */
+function geocodeAddress(address){
+  return new Promise(function(resolve){
+    if(!address || !(typeof google !== 'undefined' && google.maps)){ resolve(null); return; }
+    try{
+      if(!_geocoder) _geocoder = new google.maps.Geocoder();
+      _geocoder.geocode({ address: address, region: 'pt', componentRestrictions: { country: 'pt' } }, function(results, status){
+        if(status === 'OK' && results && results[0] && results[0].geometry && results[0].geometry.location){
+          const loc = results[0].geometry.location;
+          resolve({ lat: loc.lat(), lng: loc.lng() });
+        } else resolve(null);
+      });
+    }catch(e){ resolve(null); }
+  });
+}
+/* ===================== DESPACHO SEQUENCIAL DE MOTORISTAS =====================
+   Em vez de notificar todos os motoristas dentro dos 20km ao mesmo tempo,
+   oferece a corrida a UM motorista de cada vez — o mais próximo que ainda
+   não recusou nem foi tentado nesta volta — tal como Uber/Bolt. Se ele
+   recusar ou não responder a tempo, avança automaticamente para o
+   próximo. Ao esgotar todos os elegíveis, reinicia a volta pelos que só
+   não responderam (nunca pelos que recusaram explicitamente). Só quando
+   não sobra mesmo nenhum candidato é que avisa o cliente. O cliente (esta
+   app) é quem gere todo este avanço, porque é quem está sempre a ouvir a
+   corrida enquanto o ecrã "A procurar motorista..." está visível. */
+const OFFER_WINDOW_MS = 16000; // um pouco acima dos 15s de contagem do lado do motorista
+let offerWatchdog = null;
+function stopOfferWatchdog(){
+  if(offerWatchdog){ clearTimeout(offerWatchdog); offerWatchdog = null; }
+}
+function showNoDriversFoundPrompt(){
+  const el = document.getElementById('no-drivers-overlay');
+  if(el) el.classList.add('show');
+}
+function hideNoDriversFoundPrompt(){
+  const el = document.getElementById('no-drivers-overlay');
+  if(el) el.classList.remove('show');
+}
+function continueSearchingForDrivers(){
+  hideNoDriversFoundPrompt();
+  if(currentRideId) advanceRideOffer(currentRideId);
+}
+/* Procura, entre os motoristas online, o mais próximo do ponto de recolha
+   que ainda não esteja na lista de exclusão (excludeIds) e esteja dentro
+   do raio máximo. Devolve o ID do motorista (mesmo esquema usado em
+   drivers/{id} e driver_locations/{id}) ou null se não houver nenhum. */
+async function pickNextDriverCandidate(pickupLat, pickupLng, excludeIds){
+  const db = initFirestore();
+  if(!db || pickupLat==null || pickupLng==null) return null;
+  try{
+    const snap = await db.collection('driver_locations').where('online','==', true).get();
+    let best = null, bestKm = Infinity;
+    snap.forEach(function(doc){
+      if(excludeIds.has(doc.id)) return;
+      const d = doc.data();
+      if(d.lat==null || d.lng==null) return;
+      const km = haversineKm(pickupLat, pickupLng, d.lat, d.lng);
+      if(km==null || km > MAX_MATCH_RADIUS_KM) return;
+      if(km < bestKm){ bestKm = km; best = doc.id; }
+    });
+    return best;
+  }catch(e){ console.warn('Falha ao procurar motoristas próximos:', e); return null; }
+}
+async function advanceRideOffer(rideId){
+  const col = ridesCollection();
+  if(!col || !rideId) return;
+  stopOfferWatchdog();
+  let snap;
+  try{ snap = await col.doc(rideId).get(); }catch(e){ return; }
+  if(!snap.exists) return;
+  const ride = snap.data();
+  if(ride.status !== 'searching') return; // entretanto já foi aceite/cancelada
+  const offered = new Set(ride.offeredDriverIds || []);
+  const declined = new Set(ride.declinedDriverIds || []);
+  const excluded = new Set([...offered, ...declined]);
+  let candidate = await pickNextDriverCandidate(ride.pickupLat, ride.pickupLng, excluded);
+  let didReset = false;
+  if(!candidate && offered.size > 0){
+    // Esgotou a volta atual — reinicia só pelos que não responderam,
+    // continuando a excluir apenas quem recusou explicitamente.
+    didReset = true;
+    candidate = await pickNextDriverCandidate(ride.pickupLat, ride.pickupLng, declined);
+  }
+  if(!candidate){
+    showNoDriversFoundPrompt();
+    return;
+  }
+  hideNoDriversFoundPrompt();
+  const expiresAt = Date.now() + OFFER_WINDOW_MS;
+  const update = {
+    offerDriverId: candidate,
+    offerExpiresAt: expiresAt,
+    offeredDriverIds: didReset ? [candidate] : firebase.firestore.FieldValue.arrayUnion(candidate),
+    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+  };
+  try{
+    await col.doc(rideId).set(update, { merge:true });
+  }catch(e){ console.warn('Falha ao atribuir motorista:', e); return; }
+  scheduleOfferWatchdog(rideId, expiresAt);
+}
+function scheduleOfferWatchdog(rideId, expiresAt){
+  stopOfferWatchdog();
+  const delay = Math.max(500, expiresAt - Date.now() + 250);
+  offerWatchdog = setTimeout(function(){
+    if(currentRideId !== rideId) return;
+    advanceRideOffer(rideId);
+  }, delay);
+}
+async function startMatching(){
   goTo('c-vehicles'); // ensure state
   goTo('c-matching');
   const col = ridesCollection();
@@ -2730,8 +2903,13 @@ function startMatching(){
   lastHandledRideStatus = null;
   const originValNow = document.getElementById('c-origin').value || 'A minha localização atual';
   // Melhor coordenada disponível para o ponto de recolha: local escolhido no
-  // autocomplete > localização atual do GPS (se o texto ainda for o padrão) > nenhuma.
-  const pickupLatLng = selectedOriginLatLng || ((originValNow === 'A minha localização atual' && myCurrentLatLng) ? myCurrentLatLng : null);
+  // autocomplete > localização atual do GPS (se o texto ainda for o padrão) >
+  // geocoding da morada escrita à mão (última rede de segurança, para o
+  // filtro de raio de 20km do motorista funcionar sempre que possível).
+  let pickupLatLng = selectedOriginLatLng || ((originValNow === 'A minha localização atual' && myCurrentLatLng) ? myCurrentLatLng : null);
+  if(!pickupLatLng && originValNow && originValNow !== 'A minha localização atual'){
+    pickupLatLng = await geocodeAddress(originValNow);
+  }
   col.add({
     status: 'searching',
     clientName: u.name, clientPhone: u.phone,
@@ -2739,6 +2917,9 @@ function startMatching(){
     destination: document.getElementById('c-dest').value || 'destino',
     pickupLat: pickupLatLng ? pickupLatLng.lat : null,
     pickupLng: pickupLatLng ? pickupLatLng.lng : null,
+    offerDriverId: null,
+    offeredDriverIds: [],
+    declinedDriverIds: [],
     vehicleId: selectedVehicle.id, vehicleName: selectedVehicle.model || selectedVehicle.name,
     price: selectedVehicle.price,
     createdAt: firebase.firestore.FieldValue.serverTimestamp(),
@@ -2746,6 +2927,7 @@ function startMatching(){
   }).then(function(ref){
     currentRideId = ref.id;
     listenToRide(ref.id);
+    advanceRideOffer(ref.id);
   }).catch(function(e){
     console.warn('Falha ao criar pedido real — a usar modo demonstração:', e);
     startMatchingSimulated();
@@ -2770,6 +2952,8 @@ function startMatchingSimulated(){
 }
 function cancelMatching(){
   clearAllTimers();
+  stopOfferWatchdog();
+  hideNoDriversFoundPrompt();
   if(currentRideId){
     const col = ridesCollection();
     if(col){

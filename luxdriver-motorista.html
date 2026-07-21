@@ -1147,7 +1147,7 @@
               <div style="font-size:12px; color:var(--muted);">Executivo Sedan</div>
             </div>
             <div class="req-actions">
-              <button class="btn btn-outline glow-frame" onclick="declineRequest()">Recusar</button>
+              <button class="btn btn-outline glow-frame" onclick="declineRequestExplicit()">Recusar</button>
               <button class="btn btn-gold glow-frame" onclick="acceptRequest()">Aceitar</button>
             </div>
           </div>
@@ -1748,6 +1748,7 @@ function completeAuth(p){
   updateSettingsUI(p);
   saveSession(p);
   if(typeof enforceSingleSession==='function') enforceSingleSession(p);
+  if(typeof initPushAuto==='function') initPushAuto(p);
   if(p==='d' && typeof upsertDriverProfile==='function') upsertDriverProfile();
   if(p==='c'){ resetClientFlow(); } else { resetDriverFlow(); }
 }
@@ -2431,23 +2432,59 @@ function markPushEnabledUI(p, enabled){
   const sw = document.getElementById(p+'-push-switch');
   if(sw) sw.classList.toggle('on', enabled);
 }
+async function registerPushToken(p){
+  if(firebaseMessaging){
+    const reg = (typeof swRegistration !== 'undefined' && swRegistration) ? swRegistration : await navigator.serviceWorker.getRegistration();
+    const token = await firebaseMessaging.getToken({ vapidKey: FIREBASE_VAPID_KEY, serviceWorkerRegistration: reg });
+    console.log('FCM token ('+p+'):', token);
+    // TODO: envia este token para o teu backend/Firestore associado a este utilizador,
+    // para conseguires direcionar notificações (novo pedido, motorista a caminho, pagamento confirmado, etc.)
+  }
+}
 async function togglePush(p){
   if(pushEnabled[p]){ markPushEnabledUI(p, false); return; }
   try{
     if(!('Notification' in window)) throw new Error('Notificações não suportadas neste navegador');
     const permission = await Notification.requestPermission();
+    try{ localStorage.setItem('lux_push_asked_'+p, '1'); }catch(e){}
     if(permission !== 'granted') throw new Error('Permissão não concedida');
-    if(firebaseMessaging){
-      const reg = (typeof swRegistration !== 'undefined' && swRegistration) ? swRegistration : await navigator.serviceWorker.getRegistration();
-      const token = await firebaseMessaging.getToken({ vapidKey: FIREBASE_VAPID_KEY, serviceWorkerRegistration: reg });
-      console.log('FCM token ('+p+'):', token);
-      // TODO: envia este token para o teu backend/Firestore associado a este utilizador,
-      // para conseguires direcionar notificações (novo pedido, motorista a caminho, pagamento confirmado, etc.)
-    }
+    await registerPushToken(p);
     markPushEnabledUI(p, true);
   }catch(e){
     console.warn('Push indisponível (modo demonstração ou Firebase por configurar):', e);
     markPushEnabledUI(p, true); // modo demo: ativa visualmente mesmo sem backend real configurado
+  }
+}
+/* Ativa as notificações push automaticamente a seguir ao login — sem
+   depender do utilizador ir a Definições ligar o interruptor manualmente.
+   Só mostra o pedido de permissão nativo do browser da PRIMEIRA vez que
+   este papel (cliente/motorista) inicia sessão neste aparelho (controlado
+   por "lux_push_asked_{p}" no localStorage); nas sessões seguintes, se já
+   estiver concedida, regista o token em silêncio, e se tiver sido negada
+   ou nunca respondida, não volta a incomodar o utilizador com o popup. */
+async function initPushAuto(p){
+  try{
+    if(!('Notification' in window)) return;
+    let alreadyAsked = false;
+    try{ alreadyAsked = localStorage.getItem('lux_push_asked_'+p) === '1'; }catch(e){}
+    if(Notification.permission === 'granted'){
+      await registerPushToken(p);
+      markPushEnabledUI(p, true);
+      return;
+    }
+    if(Notification.permission === 'denied'){
+      markPushEnabledUI(p, false);
+      return; // o browser bloqueia novos pedidos — nada a fazer aqui
+    }
+    if(alreadyAsked) return; // já perguntámos uma vez neste aparelho; não voltar a insistir sozinho
+    const permission = await Notification.requestPermission();
+    try{ localStorage.setItem('lux_push_asked_'+p, '1'); }catch(e){}
+    if(permission === 'granted'){
+      await registerPushToken(p);
+      markPushEnabledUI(p, true);
+    }
+  }catch(e){
+    console.warn('Não foi possível iniciar push automaticamente:', e);
   }
 }
 window.addEventListener('load', initFirebase);
@@ -2865,35 +2902,33 @@ function sendChatMessage(){
 let ridesListUnsub = null;
 let currentRideId = null;
 let currentRideData = null;
-let declinedRideIds = new Set();
+let declinedRideIds = new Set(); // salvaguarda local extra (redundante com declinedDriverIds no Firestore)
 function ridesCollection(){
   const db = initFirestore();
   return db ? db.collection('rides') : null;
 }
-// Raio máximo de emparelhamento motorista↔cliente: só chegam pedidos cujo
-// ponto de recolha esteja a até 20km da posição GPS atual do motorista.
-// Se ainda não houver posição GPS conhecida ou a corrida não tiver
-// coordenadas reais de recolha, não bloqueia (mesmo comportamento de antes).
+// Raio máximo de emparelhamento motorista↔cliente (usado do lado do
+// cliente para escolher candidatos — mantido aqui só como referência).
 const MAX_MATCH_RADIUS_KM = 20;
-function isRideWithinMatchRadius(rideData){
-  if(!lastDriverLatLng) return true;
-  if(rideData.pickupLat==null || rideData.pickupLng==null) return true;
-  const km = haversineKm(lastDriverLatLng.lat, lastDriverLatLng.lng, rideData.pickupLat, rideData.pickupLng);
-  if(km==null) return true;
-  return km <= MAX_MATCH_RADIUS_KM;
-}
+/* Despacho sequencial: o motorista já não "ouve" todos os pedidos dentro
+   do raio ao mesmo tempo (broadcast) — só recebe o pedido que lhe foi
+   especificamente atribuído pelo cliente (campo offerDriverId no
+   documento da corrida). É o app do cliente quem decide, a cada momento,
+   a quem oferecer a corrida (o mais próximo que ainda não recusou nem foi
+   tentado nesta volta), avançando automaticamente se este motorista
+   recusar ou não responder a tempo. */
 function startListeningForRides(){
   const col = ridesCollection();
   if(!col) return false;
   if(ridesListUnsub) return true; // já a ouvir
-  ridesListUnsub = col.where('status','==','searching').onSnapshot(function(snapshot){
+  const myId = (currentUser.d && currentUser.d.email) ? driverDocId(currentUser.d.email) : null;
+  if(!myId) return false;
+  ridesListUnsub = col.where('status','==','searching').where('offerDriverId','==', myId).onSnapshot(function(snapshot){
     if(!isOnline || currentRideId || document.getElementById('req-overlay').classList.contains('show')) return;
     let picked = null;
     snapshot.forEach(function(doc){
-      if(picked || declinedRideIds.has(doc.id)) return;
-      const data = doc.data();
-      if(!isRideWithinMatchRadius(data)) return;
-      picked = { id:doc.id, data:data };
+      if(picked) return;
+      picked = { id:doc.id, data:doc.data() };
     });
     if(picked) showRealIncomingRequest(picked.id, picked.data);
   }, function(err){ console.warn('Falha ao ouvir pedidos de viagem:', err); });
@@ -2901,21 +2936,6 @@ function startListeningForRides(){
 }
 function stopListeningForRides(){
   if(ridesListUnsub){ ridesListUnsub(); ridesListUnsub = null; }
-}
-function checkForNextRide(){
-  const col = ridesCollection();
-  if(!col) return;
-  col.where('status','==','searching').get().then(function(snapshot){
-    if(!isOnline || currentRideId) return;
-    let picked = null;
-    snapshot.forEach(function(doc){
-      if(picked || declinedRideIds.has(doc.id)) return;
-      const data = doc.data();
-      if(!isRideWithinMatchRadius(data)) return;
-      picked = { id:doc.id, data:data };
-    });
-    if(picked) showRealIncomingRequest(picked.id, picked.data);
-  }).catch(function(){});
 }
 function showRealIncomingRequest(rideId, data){
   currentRideId = rideId;
@@ -2942,7 +2962,7 @@ function showRealIncomingRequest(rideId, data){
     ring.setAttribute('data-s', s);
     ring.style.setProperty('--pct', Math.max(0, (s/15)*100));
     if(bar) bar.style.width = Math.max(0, (s/15)*100) + '%';
-    if(s<=0){ clearInterval(reqCountdown); declineRequest(); }
+    if(s<=0){ clearInterval(reqCountdown); handleRequestTimeout(); }
   }, 1000);
 }
 
@@ -3025,19 +3045,50 @@ function triggerIncomingRequest(){
     if(bar) bar.style.width = Math.max(0, (s/15)*100) + '%';
     if(s<=0){
       clearInterval(reqCountdown);
-      declineRequest();
+      handleRequestTimeout();
     }
   }, 1000);
 }
-function declineRequest(){
+/* Recusa EXPLÍCITA (botão "Recusar"): fica gravada em declinedDriverIds no
+   documento da corrida, para nunca mais voltar a ser-lhe oferecida — nem
+   sequer quando o cliente reinicia a volta pelos motoristas que só não
+   responderam. */
+function declineRequestExplicit(){
   if(reqCountdown) clearInterval(reqCountdown);
   stopRequestSound();
   document.getElementById('req-overlay').classList.remove('show');
   if(currentRideId){
+    const col = ridesCollection();
+    const myId = (currentUser.d && currentUser.d.email) ? driverDocId(currentUser.d.email) : null;
+    if(col && myId){
+      col.doc(currentRideId).set({
+        declinedDriverIds: firebase.firestore.FieldValue.arrayUnion(myId),
+        offerDriverId: null,
+        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+      }, { merge:true }).catch(function(e){ console.warn('Falha ao recusar pedido:', e); });
+    }
     declinedRideIds.add(currentRideId);
     currentRideId = null;
     currentRideData = null;
-    checkForNextRide();
+    return;
+  }
+  if(isOnline){
+    const t = setTimeout(()=>triggerIncomingRequest(), 5000);
+    activeTimers.push(t);
+  }
+}
+/* Expirou o tempo local de 15s sem resposta: NÃO é uma recusa explícita —
+   apenas esconde o pedido deste ecrã. É o app do cliente quem, ao detetar
+   que a proposta (offerExpiresAt) expirou, avança automaticamente para o
+   próximo motorista mais próximo (e este continua elegível numa volta
+   seguinte, ao contrário de quem recusa mesmo). */
+function handleRequestTimeout(){
+  if(reqCountdown) clearInterval(reqCountdown);
+  stopRequestSound();
+  document.getElementById('req-overlay').classList.remove('show');
+  if(currentRideId){
+    currentRideId = null;
+    currentRideData = null;
     return;
   }
   if(isOnline){
