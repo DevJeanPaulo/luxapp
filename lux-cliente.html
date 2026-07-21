@@ -266,6 +266,18 @@
   .field .dot-marker{ width:9px; height:9px; border-radius:50%; flex-shrink:0; }
   .field .dot-marker.o{ background:#5b6473; }
   .field .dot-marker.d{ background:var(--gold); }
+  .field .dot-marker.s{ background:#2E8FFF; }
+  .field .stop-remove{
+    flex-shrink:0; width:28px; height:28px; border-radius:50%; border:none;
+    background:var(--panel); color:var(--muted); font-size:14px; line-height:1;
+    display:flex; align-items:center; justify-content:center; cursor:pointer;
+    -webkit-tap-highlight-color:transparent;
+  }
+  .add-stop-btn{ -webkit-tap-highlight-color:transparent; }
+  .add-stop-btn{
+    display:flex; align-items:center; gap:6px; margin:0 16px 10px; padding:0 4px;
+    color:var(--gold); font-size:13px; font-weight:600; cursor:pointer; width:fit-content;
+  }
   .field input{
     background:transparent; border:none; outline:none; color:var(--text);
     font-size:16px; width:100%;
@@ -1029,12 +1041,14 @@
             <span class="dot-marker o"></span>
             <input id="c-origin" value="A minha localização atual" />
           </div>
+          <div id="c-stops-list"></div>
           <div class="field-divider"></div>
           <div class="field">
             <span class="dot-marker d"></span>
             <input id="c-dest" placeholder="Introduza o destino" oninput="onDestInput()" />
           </div>
         </div>
+        <div class="add-stop-btn" onclick="addTripStop()">+ Adicionar parada</div>
         <div class="map" id="map-home">
           <svg><line x1="0" y1="0" x2="0" y2="0"/></svg>
           <div class="me-dot" style="left:50%; top:46%;"></div>
@@ -1127,7 +1141,7 @@
               <div class="icon-btn" onclick="openChat()">💬<span class="chat-notify-dot" id="chat-notify-found"></span></div>
             </div>
           </div>
-          <button class="btn btn-danger-text" onclick="goTo('c-home')">Cancelar viagem</button>
+          <button class="btn btn-danger-text" id="c-found-cancel-btn" onclick="cancelAcceptedRide()">Cancelar viagem</button>
         </div>
       </div>
 
@@ -1360,11 +1374,19 @@ function initPlacesAutocomplete(){
     acDest.addListener('place_changed', function(){
       const place = acDest.getPlace();
       if(place && (place.formatted_address || place.name)) destInput.value = place.formatted_address || place.name;
+      selectedDestLatLng = (place && place.geometry && place.geometry.location) ? { lat: place.geometry.location.lat(), lng: place.geometry.location.lng() } : null;
       onDestInput();
     });
+    destInput.addEventListener('input', function(){ selectedDestLatLng = null; });
   }
   placesAutocompleteBound = true;
   return true;
+}
+/* Tenta ligar o autocomplete a qualquer campo de parada que ainda não o
+   tenha (ex.: paradas adicionadas antes de a API "places" acabar de
+   carregar) — chamado no mesmo sítio/retry que initPlacesAutocomplete(). */
+function bindAllStopAutocompletes(){
+  tripStops.forEach(function(s){ bindStopAutocomplete(s.uid); });
 }
 function initRealMap(containerId, center, zoom){
   if(!gmapsAvailable()) return null;
@@ -1411,7 +1433,36 @@ function showRealSingleLocation(containerId, place){
   new google.maps.Marker({ position:place, map:map, icon:gDotIcon('#FFC94D',8) });
   return true;
 }
-function showRealRoute(containerId, originPlace, destPlace, carDurationMs){
+/* Regista, por containerId de mapa, o marcador do carro que representa a
+   posição REAL do motorista (nunca uma animação com duração fixa) — para
+   que updateRouteCarPosition() (chamada a cada atualização de GPS real via
+   startListeningDriverLocationEta) mova a seta como no Uber/Bolt: só anda
+   quando o veículo anda de verdade. */
+const _routeCarMarkerCache = {};
+function placeRouteCarMarker(containerId, map, initialPos){
+  const marker = new google.maps.Marker({ position:initialPos, map:map, icon:gCarIcon(0), zIndex:999 });
+  _routeCarMarkerCache[containerId] = { map:map, marker:marker, lastPos:initialPos, heading:0 };
+  return marker;
+}
+function updateRouteCarPosition(containerId, lat, lng){
+  const cached = _routeCarMarkerCache[containerId];
+  if(!cached) return;
+  const newPos = { lat:lat, lng:lng };
+  if(cached.lastPos && (cached.lastPos.lat !== lat || cached.lastPos.lng !== lng)){
+    const targetHeading = bearingDeg(cached.lastPos.lat, cached.lastPos.lng, lat, lng);
+    cached.heading = lerpHeading(cached.heading, targetHeading, 0.6);
+    cached.marker.setIcon(gCarIcon(cached.heading));
+  }
+  cached.marker.setPosition(newPos);
+  cached.lastPos = newPos;
+  cached.map.panTo(newPos);
+}
+function clearRouteCarMarker(containerId){
+  const cached = _routeCarMarkerCache[containerId];
+  if(cached && cached.marker) cached.marker.setMap(null);
+  delete _routeCarMarkerCache[containerId];
+}
+function showRealRoute(containerId, originPlace, destPlace, showCar){
   const map = initRealMap(containerId, originPlace, 13);
   if(!map) return false;
   new google.maps.Marker({ position:originPlace, map:map, icon:gDotIcon('#8b93a1',6) });
@@ -1422,6 +1473,10 @@ function showRealRoute(containerId, originPlace, destPlace, carDurationMs){
     polylineOptions:{ strokeColor:'#FFC94D', strokeWeight:4, strokeOpacity:.85 }
   });
   renderer.setMap(map);
+  // O carro aparece já na última posição GPS real conhecida do motorista
+  // (recebida via startListeningDriverLocationEta), nunca a animar sozinho
+  // do início ao fim da rota.
+  if(showCar) placeRouteCarMarker(containerId, map, (typeof lastKnownDriverLatLng!=='undefined' && lastKnownDriverLatLng) ? lastKnownDriverLatLng : originPlace);
   directionsService.route({ origin:originPlace, destination:destPlace, travelMode:'DRIVING' }, function(result, status){
     if(status !== 'OK' || !result.routes[0]) return;
     renderer.setDirections(result);
@@ -1429,35 +1484,8 @@ function showRealRoute(containerId, originPlace, destPlace, carDurationMs){
     const bounds = new google.maps.LatLngBounds();
     path.forEach(function(p){ bounds.extend(p); });
     map.fitBounds(bounds, 48);
-    if(carDurationMs) animateCarAlongPath(map, path, carDurationMs);
   });
   return true;
-}
-function animateCarAlongPath(map, path, durationMs){
-  if(!path || path.length<2) return;
-  let heading = bearingDeg(path[0].lat(), path[0].lng(), path[1].lat(), path[1].lng());
-  const marker = new google.maps.Marker({ position:path[0], map:map, icon:gCarIcon(heading), zIndex:999 });
-  const total = path.length - 1;
-  const start = performance.now();
-  function step(now){
-    // easeInOutQuad em vez de tempo linear: acelera e desacelera de forma
-    // suave (tal como o Uber/Bolt), em vez de um movimento robótico a
-    // velocidade constante.
-    const rawT = Math.min(1, (now-start)/durationMs);
-    const t = easeInOutQuad(rawT);
-    const pos = t*total;
-    const idx = Math.min(total-1, Math.floor(pos));
-    const segT = pos - idx;
-    const p1 = path[idx], p2 = path[Math.min(total, idx+1)];
-    const lat = p1.lat() + (p2.lat()-p1.lat())*segT;
-    const lng = p1.lng() + (p2.lng()-p1.lng())*segT;
-    marker.setPosition({ lat:lat, lng:lng });
-    const targetHeading = bearingDeg(p1.lat(), p1.lng(), p2.lat(), p2.lng());
-    heading = lerpHeading(heading, targetHeading, 0.25);
-    marker.setIcon(gCarIcon(heading));
-    if(rawT<1){ requestAnimationFrame(step); }
-  }
-  requestAnimationFrame(step);
 }
 
 /* Tabela de tarifas — tarifa inicial + preço por km + preço por minuto.
@@ -1518,6 +1546,63 @@ let routeKm = null;
 let routeMinutes = null;
 let myCurrentLatLng = null;
 let selectedOriginLatLng = null;
+let selectedDestLatLng = null;
+/* ===================== PARADAS INTERMÉDIAS (waypoints) =====================
+   O cliente pode adicionar quantas paradas quiser entre a recolha e o
+   destino (tal como o Uber). Cada parada tem o seu próprio autocomplete do
+   Google Places; ao pedir a corrida, geocodifica-se qualquer parada sem
+   coordenadas ainda (morada escrita à mão) antes de gravar o array `stops`
+   no documento da corrida. */
+let tripStops = []; // { uid, value, latLng }
+let tripStopSeq = 0;
+function addTripStop(){
+  tripStops.push({ uid: 'c-stop-'+(++tripStopSeq), value:'', latLng:null });
+  renderTripStops();
+}
+function removeTripStop(uid){
+  tripStops = tripStops.filter(function(s){ return s.uid !== uid; });
+  renderTripStops();
+}
+function clearTripStops(){
+  tripStops = [];
+  renderTripStops();
+}
+function renderTripStops(){
+  const list = document.getElementById('c-stops-list');
+  if(!list) return;
+  list.innerHTML = tripStops.map(function(s){
+    return '<div class="field-divider"></div>' +
+      '<div class="field">' +
+        '<span class="dot-marker s"></span>' +
+        '<input id="'+s.uid+'" placeholder="Parada" value="'+(s.value||'').replace(/"/g,'&quot;')+'" oninput="onTripStopInput(\''+s.uid+'\')">' +
+        '<button type="button" class="stop-remove" onclick="removeTripStop(\''+s.uid+'\')">✕</button>' +
+      '</div>';
+  }).join('');
+  tripStops.forEach(function(s){ bindStopAutocomplete(s.uid); });
+}
+function onTripStopInput(uid){
+  const s = tripStops.find(function(x){ return x.uid===uid; });
+  if(!s) return;
+  const el = document.getElementById(uid);
+  s.value = el ? el.value : '';
+  s.latLng = null;
+}
+function bindStopAutocomplete(uid){
+  if(!(typeof google !== 'undefined' && google.maps && google.maps.places)) return;
+  const el = document.getElementById(uid);
+  if(!el || el._acBound) return;
+  const opts = { componentRestrictions:{ country:'pt' }, fields:['formatted_address','name','geometry'] };
+  const ac = new google.maps.places.Autocomplete(el, opts);
+  ac.addListener('place_changed', function(){
+    const place = ac.getPlace();
+    const s = tripStops.find(function(x){ return x.uid===uid; });
+    if(!s) return;
+    if(place && (place.formatted_address || place.name)) el.value = place.formatted_address || place.name;
+    s.value = el.value;
+    s.latLng = (place && place.geometry && place.geometry.location) ? { lat: place.geometry.location.lat(), lng: place.geometry.location.lng() } : null;
+  });
+  el._acBound = true;
+}
 let selectedVehicle = null;
 let selectedTip = 0;
 
@@ -1803,7 +1888,7 @@ function completeAuth(p){
   saveSession(p);
   if(typeof enforceSingleSession==='function') enforceSingleSession(p);
   if(typeof initPushAuto==='function') initPushAuto(p);
-  if(p==='c'){ resetClientFlow(); } else { resetDriverFlow(); }
+  if(p==='c'){ resetClientFlow(); if(typeof tryRestoreActiveRide==='function') tryRestoreActiveRide(); } else { resetDriverFlow(); }
 }
 async function doLogin(p){
   const user = (document.getElementById(p+'-login-user').value||'').trim();
@@ -2668,6 +2753,7 @@ function initHomeMap(){
     // livraria "places" ainda não carregou — tenta outra vez daqui a pouco
     setTimeout(initPlacesAutocomplete, 1500);
   }
+  bindAllStopAutocompletes();
   if(navigator.geolocation){
     navigator.geolocation.getCurrentPosition(function(pos){
       myCurrentLatLng = { lat:pos.coords.latitude, lng:pos.coords.longitude };
@@ -2688,6 +2774,9 @@ function resetClientFlow(){
   selectedTip = 0;
   routeKm = null;
   routeMinutes = null;
+  selectedDestLatLng = null;
+  rideAcceptedAtMs = null;
+  clearTripStops();
   document.getElementById('c-confirm-btn').disabled = true;
   document.querySelectorAll('#stars-row .s').forEach(s=>s.classList.remove('on'));
   document.querySelectorAll('#tip-row .chip').forEach(c=>c.classList.remove('selected'));
@@ -2771,6 +2860,11 @@ let currentRideId = null;
 let currentRide = null;
 let rideUnsub = null;
 let lastHandledRideStatus = null;
+/* Regra de cancelamento: grátis até 2 min após o motorista aceitar; depois
+   disso aplica-se a taxa mínima (tarifa base da classe escolhida); deixa de
+   ser possível cancelar assim que a viagem entra em curso (in_progress). */
+const FREE_CANCEL_WINDOW_MS = 2 * 60 * 1000;
+let rideAcceptedAtMs = null;
 function ridesCollection(){
   const db = initFirestore();
   return db ? db.collection('rides') : null;
@@ -2794,8 +2888,33 @@ function startListeningDriverLocationEta(driverId){
   driverEtaUnsub = db.collection('driver_locations').doc(driverId).onSnapshot(function(doc){
     if(!doc.exists) return;
     const d = doc.data();
-    updatePickupEtaDisplay(d.lat, d.lng);
+    // O texto de ETA até à recolha só faz sentido enquanto o motorista ainda
+    // está a caminho (antes de "arrived") — mas mantemos este listener de
+    // GPS ativo durante toda a viagem, só para a seta do carro continuar a
+    // mover-se com a posição real, mesmo depois de o motorista chegar/a
+    // viagem começar.
+    if(!currentRide || currentRide.status === 'accepted'){
+      updatePickupEtaDisplay(d.lat, d.lng);
+    }
+    if(d.lat!=null && d.lng!=null){
+      lastKnownDriverLatLng = { lat: d.lat, lng: d.lng };
+      // Move a seta do carro no ecrã atual (encontrado/em viagem) com a
+      // posição GPS REAL do motorista — nunca com uma animação de duração fixa.
+      const activeMapId = (typeof activeClientRouteMapId==='function') ? activeClientRouteMapId() : null;
+      if(activeMapId) updateRouteCarPosition(activeMapId, d.lat, d.lng);
+    }
   }, function(err){ console.warn('Falha ao ouvir localização do motorista:', err); });
+}
+let lastKnownDriverLatLng = null;
+/* Devolve o containerId do mapa de rota ativo consoante o ecrã do cliente
+   que está visível, para saber qual seta atualizar a cada GPS real do
+   motorista (map-found = a caminho da recolha, map-trip = em viagem). */
+function activeClientRouteMapId(){
+  const foundEl = document.getElementById('c-found');
+  if(foundEl && foundEl.classList.contains('active')) return 'map-found';
+  const tripEl = document.getElementById('c-trip');
+  if(tripEl && tripEl.classList.contains('active')) return 'map-trip';
+  return null;
 }
 function updatePickupEtaDisplay(driverLat, driverLng){
   const etaEl = document.getElementById('pickup-eta');
@@ -2808,9 +2927,68 @@ function updatePickupEtaDisplay(driverLat, driverLng){
     if(msgEl) msgEl.textContent = 'Motorista chega em ' + mins + ' min' + (isTrafficAware ? ' (com trânsito)' : '');
   });
 }
+/* Persistência da corrida ativa (Task #178): grava o ID da corrida em curso
+   no localStorage para que, se o cliente fechar a app e voltar a abrir, o
+   estado seja restaurado em vez de cair de novo no ecrã inicial. */
+const ACTIVE_RIDE_STORAGE_KEY = 'lux_client_active_ride_id';
+function saveActiveRideStorage(rideId){
+  try{ localStorage.setItem(ACTIVE_RIDE_STORAGE_KEY, rideId); }catch(e){}
+}
+function clearActiveRideStorage(){
+  try{ localStorage.removeItem(ACTIVE_RIDE_STORAGE_KEY); }catch(e){}
+}
+function tryRestoreActiveRide(){
+  let savedId = null;
+  try{ savedId = localStorage.getItem(ACTIVE_RIDE_STORAGE_KEY); }catch(e){}
+  if(!savedId) return;
+  const col = ridesCollection();
+  if(!col) return;
+  col.doc(savedId).get().then(function(doc){
+    if(!doc.exists){ clearActiveRideStorage(); return; }
+    const ride = doc.data();
+    if(ride.status === 'completed' || ride.status === 'cancelled'){ clearActiveRideStorage(); return; }
+    currentRideId = savedId;
+    lastHandledRideStatus = null;
+    if(ride.status !== 'searching' && ride.acceptedAt){
+      try{ rideAcceptedAtMs = (typeof ride.acceptedAt.toMillis === 'function') ? ride.acceptedAt.toMillis() : Date.now(); }
+      catch(e){ rideAcceptedAtMs = Date.now(); }
+    }
+    listenToRide(savedId);
+    if(ride.status === 'searching'){
+      goTo('c-matching');
+    } else if(ride.status === 'accepted' || ride.status === 'arrived'){
+      // handleRideUpdate normalmente só preenche estes dados na transição
+      // 'accepted'; como podemos estar a restaurar diretamente em 'arrived'
+      // (app fechada depois disso), preenchemos aqui tudo à mão primeiro.
+      const vLabel = [ride.vehicleBrand, ride.vehicleModel].filter(Boolean).join(' ') || ride.vehicleName || 'Veículo Lux';
+      document.getElementById('found-car-name').textContent = vLabel + (ride.vehicleColor ? (' · '+ride.vehicleColor) : '');
+      document.getElementById('found-driver-name').textContent = ride.driverName || 'Motorista Lux';
+      document.getElementById('found-plate').textContent = ride.vehiclePlate || '—';
+      setDriverAvatar('found-avatar', ride.driverPhotoUrl, ride.driverName);
+      setDriverAvatar('trip-avatar', ride.driverPhotoUrl, ride.driverName);
+      document.getElementById('trip-driver-name').textContent = ride.driverName || 'Motorista Lux';
+      document.getElementById('complete-driver-name').textContent = ride.driverName || 'Motorista Lux';
+      goTo('c-found');
+      document.getElementById('pickup-eta').textContent = ride.status === 'arrived' ? 'Chegou' : 'A caminho';
+      const pickupPos0 = (ride.pickupLat!=null && ride.pickupLng!=null) ? { lat: ride.pickupLat, lng: ride.pickupLng } : LUX_PLACES.pickup;
+      if(!showRealRoute('map-found', LUX_PLACES.near, pickupPos0, true)){
+        drawRoute(document.getElementById('svg-route-found'), 65,75,35,35,'#FFC94D');
+        placePins(document.getElementById('map-found'), 35,35,35,35);
+      }
+      if(ride.driverId) startListeningDriverLocationEta(ride.driverId);
+      startChatWatch();
+    }
+    toast(currentScreenId() || 'c-home', 'Corrida em curso recuperada');
+  }).catch(function(err){ console.warn('Falha ao restaurar corrida ativa:', err); });
+}
+function currentScreenId(){
+  const activeEl = document.querySelector('.screen.active');
+  return activeEl ? activeEl.id : null;
+}
 function listenToRide(rideId){
   const col = ridesCollection();
   if(!col) return;
+  saveActiveRideStorage(rideId);
   stopListeningToRide();
   rideUnsub = col.doc(rideId).onSnapshot(function(doc){
     if(!doc.exists) return;
@@ -2833,6 +3011,7 @@ function handleRideUpdate(ride){
   if(ride.status === 'accepted'){
     stopOfferWatchdog();
     hideNoDriversFoundPrompt();
+    if(!rideAcceptedAtMs) rideAcceptedAtMs = Date.now();
     const vLabel = [ride.vehicleBrand, ride.vehicleModel].filter(Boolean).join(' ') ||
       (selectedVehicle && (selectedVehicle.model||selectedVehicle.name)) || 'Veículo Lux';
     document.getElementById('found-car-name').textContent = vLabel + (ride.vehicleColor ? (' · '+ride.vehicleColor) : '');
@@ -2847,37 +3026,83 @@ function handleRideUpdate(ride){
     if(msgEl0) msgEl0.textContent = '';
     goTo('c-found');
     toast('c-found', 'Motorista encontrado!');
-    if(!showRealRoute('map-found', LUX_PLACES.near, LUX_PLACES.pickup, 4200)){
+    const driverPos = (ride.driverId && typeof lastKnownDriverLatLng!=='undefined' && lastKnownDriverLatLng) ? lastKnownDriverLatLng : LUX_PLACES.near;
+    const pickupPos = (ride.pickupLat!=null && ride.pickupLng!=null) ? { lat: ride.pickupLat, lng: ride.pickupLng } : LUX_PLACES.pickup;
+    if(!showRealRoute('map-found', driverPos, pickupPos, true)){
       drawRoute(document.getElementById('svg-route-found'), 65,75,35,35,'#FFC94D');
       placePins(document.getElementById('map-found'), 35,35,35,35);
       const car = document.getElementById('car-found');
       car.style.left='65%'; car.style.top='75%';
-      animateMarker(car, 65,75, 35,35, 4200);
     }
-    // ETA real: começa a ouvir a posição GPS ao vivo do motorista atribuído.
+    // ETA real: começa a ouvir a posição GPS ao vivo do motorista atribuído
+    // (mantém-se ativo até a viagem terminar, para a seta seguir sempre a
+    // posição real, mesmo depois de "arrived"/"in_progress").
     if(ride.driverId) startListeningDriverLocationEta(ride.driverId);
     startChatWatch();
   } else if(ride.status === 'arrived'){
     document.getElementById('pickup-eta').textContent = 'Chegou';
     const msgEl1 = document.getElementById('pickup-eta-msg');
     if(msgEl1) msgEl1.textContent = 'O motorista chegou ao local de recolha';
-    stopListeningDriverLocationEta();
     toast('c-found', 'O motorista chegou ao local de recolha');
   } else if(ride.status === 'in_progress'){
-    stopListeningDriverLocationEta();
+    clearRouteCarMarker('map-found');
     startTrip();
   } else if(ride.status === 'completed'){
+    stopListeningDriverLocationEta();
+    clearRouteCarMarker('map-trip');
     stopChatWatch();
+    clearActiveRideStorage();
     showClientSummary();
   } else if(ride.status === 'cancelled'){
     stopOfferWatchdog();
     hideNoDriversFoundPrompt();
     toast('c-home', 'A viagem foi cancelada');
     stopListeningToRide();
+    stopListeningDriverLocationEta();
+    clearRouteCarMarker('map-found');
+    clearRouteCarMarker('map-trip');
     stopChatWatch();
-    currentRideId = null; currentRide = null; lastHandledRideStatus = null;
+    clearActiveRideStorage();
+    currentRideId = null; currentRide = null; lastHandledRideStatus = null; rideAcceptedAtMs = null;
     goTo('c-home');
   }
+}
+/* Cancelamento pelo cliente depois de o motorista já ter aceitado a corrida
+   (ecrã "Motorista a caminho"). Grátis nos primeiros 2 minutos após a
+   aceitação; depois aplica-se a taxa mínima da classe escolhida; bloqueado
+   assim que a viagem estiver em curso. */
+function cancelAcceptedRide(){
+  if(!currentRide || !currentRideId){ goTo('c-home'); return; }
+  if(currentRide.status === 'in_progress'){
+    toast('c-found', 'Não é possível cancelar: a viagem já está em curso');
+    return;
+  }
+  const elapsedMs = rideAcceptedAtMs ? (Date.now() - rideAcceptedAtMs) : 0;
+  const withinFreeWindow = elapsedMs < FREE_CANCEL_WINDOW_MS;
+  let cancelFee = 0;
+  if(!withinFreeWindow){
+    const veh = VEHICLES.find(function(v){ return v.id === currentRide.vehicleId; }) || selectedVehicle;
+    cancelFee = veh ? veh.base : 0;
+  }
+  const msg = withinFreeWindow
+    ? 'Cancelar esta viagem agora? Ainda está dentro dos 2 minutos grátis, sem custo.'
+    : ('Já passaram mais de 2 minutos desde a aceitação. Será cobrada a taxa mínima de ' + fmtEur(cancelFee) + '. Cancelar mesmo assim?');
+  if(!window.confirm(msg)) return;
+  const col = ridesCollection();
+  if(col){
+    col.doc(currentRideId).set({
+      status:'cancelled', cancelledBy:'client', cancelFee: cancelFee,
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    }, { merge:true }).catch(function(){});
+  }
+  stopListeningToRide();
+  stopListeningDriverLocationEta();
+  clearRouteCarMarker('map-found');
+  stopChatWatch();
+  clearActiveRideStorage();
+  currentRideId = null; currentRide = null; lastHandledRideStatus = null; rideAcceptedAtMs = null;
+  toast('c-home', cancelFee>0 ? ('Viagem cancelada — taxa de ' + fmtEur(cancelFee) + ' aplicada') : 'Viagem cancelada sem custo');
+  goTo('c-home');
 }
 function payThenRequestRide(){
   // Só se chama (pede) um motorista real depois de o pagamento da tarifa
@@ -3018,13 +3243,33 @@ async function startMatching(){
   if(!pickupLatLng && originValNow && originValNow !== 'A minha localização atual'){
     pickupLatLng = await geocodeAddress(originValNow);
   }
+  const destValNow = document.getElementById('c-dest').value || 'destino';
+  // Mesma lógica de rede de segurança do ponto de recolha: local escolhido
+  // no autocomplete > geocoding da morada escrita à mão — para o motorista
+  // ser sempre navegado até ao destino real, nunca a um ponto fixo de demo.
+  let dropoffLatLng = selectedDestLatLng;
+  if(!dropoffLatLng && destValNow && destValNow !== 'destino'){
+    dropoffLatLng = await geocodeAddress(destValNow);
+  }
+  // Geocodifica qualquer parada que ainda não tenha coordenadas (morada
+  // escrita à mão, sem passar pelo autocomplete) antes de gravar a corrida.
+  const stopsWithText = tripStops.filter(function(s){ return (s.value||'').trim().length>0; });
+  for(const s of stopsWithText){
+    if(!s.latLng) s.latLng = await geocodeAddress(s.value);
+  }
+  const stopsPayload = stopsWithText.map(function(s){
+    return { address: s.value, lat: s.latLng ? s.latLng.lat : null, lng: s.latLng ? s.latLng.lng : null };
+  });
   col.add({
     status: 'searching',
     clientName: u.name, clientPhone: u.phone,
     origin: originValNow,
-    destination: document.getElementById('c-dest').value || 'destino',
+    destination: destValNow,
     pickupLat: pickupLatLng ? pickupLatLng.lat : null,
     pickupLng: pickupLatLng ? pickupLatLng.lng : null,
+    dropoffLat: dropoffLatLng ? dropoffLatLng.lat : null,
+    dropoffLng: dropoffLatLng ? dropoffLatLng.lng : null,
+    stops: stopsPayload,
     offerDriverId: null,
     offeredDriverIds: [],
     declinedDriverIds: [],
@@ -3069,7 +3314,8 @@ function cancelMatching(){
     }
     stopListeningToRide();
     stopChatWatch();
-    currentRideId = null; currentRide = null; lastHandledRideStatus = null;
+    clearActiveRideStorage();
+    currentRideId = null; currentRide = null; lastHandledRideStatus = null; rideAcceptedAtMs = null;
   }
   goTo('c-home');
 }
@@ -3207,16 +3453,17 @@ function startPickupCountdown(){
   }, 900);
 }
 function startTrip(){
-  const dest = document.getElementById('c-dest').value || 'destino';
+  const dest = (currentRide && currentRide.destination) || document.getElementById('c-dest').value || 'destino';
   document.getElementById('trip-dest-label').textContent = dest;
   goTo('c-trip');
   toast('c-trip', 'Motorista chegou — viagem iniciada');
-  if(!showRealRoute('map-trip', LUX_PLACES.pickup, LUX_PLACES.airport, 5200)){
+  const pickupPos = (currentRide && currentRide.pickupLat!=null && currentRide.pickupLng!=null) ? { lat: currentRide.pickupLat, lng: currentRide.pickupLng } : LUX_PLACES.pickup;
+  const dropoffPos = (currentRide && currentRide.dropoffLat!=null && currentRide.dropoffLng!=null) ? { lat: currentRide.dropoffLat, lng: currentRide.dropoffLng } : LUX_PLACES.airport;
+  if(!showRealRoute('map-trip', pickupPos, dropoffPos, true)){
     drawRoute(document.getElementById('svg-route-trip'), 25,80,75,20,'#FFC94D');
     placePins(document.getElementById('map-trip'), 25,80,75,20);
     const car = document.getElementById('car-trip');
     car.style.left='25%'; car.style.top='80%';
-    animateMarker(car, 25,80, 75,20, 5200);
   }
   let s = 6;
   document.getElementById('trip-eta').textContent = s+' min';
