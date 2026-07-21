@@ -1744,6 +1744,51 @@ function listenDriverNameRequest(){
       }
     }, function(e){ console.warn('Falha ao ouvir pedido de nome:', e); });
 }
+/* Ouve o próprio documento drivers/{id} em tempo real, para que edições
+   feitas diretamente pelo admin (nome, telefone, dados do veículo) apareçam
+   no ecrã do motorista imediatamente — sem precisar de reiniciar sessão.
+   Ao contrário do fluxo de pedido de nome (driver_name_requests), esta
+   escrita do admin é direta e não passa por aprovação. Nota: o campo
+   "email" do documento é ignorado propositadamente aqui — currentUser.d.email
+   é usado para calcular o ID do próprio documento (driverDocId), por isso
+   sobrescrevê-lo a partir do próprio documento desalinharia futuras escritas
+   com o doc já existente. */
+let driverProfileUnsub = null;
+function listenDriverProfile(){
+  const db = initFirestore();
+  if(!db || !currentUser.d.email) return;
+  if(driverProfileUnsub){ driverProfileUnsub(); driverProfileUnsub = null; }
+  const id = driverDocId(currentUser.d.email);
+  driverProfileUnsub = db.collection('drivers').doc(id).onSnapshot(function(snap){
+    if(!snap.exists) return;
+    const data = snap.data();
+    let nameOrPhoneChanged = false;
+    if(data.name && data.name !== currentUser.d.name){ currentUser.d.name = data.name; nameOrPhoneChanged = true; }
+    if(data.phone!=null && data.phone !== currentUser.d.phone){ currentUser.d.phone = data.phone; nameOrPhoneChanged = true; }
+    let vehicleChanged = false;
+    const vMap = { vehicleBrand:'brand', vehicleModel:'model', vehicleColor:'color', vehiclePlate:'plate' };
+    Object.keys(vMap).forEach(function(fkey){
+      const localKey = vMap[fkey];
+      const incoming = data[fkey]!=null ? data[fkey] : '';
+      if(incoming !== (driverVehicle[localKey]||'')){
+        driverVehicle[localKey] = incoming;
+        vehicleChanged = true;
+      }
+    });
+    if(nameOrPhoneChanged){
+      updateSettingsUI('d');
+      saveSession('d');
+      setNamePendingUI(null);
+    }
+    if(vehicleChanged){
+      saveDriverVehicleLocal();
+      updateVehicleSettingsUI();
+    }
+    if(nameOrPhoneChanged || vehicleChanged){
+      toast('d-settings','Perfil atualizado pelo administrador');
+    }
+  }, function(e){ console.warn('Falha ao ouvir perfil do motorista:', e); });
+}
 function setNamePendingUI(pendingName){
   const el = document.getElementById('d-name-pending');
   if(!el) return;
@@ -2026,6 +2071,7 @@ function doLogout(p){
     if(typeof stopSharingLocation==='function') stopSharingLocation();
     if(typeof stopListeningForRides==='function') stopListeningForRides();
     if(typeof stopChatWatch==='function') stopChatWatch();
+    if(driverProfileUnsub){ driverProfileUnsub(); driverProfileUnsub = null; }
     currentRideId = null; currentRideData = null;
     if(typeof setDriverRidePhase==='function') setDriverRidePhase(null);
   }
@@ -2065,6 +2111,7 @@ async function confirmDeleteAccount(){
     currentRideId = null; currentRideData = null;
     if(typeof setDriverRidePhase==='function') setDriverRidePhase(null);
     if(nameRequestUnsub){ nameRequestUnsub(); nameRequestUnsub = null; }
+    if(driverProfileUnsub){ driverProfileUnsub(); driverProfileUnsub = null; }
   }
   const db = initFirestore();
   if(db && email){
@@ -2998,6 +3045,7 @@ function resetDriverFlow(){
   updateDriverFrames();
   showRealSingleLocation('map-driver-home', LUX_PLACES.near);
   if(typeof listenDriverNameRequest==='function') listenDriverNameRequest();
+  if(typeof listenDriverProfile==='function') listenDriverProfile();
 }
 function renderBalanceUI(){
   const low = driverBalance < MIN_BALANCE_TO_RECEIVE;

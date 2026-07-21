@@ -695,6 +695,9 @@ const FINANCE_COMMISSION_RATE = 0.10;
 let financeDriversUnsub = null;
 let financeDrivers = [];
 let selectedFinanceDriverId = null;
+let editingFinanceDriverId = null;
+let financeMonthlyCache = null;
+let financeMonthlyCacheDriverId = null;
 
 function initFinanceView(){
   const statusEl = document.getElementById('finance-status');
@@ -736,6 +739,7 @@ function renderFinanceDriverList(){
 }
 async function selectFinanceDriver(driverId){
   selectedFinanceDriverId = driverId;
+  editingFinanceDriverId = null;
   renderFinanceDriverList();
   const driver = financeDrivers.find(function(d){ return d.id===driverId; });
   const detail = document.getElementById('finance-detail');
@@ -766,6 +770,8 @@ async function selectFinanceDriver(driverId){
       b.gross += gross;
       b.commission += (d.commission != null ? Number(d.commission) : gross * FINANCE_COMMISSION_RATE);
     });
+    financeMonthlyCache = monthly;
+    financeMonthlyCacheDriverId = driverId;
     renderFinanceDetail(driver, monthly);
   }catch(e){
     console.warn('Falha ao calcular financeiro do motorista:', e);
@@ -815,11 +821,35 @@ function renderFinanceDetail(driver, monthly){
         '</tr>';
       }).join('');
   const totalRepasse = totals.gross - totals.commission;
+  const isEditingDriver = editingFinanceDriverId === driver.id;
+  const editHeaderHtml = isEditingDriver
+    ? '<div class="detail-header-info">' +
+        '<div class="edit-form">' +
+          '<div><label>Nome completo</label><input type="text" id="fdrv-name" value="' + escapeAttr(driver.name||'') + '"></div>' +
+          '<div><label>Email</label><input type="email" id="fdrv-email" value="' + escapeAttr(driver.email||'') + '"></div>' +
+          '<div><label>Telemóvel</label><input type="text" id="fdrv-phone" value="' + escapeAttr(driver.phone||'') + '"></div>' +
+          '<div><label>Marca do veículo</label><input type="text" id="fdrv-vbrand" value="' + escapeAttr(driver.vehicleBrand||'') + '"></div>' +
+          '<div><label>Modelo do veículo</label><input type="text" id="fdrv-vmodel" value="' + escapeAttr(driver.vehicleModel||'') + '"></div>' +
+          '<div><label>Cor do veículo</label><input type="text" id="fdrv-vcolor" value="' + escapeAttr(driver.vehicleColor||'') + '"></div>' +
+          '<div><label>Matrícula</label><input type="text" id="fdrv-vplate" value="' + escapeAttr(driver.vehiclePlate||'') + '"></div>' +
+        '</div>' +
+        '<div id="fdrv-save-error" style="color:var(--danger); font-size:12.5px; margin-top:8px; display:none;">O nome não pode ficar vazio.</div>' +
+      '</div>' +
+      '<div class="detail-header-actions">' +
+        '<button class="btn btn-gold" onclick="saveFinanceDriverProfile(\'' + driver.id + '\')">✓ Guardar</button>' +
+        '<button class="btn btn-outline" onclick="cancelEditFinanceDriver()">Cancelar</button>' +
+      '</div>'
+    : '<div class="detail-header-info">' +
+        '<h1>' + (driver.name || 'Motorista') + '</h1>' +
+        '<div class="meta-line"><span>' + (driver.email || '') + '</span><span>' + (driver.phone || '') + '</span>' +
+          '<span>🚘 ' + ([driver.vehicleBrand, driver.vehicleModel].filter(Boolean).join(' ') || 'Sem veículo definido') + (driver.vehicleColor ? (' · ' + driver.vehicleColor) : '') + (driver.vehiclePlate ? (' · ' + driver.vehiclePlate) : '') + '</span>' +
+        '</div>' +
+      '</div>' +
+      '<div class="detail-header-actions">' +
+        '<button class="btn btn-outline" onclick="startEditFinanceDriver(\'' + driver.id + '\')">✎ Editar perfil</button>' +
+      '</div>';
   detail.innerHTML =
-    '<div class="detail-header"><div class="detail-header-info">' +
-      '<h1>' + (driver.name || 'Motorista') + '</h1>' +
-      '<div class="meta-line"><span>' + (driver.email || '') + '</span><span>' + (driver.phone || '') + '</span></div>' +
-    '</div></div>' +
+    '<div class="detail-header">' + editHeaderHtml + '</div>' +
     '<div class="live-status" style="margin-bottom:14px;">Registado ' + fmtRelativeTime(driver.registeredAt) + ' · comissão do site: ' + Math.round(FINANCE_COMMISSION_RATE * 100) + '%</div>' +
     '<div class="table-scroll"><table class="pricing-table">' +
       '<thead><tr><th>Mês</th><th>Recargas</th><th>Corridas</th><th>Valor bruto</th><th>Comissão (' + Math.round(FINANCE_COMMISSION_RATE * 100) + '%)</th><th>A repassar ao motorista</th></tr></thead>' +
@@ -834,6 +864,58 @@ function renderFinanceDetail(driver, monthly){
       '</tr></tfoot>' : '') +
     '</table></div>' +
     '<p class="sub" style="margin-top:16px; max-width:640px;">Recargas: valor pago pelo motorista para carregar saldo — receita direta da plataforma. Comissão: ' + Math.round(FINANCE_COMMISSION_RATE * 100) + '% retido sobre o valor das corridas concluídas — também receita da plataforma. A repassar: valor das corridas menos a comissão — valor a transferir ao motorista.</p>';
+}
+
+/* ===================== EDITAR PERFIL COMPLETO DO MOTORISTA =====================
+   Escreve diretamente em drivers/{id} (nome, email, telemóvel, dados do
+   veículo) — sem fluxo de aprovação, já que quem está a editar é o próprio
+   admin. O app do motorista tem um listener em tempo real (listenDriverProfile,
+   em luxdriver-motorista.html) que aplica estas alterações imediatamente no
+   ecrã do motorista, mesmo que ele já tenha sessão aberta. */
+function startEditFinanceDriver(driverId){
+  editingFinanceDriverId = driverId;
+  const driver = financeDrivers.find(function(d){ return d.id===driverId; });
+  if(driver) renderFinanceDetail(driver, financeMonthlyCacheDriverId===driverId ? financeMonthlyCache : {});
+}
+function cancelEditFinanceDriver(){
+  editingFinanceDriverId = null;
+  const driver = financeDrivers.find(function(d){ return d.id===selectedFinanceDriverId; });
+  if(driver) renderFinanceDetail(driver, financeMonthlyCacheDriverId===selectedFinanceDriverId ? financeMonthlyCache : {});
+}
+async function saveFinanceDriverProfile(driverId){
+  const name = (document.getElementById('fdrv-name').value||'').trim();
+  const email = (document.getElementById('fdrv-email').value||'').trim();
+  const phone = (document.getElementById('fdrv-phone').value||'').trim();
+  const vehicleBrand = (document.getElementById('fdrv-vbrand').value||'').trim();
+  const vehicleModel = (document.getElementById('fdrv-vmodel').value||'').trim();
+  const vehicleColor = (document.getElementById('fdrv-vcolor').value||'').trim();
+  const vehiclePlate = (document.getElementById('fdrv-vplate').value||'').trim().toUpperCase();
+  const errEl = document.getElementById('fdrv-save-error');
+  if(!name){ if(errEl) errEl.style.display = 'block'; return; }
+  if(errEl) errEl.style.display = 'none';
+  const db = initFirestore();
+  if(!db) return;
+  try{
+    await db.collection('drivers').doc(driverId).set({
+      name: name, email: email, phone: phone,
+      vehicleBrand: vehicleBrand, vehicleModel: vehicleModel, vehicleColor: vehicleColor, vehiclePlate: vehiclePlate,
+      updatedByAdminAt: firebase.firestore.FieldValue.serverTimestamp()
+    }, { merge:true });
+    // Espelha o nome em driver_locations/{id} — é essa coleção que alimenta o
+    // mapa "Ao vivo", tal como já acontece na aprovação de pedidos de nome.
+    await db.collection('driver_locations').doc(driverId).set({ name: name }, { merge:true }).catch(function(){});
+    const idx = financeDrivers.findIndex(function(d){ return d.id===driverId; });
+    if(idx>=0){
+      Object.assign(financeDrivers[idx], { name, email, phone, vehicleBrand, vehicleModel, vehicleColor, vehiclePlate });
+    }
+    editingFinanceDriverId = null;
+    renderFinanceDriverList();
+    const driver = financeDrivers.find(function(d){ return d.id===driverId; });
+    if(driver) renderFinanceDetail(driver, financeMonthlyCacheDriverId===driverId ? financeMonthlyCache : {});
+  }catch(e){
+    console.warn('Falha ao guardar perfil do motorista:', e);
+    if(errEl){ errEl.textContent = 'Erro ao guardar — tenta novamente.'; errEl.style.display = 'block'; }
+  }
 }
 
 function loadApplications(){
