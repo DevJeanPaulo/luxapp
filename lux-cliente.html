@@ -347,6 +347,7 @@
     width:52px; height:52px; border-radius:50%; background:var(--panel3);
     display:flex; align-items:center; justify-content:center; font-weight:700; font-size:16px;
     color:var(--gold); border:1px solid var(--line); flex-shrink:0;
+    background-size:cover; background-position:center; overflow:hidden;
   }
   .driver-info{ flex:1; min-width:0; }
   .driver-info .name{ font-size:15px; font-weight:700; }
@@ -1093,9 +1094,9 @@
           </div>
           <div id="pickup-eta-msg" style="font-size:12px; color:var(--muted); margin:-6px 0 10px;"></div>
           <div class="driver-card">
-            <div class="avatar">RA</div>
+            <div class="avatar" id="found-avatar">RA</div>
             <div class="driver-info">
-              <div class="name">Ricardo Almeida</div>
+              <div class="name" id="found-driver-name">Ricardo Almeida</div>
               <div class="meta"><span class="star">★</span> 4.9 · <span id="found-car-name">Mercedes Classe E</span></div>
             </div>
             <div class="card-actions">
@@ -1132,9 +1133,9 @@
             </div>
           </div>
           <div class="driver-card">
-            <div class="avatar">RA</div>
+            <div class="avatar" id="trip-avatar">RA</div>
             <div class="driver-info">
-              <div class="name">Ricardo Almeida</div>
+              <div class="name" id="trip-driver-name">Ricardo Almeida</div>
               <div class="meta">A caminho do destino · fato escuro, tablet com o seu nome</div>
             </div>
           </div>
@@ -1152,7 +1153,7 @@
           <div style="text-align:center; margin-bottom:18px;">
             <div style="font-size:40px;">✅</div>
             <h1 class="title" style="margin-top:8px;">Chegou em segurança</h1>
-            <p class="subtitle">Avalie a sua viagem com Ricardo Almeida</p>
+            <p class="subtitle">Avalie a sua viagem com <span id="complete-driver-name">Ricardo Almeida</span></p>
           </div>
           <div class="stars-row" id="stars-row">
             <span class="s" data-v="1">★</span><span class="s" data-v="2">★</span><span class="s" data-v="3">★</span><span class="s" data-v="4">★</span><span class="s" data-v="5">★</span>
@@ -1707,6 +1708,20 @@ function selectCountry(p, name){
 function validEmail(v){ return /\S+@\S+\.\S+/.test(v); }
 function showErr(id, show){ const el=document.getElementById(id); if(el) el.classList.toggle('show', !!show); }
 function initials(name){ return name.split(' ').filter(Boolean).slice(0,2).map(w=>w[0].toUpperCase()).join(''); }
+/* Preenche o avatar do motorista (ecrãs "encontrado"/"em viagem") com a foto
+   de perfil real, se o motorista tiver uma definida — caso contrário mostra
+   as iniciais do nome, tal como acontece no resto da app. */
+function setDriverAvatar(elId, photoUrl, name){
+  const el = document.getElementById(elId);
+  if(!el) return;
+  if(photoUrl){
+    el.style.backgroundImage = "url('"+photoUrl+"')";
+    el.textContent = '';
+  } else {
+    el.style.backgroundImage = '';
+    el.textContent = initials(name || 'Motorista');
+  }
+}
 function verifyBadgeHtml(p, field){
   const ok = !fieldVerified[p] || fieldVerified[p][field]!==false;
   return ok
@@ -2735,8 +2750,15 @@ function handleRideUpdate(ride){
   if(ride.status === 'accepted'){
     stopOfferWatchdog();
     hideNoDriversFoundPrompt();
-    document.getElementById('found-car-name').textContent = ride.driverName || (selectedVehicle && (selectedVehicle.model||selectedVehicle.name)) || 'Motorista';
-    document.getElementById('found-plate').textContent = '00-XX-00';
+    const vLabel = [ride.vehicleBrand, ride.vehicleModel].filter(Boolean).join(' ') ||
+      (selectedVehicle && (selectedVehicle.model||selectedVehicle.name)) || 'Veículo Lux';
+    document.getElementById('found-car-name').textContent = vLabel + (ride.vehicleColor ? (' · '+ride.vehicleColor) : '');
+    document.getElementById('found-driver-name').textContent = ride.driverName || 'Motorista Lux';
+    document.getElementById('found-plate').textContent = ride.vehiclePlate || '—';
+    setDriverAvatar('found-avatar', ride.driverPhotoUrl, ride.driverName);
+    setDriverAvatar('trip-avatar', ride.driverPhotoUrl, ride.driverName);
+    document.getElementById('trip-driver-name').textContent = ride.driverName || 'Motorista Lux';
+    document.getElementById('complete-driver-name').textContent = ride.driverName || 'Motorista Lux';
     document.getElementById('pickup-eta').textContent = 'A caminho';
     const msgEl0 = document.getElementById('pickup-eta-msg');
     if(msgEl0) msgEl0.textContent = '';

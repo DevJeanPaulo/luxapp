@@ -199,15 +199,15 @@
   }
   .map-radar-overlay.show{ opacity:1; }
   .map-radar-overlay .ring{
-    position:absolute; width:70px; height:70px; border-radius:50%;
-    border:1.5px solid rgba(255,201,77,.45);
+    position:absolute; width:130px; height:130px; border-radius:50%;
+    border:2px solid rgba(255,201,77,.5);
     animation:radar-pulse 2s ease-out infinite;
   }
   .map-radar-overlay .ring:nth-child(2){ animation-delay:.6s; }
   .map-radar-overlay .ring:nth-child(3){ animation-delay:1.2s; }
   .map-radar-overlay .core{
-    width:16px; height:16px; border-radius:50%; background:var(--gold);
-    box-shadow:0 0 16px rgba(255,201,77,.6);
+    width:24px; height:24px; border-radius:50%; background:var(--gold);
+    box-shadow:0 0 24px rgba(255,201,77,.7);
   }
   .ride-float-widget{
     position:absolute; right:16px; bottom:calc(16px + var(--safe-bottom));
@@ -1005,6 +1005,35 @@
               <button class="edit-field-btn" onclick="openEditField('d','phone')">✎</button>
             </span>
           </div>
+          <div class="section-label">Veículo</div>
+          <div class="settings-row">
+            <span class="s-lbl">Marca</span>
+            <span class="s-val-group">
+              <span class="s-val" id="d-settings-vbrand">—</span>
+              <button class="edit-field-btn" onclick="openEditField('d','vbrand')">✎</button>
+            </span>
+          </div>
+          <div class="settings-row">
+            <span class="s-lbl">Modelo</span>
+            <span class="s-val-group">
+              <span class="s-val" id="d-settings-vmodel">—</span>
+              <button class="edit-field-btn" onclick="openEditField('d','vmodel')">✎</button>
+            </span>
+          </div>
+          <div class="settings-row">
+            <span class="s-lbl">Cor</span>
+            <span class="s-val-group">
+              <span class="s-val" id="d-settings-vcolor">—</span>
+              <button class="edit-field-btn" onclick="openEditField('d','vcolor')">✎</button>
+            </span>
+          </div>
+          <div class="settings-row">
+            <span class="s-lbl">Matrícula</span>
+            <span class="s-val-group">
+              <span class="s-val" id="d-settings-vplate">—</span>
+              <button class="edit-field-btn" onclick="openEditField('d','vplate')">✎</button>
+            </span>
+          </div>
           <div class="section-label" data-i18n="section_docs">Verificação de Documentos</div>
           <div class="settings-row" style="cursor:pointer;" onclick="goTo('d-documents')"><span class="s-lbl" data-i18n="lbl_driver_docs">Documentos</span><span class="s-val" id="d-settings-doc-status">›</span></div>
           <div class="section-label" data-i18n="section_security">Segurança</div>
@@ -1492,6 +1521,49 @@ function loadUserPhotos(){
     }catch(e){}
   });
 }
+/* ===================== DADOS DO VEÍCULO (só motorista) =====================
+   Marca, modelo, cor e matrícula — tal como Uber/Bolt, para o cliente saber
+   exatamente que carro procurar e confirmar que é o motorista certo. Fica
+   guardado localmente e sincronizado em drivers/{id} (ver upsertDriverProfile),
+   e é copiado para o documento da corrida no momento em que o motorista aceita
+   (ver acceptRequest), para o cliente conseguir ver mesmo sem ligação direta
+   ao perfil do motorista. */
+let driverVehicle = { brand:'', model:'', color:'', plate:'' };
+function loadDriverVehicle(){
+  try{
+    const v = localStorage.getItem('lux-driver-vehicle');
+    if(v) driverVehicle = Object.assign(driverVehicle, JSON.parse(v));
+  }catch(e){}
+}
+function saveDriverVehicleLocal(){
+  try{ localStorage.setItem('lux-driver-vehicle', JSON.stringify(driverVehicle)); }catch(e){}
+}
+function updateVehicleSettingsUI(){
+  const map = { brand:'d-settings-vbrand', model:'d-settings-vmodel', color:'d-settings-vcolor', plate:'d-settings-vplate' };
+  Object.keys(map).forEach(function(k){
+    const el = document.getElementById(map[k]);
+    if(el) el.textContent = driverVehicle[k] || '—';
+  });
+}
+async function syncDriverVehicleToFirestore(){
+  const db = initFirestore();
+  if(!db || !currentUser.d || !currentUser.d.email) return;
+  try{
+    const id = driverDocId(currentUser.d.email);
+    await db.collection('drivers').doc(id).set({
+      vehicleBrand: driverVehicle.brand || '', vehicleModel: driverVehicle.model || '',
+      vehicleColor: driverVehicle.color || '', vehiclePlate: driverVehicle.plate || ''
+    }, { merge:true });
+  }catch(e){ console.warn('Falha ao guardar dados do veículo:', e); }
+}
+async function syncDriverPhotoToFirestore(){
+  const db = initFirestore();
+  if(!db || !currentUser.d || !currentUser.d.email || !userPhoto.d) return;
+  try{
+    const id = driverDocId(currentUser.d.email);
+    await db.collection('drivers').doc(id).set({ photoUrl: userPhoto.d }, { merge:true });
+  }catch(e){ console.warn('Falha ao guardar foto do motorista:', e); }
+}
 function updateHeaderAvatar(p){
   const el = document.getElementById(p+'-header-avatar');
   if(!el) return;
@@ -1524,6 +1596,7 @@ function handleAvatarUpload(evt, p){
       try{ localStorage.setItem('lux-photo-'+p, dataUrl); }catch(e){}
       updateSettingsUI(p);
       updateHeaderAvatar(p);
+      if(p==='d') syncDriverPhotoToFirestore();
       toast(p+'-settings', 'Foto de perfil atualizada');
     };
     img.src = e.target.result;
@@ -1532,16 +1605,24 @@ function handleAvatarUpload(evt, p){
   evt.target.value = '';
 }
 let editFieldCtx = { p:null, field:null };
+const VEHICLE_FIELD_MAP = { vbrand:'brand', vmodel:'model', vcolor:'color', vplate:'plate' };
+const VEHICLE_FIELD_TITLES = { vbrand:'Editar marca', vmodel:'Editar modelo', vcolor:'Editar cor', vplate:'Editar matrícula' };
 function openEditField(p, field){
   editFieldCtx = { p:p, field:field };
   const isEmail = field==='email';
   const isName = field==='name';
+  const isVehicle = !!VEHICLE_FIELD_MAP[field];
   const titleEl = document.getElementById('edit-field-title');
-  if(titleEl) titleEl.textContent = isName ? 'Editar nome' : (isEmail ? 'Editar email' : 'Editar telemóvel');
+  if(titleEl) titleEl.textContent = isVehicle ? VEHICLE_FIELD_TITLES[field] : (isName ? 'Editar nome' : (isEmail ? 'Editar email' : 'Editar telemóvel'));
   const inputEl = document.getElementById('edit-field-input');
   if(inputEl){
-    inputEl.type = isName ? 'text' : (isEmail ? 'email' : 'tel');
-    inputEl.value = currentUser[p][field] || '';
+    if(isVehicle){
+      inputEl.type = 'text';
+      inputEl.value = driverVehicle[VEHICLE_FIELD_MAP[field]] || '';
+    } else {
+      inputEl.type = isName ? 'text' : (isEmail ? 'email' : 'tel');
+      inputEl.value = currentUser[p][field] || '';
+    }
   }
   showErr('edit-field-error', false);
   document.getElementById('edit-field-overlay').classList.add('show');
@@ -1563,6 +1644,18 @@ function requestDriverNameChange(newName){
 function saveEditField(){
   const v = (document.getElementById('edit-field-input').value||'').trim();
   const p = editFieldCtx.p, field = editFieldCtx.field;
+  if(VEHICLE_FIELD_MAP[field]){
+    const ok = v.length>=1;
+    showErr('edit-field-error', !ok);
+    if(!ok) return;
+    driverVehicle[VEHICLE_FIELD_MAP[field]] = field==='vplate' ? v.toUpperCase() : v;
+    saveDriverVehicleLocal();
+    updateVehicleSettingsUI();
+    syncDriverVehicleToFirestore();
+    closeEditField();
+    toast('d-settings','Dados do veículo atualizados');
+    return;
+  }
   if(field==='name'){
     const ok = v.length>=2;
     showErr('edit-field-error', !ok);
@@ -2018,6 +2111,8 @@ function initDriverApp(){ goTo('d-auth-welcome'); }
   try{ savedLang = localStorage.getItem('lux-lang') || 'pt'; }catch(e){}
   setLanguage(savedLang);
   loadUserPhotos();
+  loadDriverVehicle();
+  updateVehicleSettingsUI();
   updateSettingsUI('c'); updateSettingsUI('d');
   /* Adiado com setTimeout: garante que todo o script (incluindo estado do
      motorista como isOnline/driverBalance/currentRideId, declarado mais
@@ -2294,8 +2389,11 @@ async function upsertDriverProfile(){
       name: currentUser.d.name || '',
       email: currentUser.d.email,
       phone: currentUser.d.phone || '',
+      vehicleBrand: driverVehicle.brand || '', vehicleModel: driverVehicle.model || '',
+      vehicleColor: driverVehicle.color || '', vehiclePlate: driverVehicle.plate || '',
       lastLoginAt: firebase.firestore.FieldValue.serverTimestamp()
     };
+    if(userPhoto.d) payload.photoUrl = userPhoto.d;
     if(!snap.exists) payload.registeredAt = firebase.firestore.FieldValue.serverTimestamp();
     await ref.set(payload, { merge:true });
   }catch(e){ console.warn('Não foi possível guardar o perfil do motorista:', e); }
@@ -3108,6 +3206,9 @@ function acceptRequest(){
       col.doc(currentRideId).set({
         status:'accepted', driverName: currentUser.d.name, driverPhone: currentUser.d.phone,
         driverEmail: currentUser.d.email, driverId: driverDocId(currentUser.d.email),
+        vehicleBrand: driverVehicle.brand || '', vehicleModel: driverVehicle.model || '',
+        vehicleColor: driverVehicle.color || '', vehiclePlate: driverVehicle.plate || '',
+        driverPhotoUrl: userPhoto.d || '',
         acceptedAt: firebase.firestore.FieldValue.serverTimestamp(),
         updatedAt: firebase.firestore.FieldValue.serverTimestamp()
       }, { merge:true }).catch(function(e){ console.warn('Falha ao aceitar pedido real:', e); });

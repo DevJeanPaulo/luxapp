@@ -655,7 +655,14 @@ async function resolveNameRequest(reqId, status){
       if(reqData && reqData.driverEmail && reqData.newName){
         const driversSnap = await db.collection('drivers').where('email','==', reqData.driverEmail).limit(1).get();
         if(!driversSnap.empty){
+          const driverId = driversSnap.docs[0].id;
           await driversSnap.docs[0].ref.set({ name: reqData.newName }, { merge:true });
+          // O mapa "Ao vivo" lê o nome de driver_locations/{id}, uma coleção
+          // separada que só se corrige sozinha na próxima atualização de GPS
+          // do motorista — por isso também é preciso atualizá-la aqui, para o
+          // nome aparecer certo de imediato mesmo que o motorista não esteja
+          // a partilhar localização neste momento.
+          await db.collection('driver_locations').doc(driverId).set({ name: reqData.newName }, { merge:true }).catch(function(){});
         }
       }
     }
