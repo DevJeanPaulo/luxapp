@@ -6,6 +6,7 @@
 <title>Lux Transfers — Painel de Administração</title>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyBpV5Plv5j6RnpOokgqVm6MJ55321Vul08&loading=async" async defer></script>
 <style>
   :root{
@@ -20,7 +21,7 @@
   a{ color:var(--gold); }
   header.topbar{
     display:flex; align-items:center; justify-content:space-between;
-    padding:20px 28px; border-bottom:1px solid var(--line);
+    padding:18px 28px; border-bottom:3px solid var(--gold);
     position:sticky; top:0; background:var(--bg); z-index:10;
   }
   header.topbar .brand{ font-size:16px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; }
@@ -36,9 +37,31 @@
   .btn-danger{ background:transparent; color:var(--danger); border:1px solid rgba(255,71,87,.4); }
   .btn:disabled{ opacity:.35; cursor:not-allowed; }
 
+  /* ---------- Estrutura geral: sidebar esquerda (estilo WordPress) ---------- */
+  .admin-shell{ display:flex; align-items:stretch; min-height:100vh; }
+  .admin-sidebar{
+    width:236px; flex-shrink:0; background:var(--panel);
+    border-right:4px solid var(--gold);
+    display:flex; flex-direction:column;
+    position:sticky; top:0; height:100vh; overflow-y:auto; padding:20px 0;
+  }
+  .admin-sidebar .brand-block{ padding:0 20px 18px; border-bottom:4px solid var(--gold); margin-bottom:14px; }
+  .admin-sidebar .brand-block .brand{ font-size:15px; }
+  .admin-sidebar .brand-block .sub{ font-size:11px; color:var(--muted); margin-top:4px; }
+  .admin-nav{ display:flex; flex-direction:column; gap:2px; padding:0 12px; }
+  .admin-nav button{
+    display:flex; align-items:center; gap:10px; text-align:left; background:transparent; border:none;
+    color:var(--muted); font-size:13.5px; font-weight:600; padding:11px 14px; border-radius:var(--radius-sm);
+    cursor:pointer; width:100%;
+  }
+  .admin-nav button:hover{ background:var(--panel2); color:var(--text); }
+  .admin-nav button.active{ background:rgba(255,201,77,.14); color:var(--gold); }
+  .admin-nav-footer{ margin-top:auto; padding:16px 12px 0; border-top:4px solid var(--gold); display:flex; flex-direction:column; gap:8px; }
+  .admin-main{ flex:1; min-width:0; }
+
   .layout{ display:flex; gap:0; align-items:flex-start; max-width:1280px; margin:0 auto; }
   .col-list{
-    width:380px; flex-shrink:0; border-right:1px solid var(--line);
+    width:380px; flex-shrink:0; border-right:4px solid var(--gold);
     min-height:calc(100vh - 73px); padding:18px;
   }
   .col-detail{ flex:1; padding:24px 28px; min-height:calc(100vh - 73px); }
@@ -111,7 +134,7 @@
   .doc-row .doc-note{ font-size:11px; color:var(--danger); margin-top:6px; }
 
   .overall-actions{
-    display:flex; gap:10px; margin-top:24px; padding-top:20px; border-top:1px solid var(--line);
+    display:flex; gap:10px; margin-top:24px; padding-top:20px; border-top:3px solid var(--gold);
   }
 
   .view-switch{ display:flex; gap:4px; background:var(--panel2); border:1px solid var(--line); border-radius:999px; padding:4px; }
@@ -133,8 +156,19 @@
   .live-driver-card .dot{ display:inline-block; width:7px; height:7px; border-radius:50%; background:var(--success); margin-right:6px; }
 
   @media (max-width: 860px){
+    .admin-shell{ flex-direction:column; }
+    .admin-sidebar{
+      width:100%; height:auto; position:sticky; top:0; z-index:20;
+      flex-direction:row; align-items:center; padding:10px 12px;
+      border-right:none; border-bottom:4px solid var(--gold); overflow-x:auto;
+    }
+    .admin-sidebar .brand-block{ display:none; }
+    .admin-nav{ flex-direction:row; padding:0; gap:6px; }
+    .admin-nav button{ white-space:nowrap; width:auto; flex-shrink:0; }
+    .admin-nav-footer{ flex-direction:row; margin-top:0; margin-left:8px; padding:0; border-top:none; flex-shrink:0; }
+    .admin-nav-footer .btn{ white-space:nowrap; }
     .layout{ flex-direction:column; }
-    .col-list{ width:100%; border-right:none; border-bottom:1px solid var(--line); min-height:auto; }
+    .col-list{ width:100%; border-right:none; border-bottom:4px solid var(--gold); min-height:auto; }
     .col-detail{ min-height:auto; }
   }
 
@@ -159,12 +193,14 @@
     display:none; color:var(--danger); font-size:12px; margin-top:10px;
   }
   .admin-login-error.show{ display:block; }
+  .link-inline{ cursor:pointer; font-size:12.5px; font-weight:700; text-decoration:none; }
+  .link-inline:hover{ text-decoration:underline; }
 
   /* ---------- Tarifário ---------- */
   .pricing-table{ width:100%; border-collapse:collapse; }
   .pricing-table th{
     text-align:left; font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em;
-    padding:10px 12px; border-bottom:1px solid var(--line);
+    padding:10px 12px; border-bottom:3px solid var(--gold);
   }
   .pricing-table td{ padding:10px 12px; border-bottom:1px solid var(--line); }
   .pricing-table input{
@@ -172,9 +208,53 @@
     color:var(--text); font-size:13.5px; padding:8px 10px; width:100px;
   }
   .pricing-table .cls-name{ font-weight:700; font-size:13.5px; }
-  .pricing-table tfoot td{ border-top:2px solid var(--line); border-bottom:none; padding-top:12px; }
+  .pricing-table tfoot td{ border-top:3px solid var(--gold); border-bottom:none; padding-top:12px; }
+
+  /* ---------- Variáveis do projeto ---------- */
+  .var-row{
+    display:flex; align-items:center; gap:10px;
+    background:var(--panel2); border:1px solid var(--line); border-radius:var(--radius-md);
+    padding:10px; margin-bottom:10px; flex-wrap:wrap;
+  }
+  .var-row input{
+    background:var(--panel3); border:1px solid var(--line); border-radius:var(--radius-sm);
+    color:var(--text); font-size:13px; padding:9px 12px; outline:none;
+  }
+  .var-row input:focus{ border-color:var(--gold); }
+  .var-row .var-key{ flex:0 0 220px; font-weight:700; }
+  .var-row .var-value{ flex:1; min-width:180px; font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; }
+  .var-row .var-note{ flex:0 0 200px; color:var(--muted); font-size:12.5px; }
+  @media (max-width: 700px){
+    .var-row .var-key, .var-row .var-value, .var-row .var-note{ flex:1 1 100%; }
+  }
   .table-scroll{ overflow-x:auto; -webkit-overflow-scrolling:touch; }
   .table-scroll .pricing-table{ min-width:620px; }
+
+  /* ---------- Calendário Fiscal ---------- */
+  .fiscal-table{ width:100%; border-collapse:collapse; }
+  .fiscal-table th{
+    text-align:left; font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em;
+    padding:10px 12px; border-bottom:3px solid var(--gold);
+  }
+  .fiscal-table td{ padding:10px 12px; border-bottom:1px solid var(--line); vertical-align:top; }
+  .fiscal-table input{
+    width:100%; background:var(--panel3); border:1px solid var(--line); border-radius:var(--radius-sm);
+    color:var(--text); font-size:13px; padding:8px 10px; outline:none;
+  }
+  .fiscal-table input:focus{ border-color:var(--gold); }
+  .fiscal-table td.fiscal-day{ width:70px; }
+  .fiscal-table td.fiscal-day input{ text-align:center; font-weight:700; }
+  .fiscal-table td.fiscal-actions{ width:44px; text-align:right; }
+  .table-scroll .fiscal-table{ min-width:680px; }
+
+  /* ---------- Faturas XML ---------- */
+  .invoice-row-actions{ display:flex; gap:8px; flex-wrap:wrap; }
+  .invoice-row-actions .btn{ padding:6px 12px; font-size:11.5px; }
+  .invoice-gen-box{
+    background:var(--panel2); border:1px solid var(--line); border-radius:var(--radius-md);
+    padding:16px; margin-top:20px;
+  }
+  .invoice-gen-box .edit-form{ max-width:none; display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:10px; }
 
   /* ---------- Pedidos de nome ---------- */
   .name-req-card{
@@ -187,8 +267,8 @@
   @media (max-width: 560px){
     header.topbar{ flex-direction:column; align-items:flex-start; gap:10px; padding:16px 18px; }
     header.topbar .actions{ width:100%; justify-content:space-between; }
-    .view-switch{ width:100%; }
-    .view-switch button{ flex:1; }
+    .admin-nav-footer{ width:100%; }
+    .admin-nav-footer .btn{ flex:1; }
     .detail-header{ flex-direction:column; gap:10px; }
     .detail-header-actions{ width:100%; justify-content:flex-start; }
     .edit-form{ max-width:100%; }
@@ -199,6 +279,10 @@
     #live-map{ min-height:280px; }
     .table-scroll .pricing-table{ min-width:560px; }
     .pricing-table th, .pricing-table td{ padding:8px 9px; font-size:12.5px; }
+    .table-scroll .fiscal-table{ min-width:560px; }
+    .fiscal-table th, .fiscal-table td{ padding:8px 9px; font-size:12.5px; }
+    .invoice-gen-box .edit-form{ grid-template-columns:1fr; }
+    .invoice-row-actions{ flex-direction:column; align-items:stretch; }
   }
 </style>
 </head>
@@ -215,25 +299,65 @@
     <div class="admin-login-field"><input id="admin-login-pass" type="password" placeholder="••••••••" onkeydown="if(event.key==='Enter') doAdminLogin()" /></div>
     <div class="admin-login-error" id="admin-login-error">Credenciais inválidas.</div>
     <button class="btn btn-gold" id="admin-login-btn" style="width:100%; margin-top:10px;" onclick="doAdminLogin()">Entrar</button>
+    <div style="text-align:center; margin-top:14px;"><a class="link-inline" onclick="goToAdminScreen('admin-forgot-screen')">Esqueci a palavra-passe</a></div>
+  </div>
+</div>
+
+<!-- FORGOT PASSWORD -->
+<div id="admin-forgot-screen" class="admin-login-wrap" style="display:none;">
+  <div class="admin-login-card">
+    <div class="brand" style="margin-bottom:4px;"><span>Lux</span> Transfers · Admin</div>
+    <p class="sub" style="margin:0 0 20px;">Introduz o email da tua conta de administrador — enviamos um link real para definires uma nova password.</p>
+    <div class="field-label">Email</div>
+    <div class="admin-login-field"><input id="admin-forgot-email" type="email" placeholder="admin@luxtransfers.pt" onkeydown="if(event.key==='Enter') doAdminForgot()" /></div>
+    <div class="admin-login-error" id="admin-forgot-error">Introduz um email válido.</div>
+    <div class="admin-login-success" id="admin-forgot-success" style="display:none; color:var(--success); font-size:12px; margin-top:10px;">✓ Se existir uma conta com este email, foi enviado um link de recuperação. Verifica a tua caixa de entrada (e spam).</div>
+    <button class="btn btn-gold" id="admin-forgot-btn" style="width:100%; margin-top:10px;" onclick="doAdminForgot()">Enviar link de recuperação</button>
+    <div style="text-align:center; margin-top:14px;"><a class="link-inline" onclick="goToAdminScreen('admin-login-screen')">Voltar a entrar</a></div>
+  </div>
+</div>
+
+<!-- RESET PASSWORD (via link real) -->
+<div id="admin-reset-screen" class="admin-login-wrap" style="display:none;">
+  <div class="admin-login-card">
+    <div class="brand" style="margin-bottom:4px;"><span>Lux</span> Transfers · Admin</div>
+    <p class="sub" id="admin-reset-sub" style="margin:0 0 20px;">Define uma nova password.</p>
+    <div class="field-label">Nova palavra-passe</div>
+    <div class="admin-login-field"><input id="admin-reset-pass" type="password" placeholder="Mínimo 6 caracteres" /></div>
+    <div class="field-label">Confirmar nova palavra-passe</div>
+    <div class="admin-login-field"><input id="admin-reset-pass2" type="password" placeholder="Repete a palavra-passe" onkeydown="if(event.key==='Enter') doAdminReset()" /></div>
+    <div class="admin-login-error" id="admin-reset-error">Verifica a palavra-passe.</div>
+    <button class="btn btn-gold" style="width:100%; margin-top:10px;" onclick="doAdminReset()">Redefinir palavra-passe</button>
   </div>
 </div>
 
 <div id="admin-dashboard" style="display:none;">
-<header class="topbar">
-  <div>
-    <div class="brand"><span>Lux</span> Transfers · Admin</div>
-    <div class="sub">Verificação de candidaturas de motoristas</div>
-  </div>
-  <div class="actions">
-    <div class="view-switch" id="view-switch">
+<div class="admin-shell">
+  <aside class="admin-sidebar">
+    <div class="brand-block">
+      <div class="brand"><span>Lux</span> Transfers</div>
+      <div class="sub">Painel de Administração</div>
+    </div>
+    <nav class="admin-nav" id="view-switch">
       <button data-v="apps" class="active" onclick="switchView('apps')">📋 Candidaturas</button>
       <button data-v="live" onclick="switchView('live')">🔴 Ao vivo</button>
       <button data-v="pricing" onclick="switchView('pricing')">💶 Tarifário</button>
       <button data-v="names" onclick="switchView('names')">✎ Pedidos de nome</button>
       <button data-v="finance" onclick="switchView('finance')">💰 Financeiro</button>
+      <button data-v="vars" onclick="switchView('vars')">🔑 Variáveis</button>
+      <button data-v="fiscal" onclick="switchView('fiscal')">📅 Calendário Fiscal</button>
+      <button data-v="invoices" onclick="switchView('invoices')">🧾 Faturas XML</button>
+    </nav>
+    <div class="admin-nav-footer">
+      <button class="btn btn-outline" onclick="renderAll()">↻ Atualizar</button>
+      <button class="btn btn-danger" onclick="doAdminLogout()">Sair</button>
     </div>
-    <button class="btn btn-outline" onclick="renderAll()">↻ Atualizar</button>
-    <button class="btn btn-danger" onclick="doAdminLogout()">Sair</button>
+  </aside>
+
+<div class="admin-main">
+<header class="topbar">
+  <div>
+    <div class="sub" id="page-title">Verificação de candidaturas de motoristas</div>
   </div>
 </header>
 
@@ -300,6 +424,70 @@
   </div>
 </div>
 
+<div class="layout" id="view-vars" style="display:none;">
+  <div class="col-detail" style="flex:1;">
+    <h2 style="margin:0 0 6px;">Variáveis do projeto</h2>
+    <p class="sub" style="margin:0 0 20px;">Guarda aqui as chaves e configurações do projeto (Firebase, Stripe, Google Maps, URLs de Cloud Functions, etc.) para consulta rápida. Guardado no Firestore, visível apenas neste painel.</p>
+    <div id="vars-status" class="live-status"></div>
+    <div id="vars-list"></div>
+    <div style="display:flex; gap:10px; margin-top:6px; flex-wrap:wrap;">
+      <button class="btn btn-outline" onclick="addVarRow()">+ Adicionar variável</button>
+      <button class="btn btn-gold" onclick="saveVars()">✓ Guardar todas</button>
+    </div>
+  </div>
+</div>
+
+<div class="layout" id="view-fiscal" style="display:none;">
+  <div class="col-detail" style="flex:1;">
+    <h2 style="margin:0 0 6px;">Calendário fiscal</h2>
+    <p class="sub" style="margin:0 0 20px;">Obrigações fiscais mensais em Portugal — datas de referência para não perderes prazos. Tabela editável, guardada no Firestore.</p>
+    <div id="fiscal-status" class="live-status"></div>
+    <div class="table-scroll">
+      <table class="fiscal-table" id="fiscal-table">
+        <thead>
+          <tr><th style="width:70px;">Dia</th><th>Obrigação fiscal</th><th>Descrição</th><th>Observações</th><th></th></tr>
+        </thead>
+        <tbody id="fiscal-table-body"></tbody>
+      </table>
+    </div>
+    <div style="display:flex; gap:10px; margin-top:14px; flex-wrap:wrap;">
+      <button class="btn btn-outline" onclick="addFiscalRow()">+ Adicionar obrigação</button>
+      <button class="btn btn-gold" onclick="saveFiscal()">✓ Guardar tabela</button>
+    </div>
+    <p class="sub" style="margin-top:16px; max-width:640px;">Datas de referência gerais — confirma sempre prazos e regime aplicável (mensal/trimestral) junto do contabilista ou do Portal das Finanças, pois podem variar consoante a situação da empresa.</p>
+  </div>
+</div>
+
+<div class="layout" id="view-invoices" style="display:none;">
+  <div class="col-detail" style="flex:1;">
+    <h2 style="margin:0 0 6px;">Faturas XML</h2>
+    <p class="sub" style="margin:0 0 20px;">Ficheiros XML gerados automaticamente sempre que um pagamento Stripe é concluído, guardados no Firebase Storage. <strong>Nota importante:</strong> estes ficheiros seguem uma estrutura semelhante ao SAF-T-PT apenas como registo interno de apoio — não são emitidos por software certificado pela Autoridade Tributária e não substituem a fatura fiscal oficial exigida por lei.</p>
+    <div id="invoices-status" class="live-status"></div>
+    <div class="table-scroll">
+      <table class="pricing-table" id="invoices-table">
+        <thead>
+          <tr><th>Ficheiro</th><th>Cliente</th><th>Data</th><th>Valor</th><th></th></tr>
+        </thead>
+        <tbody id="invoices-table-body"></tbody>
+      </table>
+    </div>
+    <div class="invoice-gen-box">
+      <div class="field-label" style="margin:0 0 10px;">Gerar fatura XML manualmente (casos especiais)</div>
+      <div class="edit-form">
+        <div><label>ID</label><input type="text" id="inv-gen-id" placeholder="ex: pi_123..."></div>
+        <div><label>Cliente</label><input type="text" id="inv-gen-cliente" placeholder="Nome do cliente"></div>
+        <div><label>Email</label><input type="email" id="inv-gen-email" placeholder="email@exemplo.com"></div>
+        <div><label>Valor (€)</label><input type="number" step="0.01" min="0" id="inv-gen-valor" placeholder="0.00"></div>
+      </div>
+      <button class="btn btn-gold" style="margin-top:12px;" onclick="gerarFaturaManual()">Gerar XML</button>
+      <div id="inv-gen-status" class="live-status" style="margin-top:8px;"></div>
+    </div>
+  </div>
+</div>
+
+</div>
+</div>
+
 </div>
 
 <script>
@@ -338,6 +526,17 @@ function initFirestore(){
   }catch(e){ console.warn('Firestore init falhou:', e); return null; }
   return firestoreDb;
 }
+let luxAdminAuth = null;
+function initAuth(){
+  if(typeof firebase === 'undefined' || !firebase.auth) return null;
+  if(!FIREBASE_CONFIG.apiKey || FIREBASE_CONFIG.apiKey.indexOf('TODO')>=0) return null;
+  if(luxAdminAuth) return luxAdminAuth;
+  try{
+    if(!firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG);
+    luxAdminAuth = firebase.auth();
+  }catch(e){ console.warn('Firebase Auth init falhou:', e); return null; }
+  return luxAdminAuth;
+}
 
 /* ===================== LOGIN ADMIN ===================== */
 // A verificação da password é feita sempre no backend (Cloud Function
@@ -360,17 +559,27 @@ function getAdminSession(){
     return JSON.parse(raw);
   }catch(e){ return null; }
 }
+/* Ecrãs de nível superior (fora da dashboard): login, esqueci-a-password e
+   redefinir-password. goToAdminScreen esconde os três e mostra só o pedido —
+   a dashboard mantém-se controlada à parte por checkAdminAuth/session. */
+function goToAdminScreen(id){
+  ['admin-login-screen','admin-forgot-screen','admin-reset-screen'].forEach(function(s){
+    const el = document.getElementById(s);
+    if(el) el.style.display = (s===id) ? 'flex' : 'none';
+  });
+  document.getElementById('admin-dashboard').style.display = 'none';
+}
 function checkAdminAuth(){
   const session = getAdminSession();
-  const loginScreen = document.getElementById('admin-login-screen');
-  const dashboard = document.getElementById('admin-dashboard');
   if(session && session.email){
-    loginScreen.style.display = 'none';
-    dashboard.style.display = 'block';
+    ['admin-login-screen','admin-forgot-screen','admin-reset-screen'].forEach(function(s){
+      const el = document.getElementById(s);
+      if(el) el.style.display = 'none';
+    });
+    document.getElementById('admin-dashboard').style.display = 'block';
     renderAll();
   } else {
-    loginScreen.style.display = 'flex';
-    dashboard.style.display = 'none';
+    goToAdminScreen('admin-login-screen');
   }
 }
 async function doAdminLogin(){
@@ -385,6 +594,23 @@ async function doAdminLogin(){
   }
   const btn = document.getElementById('admin-login-btn');
   if(btn){ btn.disabled = true; btn.textContent = 'A verificar…'; }
+  // Tenta primeiro autenticação real via Firebase Auth (necessária para a
+  // recuperação de password funcionar de forma self-service). Se a conta
+  // ainda não existir no Firebase Auth (só configurada a credencial antiga
+  // via Secret Manager), cai automaticamente na verificação Cloud Function
+  // já existente — login continua a funcionar tal como antes.
+  const auth = initAuth();
+  if(auth){
+    try{
+      await auth.signInWithEmailAndPassword(email, pass);
+      saveAdminSession(email);
+      checkAdminAuth();
+      if(btn){ btn.disabled = false; btn.textContent = 'Entrar'; }
+      return;
+    }catch(e){
+      console.warn('Login Firebase Auth falhou, a tentar credencial antiga:', e && e.code);
+    }
+  }
   try{
     const resp = await fetch(CHECK_ADMIN_LOGIN_URL, {
       method:'POST',
@@ -408,7 +634,79 @@ async function doAdminLogin(){
 }
 function doAdminLogout(){
   clearAdminSession();
+  const auth = initAuth();
+  if(auth && auth.currentUser){ auth.signOut().catch(function(){}); }
   checkAdminAuth();
+}
+
+/* ===================== RECUPERAÇÃO DE PASSWORD (admin, real via Firebase Auth) =====================
+   Mesmo padrão usado em luxdriver-motorista.html: sendPasswordResetEmail
+   envia um email real com um link que volta a esta própria página
+   (?mode=resetPassword&oobCode=...); ao abrir o link, confirmamos o código
+   e mostramos logo o ecrã de nova password. Só funciona de facto depois de
+   existir uma conta Firebase Auth com o mesmo email do admin (ver nota no
+   relatório) — até lá, o login continua a funcionar pela credencial antiga. */
+let adminPendingResetOob = null;
+async function doAdminForgot(){
+  const email = (document.getElementById('admin-forgot-email').value||'').trim();
+  const errEl = document.getElementById('admin-forgot-error');
+  const successEl = document.getElementById('admin-forgot-success');
+  const ok = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+  errEl.classList.toggle('show', !ok);
+  if(successEl) successEl.style.display = 'none';
+  if(!ok) return;
+  const auth = initAuth();
+  const btn = document.getElementById('admin-forgot-btn');
+  if(!auth){
+    errEl.textContent = 'Recuperação indisponível offline — tenta novamente mais tarde.';
+    errEl.classList.add('show');
+    return;
+  }
+  if(btn){ btn.disabled = true; btn.textContent = 'A enviar…'; }
+  try{
+    const actionUrl = window.location.origin + window.location.pathname;
+    await auth.sendPasswordResetEmail(email, { url: actionUrl, handleCodeInApp: true });
+  }catch(e){
+    console.warn('Envio do email de recuperação (admin):', e && e.code);
+  }
+  if(successEl) successEl.style.display = 'block';
+  if(btn){ btn.disabled = false; btn.textContent = 'Reenviar link'; }
+}
+async function doAdminReset(){
+  const pass = document.getElementById('admin-reset-pass').value||'';
+  const pass2 = document.getElementById('admin-reset-pass2').value||'';
+  const errEl = document.getElementById('admin-reset-error');
+  const ok = pass.length>=6 && pass===pass2;
+  errEl.classList.toggle('show', !ok);
+  if(!ok || !adminPendingResetOob) return;
+  const auth = initAuth();
+  try{
+    await auth.confirmPasswordReset(adminPendingResetOob, pass);
+    adminPendingResetOob = null;
+    goToAdminScreen('admin-login-screen');
+    const loginErr = document.getElementById('admin-login-error');
+    if(loginErr){ loginErr.textContent = 'Password redefinida — inicia sessão.'; loginErr.classList.add('show'); loginErr.style.color = 'var(--success)'; }
+  }catch(e){
+    errEl.textContent = 'Este link já não é válido — pede um novo em "Esqueci a palavra-passe".';
+    errEl.classList.add('show');
+  }
+}
+async function handleIncomingAdminPasswordResetLink(){
+  const params = new URLSearchParams(window.location.search);
+  if(params.get('mode') !== 'resetPassword' || !params.get('oobCode')) return;
+  const oobCode = params.get('oobCode');
+  history.replaceState({}, '', window.location.pathname);
+  const auth = initAuth();
+  if(!auth) return;
+  try{
+    const email = await auth.verifyPasswordResetCode(oobCode);
+    adminPendingResetOob = oobCode;
+    const sub = document.getElementById('admin-reset-sub');
+    if(sub) sub.textContent = 'Define uma nova password para ' + email + '.';
+    goToAdminScreen('admin-reset-screen');
+  }catch(e){
+    alert('Este link de recuperação é inválido ou expirou. Pede um novo em "Esqueci a palavra-passe".');
+  }
 }
 
 /* ===================== GOOGLE MAPS (ao vivo) ===================== */
@@ -440,6 +738,16 @@ function fmtRelativeTime(ts){
   if(secs < 3600) return 'há ' + Math.round(secs/60) + ' min';
   return 'há ' + Math.round(secs/3600) + 'h';
 }
+const VIEW_TITLES = {
+  apps: 'Verificação de candidaturas de motoristas',
+  live: 'Localização dos motoristas em tempo real',
+  pricing: 'Tarifário das classes de veículos',
+  names: 'Pedidos de alteração de nome dos motoristas',
+  finance: 'Financeiro por motorista',
+  vars: 'Variáveis e configurações do projeto',
+  fiscal: 'Calendário fiscal — obrigações mensais',
+  invoices: 'Faturas XML geradas via Stripe'
+};
 function switchView(view){
   document.querySelectorAll('#view-switch button').forEach(b=>b.classList.toggle('active', b.dataset.v===view));
   document.getElementById('view-apps').style.display = view==='apps' ? 'flex' : 'none';
@@ -447,10 +755,18 @@ function switchView(view){
   document.getElementById('view-pricing').style.display = view==='pricing' ? 'flex' : 'none';
   document.getElementById('view-names').style.display = view==='names' ? 'flex' : 'none';
   document.getElementById('view-finance').style.display = view==='finance' ? 'flex' : 'none';
+  document.getElementById('view-vars').style.display = view==='vars' ? 'flex' : 'none';
+  document.getElementById('view-fiscal').style.display = view==='fiscal' ? 'flex' : 'none';
+  document.getElementById('view-invoices').style.display = view==='invoices' ? 'flex' : 'none';
+  const titleEl = document.getElementById('page-title');
+  if(titleEl && VIEW_TITLES[view]) titleEl.textContent = VIEW_TITLES[view];
   if(view==='live') initLiveTracking();
   if(view==='pricing') initPricingView();
   if(view==='names') initNameRequestsView();
   if(view==='finance') initFinanceView();
+  if(view==='vars') initVarsView();
+  if(view==='fiscal') initFiscalView();
+  if(view==='invoices') initInvoicesView();
 }
 function initLiveTracking(){
   const statusEl = document.getElementById('live-status');
@@ -918,6 +1234,264 @@ async function saveFinanceDriverProfile(driverId){
   }
 }
 
+/* ===================== VARIÁVEIS DO PROJETO =====================
+   Bloco livre para o admin guardar chaves/URLs/configurações do projeto
+   (Firebase, Stripe, Google Maps, Cloud Functions, etc.) para consulta
+   rápida. Guardado num único documento em Firestore
+   (project_settings/env_vars, campo "items": [{key, value, note}]) — é
+   só um cofre de anotações, não altera automaticamente o comportamento
+   da app (para isso continua a ser preciso editar o código). */
+let varsUnsubscribe = null;
+let varsItems = [];
+function initVarsView(){
+  const statusEl = document.getElementById('vars-status');
+  const db = initFirestore();
+  if(!db){
+    if(statusEl) statusEl.textContent = 'Firestore indisponível (configuração por preencher ou offline).';
+    renderVarsList();
+    return;
+  }
+  if(varsUnsubscribe) return; // já a ouvir
+  if(statusEl) statusEl.textContent = 'A carregar variáveis…';
+  varsUnsubscribe = db.collection('project_settings').doc('env_vars').onSnapshot(function(doc){
+    const data = doc.exists ? doc.data() : {};
+    varsItems = Array.isArray(data.items) ? data.items : [];
+    if(varsItems.length === 0) varsItems = [{ key:'', value:'', note:'' }];
+    renderVarsList();
+    if(statusEl) statusEl.textContent = 'Variáveis carregadas — visíveis apenas neste painel de administração.';
+  }, function(err){
+    console.warn('Falha ao ouvir project_settings/env_vars:', err);
+    if(statusEl) statusEl.textContent = 'Erro ao ligar ao Firestore — verifica as regras de segurança.';
+  });
+}
+function renderVarsList(){
+  const el = document.getElementById('vars-list');
+  if(!el) return;
+  if(varsItems.length === 0) varsItems = [{ key:'', value:'', note:'' }];
+  el.innerHTML = varsItems.map(function(v, i){
+    return '<div class="var-row">' +
+      '<input class="var-key" type="text" placeholder="Nome (ex: STRIPE_SECRET_KEY)" value="' + escapeAttr(v.key||'') + '" onchange="updateVarField(' + i + ',\'key\',this.value)">' +
+      '<input class="var-value" type="text" placeholder="Valor" value="' + escapeAttr(v.value||'') + '" onchange="updateVarField(' + i + ',\'value\',this.value)">' +
+      '<input class="var-note" type="text" placeholder="Nota (opcional)" value="' + escapeAttr(v.note||'') + '" onchange="updateVarField(' + i + ',\'note\',this.value)">' +
+      '<button class="icon-btn-mini" title="Remover" onclick="removeVarRow(' + i + ')">🗑</button>' +
+    '</div>';
+  }).join('');
+}
+function updateVarField(idx, field, value){
+  if(!varsItems[idx]) return;
+  varsItems[idx][field] = value;
+}
+function addVarRow(){
+  varsItems.push({ key:'', value:'', note:'' });
+  renderVarsList();
+}
+function removeVarRow(idx){
+  varsItems.splice(idx, 1);
+  if(varsItems.length === 0) varsItems = [{ key:'', value:'', note:'' }];
+  renderVarsList();
+}
+async function saveVars(){
+  const statusEl = document.getElementById('vars-status');
+  const db = initFirestore();
+  if(!db){
+    if(statusEl) statusEl.textContent = 'Firestore indisponível — não foi possível guardar.';
+    return;
+  }
+  const cleaned = varsItems.filter(function(v){ return (v.key||'').trim() || (v.value||'').trim(); });
+  try{
+    await db.collection('project_settings').doc('env_vars').set({
+      items: cleaned, updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    }, { merge:true });
+    if(statusEl) statusEl.textContent = 'Variáveis guardadas com sucesso.';
+  }catch(e){
+    console.warn('Falha ao guardar variáveis do projeto:', e);
+    if(statusEl) statusEl.textContent = 'Erro ao guardar — tenta novamente.';
+  }
+}
+
+/* ===================== CALENDÁRIO FISCAL =====================
+   Tabela de obrigações fiscais mensais em Portugal, editável e guardada
+   num único documento em Firestore (project_settings/fiscal_calendar,
+   campo "items": [{dia, obrigacao, descricao, observacoes}]). Pré-preenchida
+   com as datas oficiais mais comuns — são valores de referência gerais,
+   não substituem aconselhamento contabilístico/fiscal profissional. */
+const FISCAL_DEFAULTS = [
+  { dia:'5',  obrigacao:'Comunicação do SAF-T', descricao:'Envio do ficheiro SAF-T de faturação', observacoes:'Obrigatório mesmo sem faturas.' },
+  { dia:'10', obrigacao:'DMR', descricao:'Declaração Mensal de Remunerações', observacoes:'Trabalhadores e remunerações.' },
+  { dia:'20', obrigacao:'IVA (declaração)', descricao:'Entrega da declaração de IVA', observacoes:'Regime mensal.' },
+  { dia:'20', obrigacao:'Retenções IRS/IRC', descricao:'Pagamento das retenções na fonte', observacoes:'Prestadores e trabalhadores.' },
+  { dia:'25', obrigacao:'Segurança Social', descricao:'Pagamento das contribuições', observacoes:'Trabalhadores e entidade empregadora.' },
+  { dia:'25', obrigacao:'IVA (pagamento)', descricao:'Pagamento do IVA', observacoes:'Regime mensal.' }
+];
+let fiscalUnsubscribe = null;
+let fiscalItems = [];
+function initFiscalView(){
+  const statusEl = document.getElementById('fiscal-status');
+  const db = initFirestore();
+  if(!db){
+    if(statusEl) statusEl.textContent = 'Firestore indisponível — a mostrar valores de referência (não editáveis nesta sessão).';
+    fiscalItems = FISCAL_DEFAULTS.slice();
+    renderFiscalTable();
+    return;
+  }
+  if(fiscalUnsubscribe) return; // já a ouvir
+  if(statusEl) statusEl.textContent = 'A carregar calendário fiscal…';
+  fiscalUnsubscribe = db.collection('project_settings').doc('fiscal_calendar').onSnapshot(function(doc){
+    const data = doc.exists ? doc.data() : {};
+    fiscalItems = (Array.isArray(data.items) && data.items.length) ? data.items : FISCAL_DEFAULTS.slice();
+    renderFiscalTable();
+    if(statusEl) statusEl.textContent = 'Calendário fiscal carregado.';
+  }, function(err){
+    console.warn('Falha ao ouvir project_settings/fiscal_calendar:', err);
+    fiscalItems = FISCAL_DEFAULTS.slice();
+    renderFiscalTable();
+    if(statusEl) statusEl.textContent = 'Erro ao ligar ao Firestore — a mostrar valores de referência.';
+  });
+}
+function renderFiscalTable(){
+  const body = document.getElementById('fiscal-table-body');
+  if(!body) return;
+  if(fiscalItems.length === 0) fiscalItems = [{ dia:'', obrigacao:'', descricao:'', observacoes:'' }];
+  body.innerHTML = fiscalItems.map(function(it, i){
+    return '<tr>' +
+      '<td class="fiscal-day"><input type="text" value="' + escapeAttr(it.dia||'') + '" onchange="updateFiscalField(' + i + ',\'dia\',this.value)"></td>' +
+      '<td><input type="text" value="' + escapeAttr(it.obrigacao||'') + '" onchange="updateFiscalField(' + i + ',\'obrigacao\',this.value)"></td>' +
+      '<td><input type="text" value="' + escapeAttr(it.descricao||'') + '" onchange="updateFiscalField(' + i + ',\'descricao\',this.value)"></td>' +
+      '<td><input type="text" value="' + escapeAttr(it.observacoes||'') + '" onchange="updateFiscalField(' + i + ',\'observacoes\',this.value)"></td>' +
+      '<td class="fiscal-actions"><button class="icon-btn-mini" title="Remover" onclick="removeFiscalRow(' + i + ')">🗑</button></td>' +
+    '</tr>';
+  }).join('');
+}
+function updateFiscalField(idx, field, value){
+  if(!fiscalItems[idx]) return;
+  fiscalItems[idx][field] = value;
+}
+function addFiscalRow(){
+  fiscalItems.push({ dia:'', obrigacao:'', descricao:'', observacoes:'' });
+  renderFiscalTable();
+}
+function removeFiscalRow(idx){
+  fiscalItems.splice(idx, 1);
+  if(fiscalItems.length === 0) fiscalItems = [{ dia:'', obrigacao:'', descricao:'', observacoes:'' }];
+  renderFiscalTable();
+}
+async function saveFiscal(){
+  const statusEl = document.getElementById('fiscal-status');
+  const db = initFirestore();
+  if(!db){
+    if(statusEl) statusEl.textContent = 'Firestore indisponível — não foi possível guardar.';
+    return;
+  }
+  const cleaned = fiscalItems.filter(function(it){ return (it.dia||'').trim() || (it.obrigacao||'').trim(); });
+  try{
+    await db.collection('project_settings').doc('fiscal_calendar').set({
+      items: cleaned, updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    }, { merge:true });
+    if(statusEl) statusEl.textContent = 'Calendário fiscal guardado com sucesso.';
+  }catch(e){
+    console.warn('Falha ao guardar calendário fiscal:', e);
+    if(statusEl) statusEl.textContent = 'Erro ao guardar — tenta novamente.';
+  }
+}
+
+/* ===================== FATURAS XML (Stripe → XML tipo SAF-T) =====================
+   Lista os documentos criados automaticamente pela Cloud Function
+   stripeWebhook (ver functions/index.js) sempre que um pagamento Stripe é
+   concluído (evento checkout.session.completed) — cada um representa um
+   ficheiro XML gravado no Firebase Storage em faturas-xml/fatura_{ID}.xml,
+   com metadados espelhados na coleção Firestore invoices_xml/{id}. Inclui
+   também um formulário para gerar um XML manualmente via o endpoint
+   gerarFaturaXml, para casos que não passam pelo Stripe.
+   IMPORTANTE: este XML segue uma estrutura semelhante à do SAF-T-PT apenas
+   como registo interno de apoio à contabilidade — não é emitido por
+   software certificado pela Autoridade Tributária, pelo que NÃO substitui
+   a fatura fiscal oficial exigida por lei em Portugal. */
+// TODO: substitui pelo URL real da tua Cloud Function gerarFaturaXml (ver functions/index.js), depois do deploy.
+const GERAR_FATURA_XML_URL = 'https://us-central1-lux-transfers-47cb2.cloudfunctions.net/gerarFaturaXml';
+let invoicesUnsubscribe = null;
+function initInvoicesView(){
+  const statusEl = document.getElementById('invoices-status');
+  const db = initFirestore();
+  if(!db){
+    if(statusEl) statusEl.textContent = 'Firestore indisponível (configuração por preencher ou offline).';
+    return;
+  }
+  if(invoicesUnsubscribe) return; // já a ouvir
+  if(statusEl) statusEl.textContent = 'A carregar faturas XML…';
+  // Sem .orderBy() de propósito (mesmo motivo que driver_name_requests): evita
+  // depender de um índice composto manual. Ordena-se do lado do cliente.
+  invoicesUnsubscribe = db.collection('invoices_xml').onSnapshot(function(snapshot){
+    const list = [];
+    snapshot.forEach(function(doc){ list.push(Object.assign({ id: doc.id }, doc.data())); });
+    list.sort(function(a,b){
+      const ta = a.createdAt && typeof a.createdAt.toMillis==='function' ? a.createdAt.toMillis() : new Date(a.data||0).getTime();
+      const tb = b.createdAt && typeof b.createdAt.toMillis==='function' ? b.createdAt.toMillis() : new Date(b.data||0).getTime();
+      return tb - ta;
+    });
+    renderInvoicesTable(list);
+    if(statusEl) statusEl.textContent = list.length + (list.length===1 ? ' fatura XML gerada' : ' faturas XML geradas');
+  }, function(err){
+    console.warn('Falha ao ouvir invoices_xml:', err);
+    if(statusEl) statusEl.textContent = 'Erro ao ligar ao Firestore — verifica as regras de segurança.';
+  });
+}
+function renderInvoicesTable(list){
+  const body = document.getElementById('invoices-table-body');
+  if(!body) return;
+  if(list.length === 0){
+    body.innerHTML = '<tr><td colspan="5" style="text-align:center; color:var(--muted); padding:24px;">Ainda não foi gerada nenhuma fatura XML.</td></tr>';
+    return;
+  }
+  body.innerHTML = list.map(function(inv){
+    const dataFmt = inv.data ? fmtDate(inv.data) : '—';
+    const fileName = inv.fileName || ('fatura_' + inv.id + '.xml');
+    return '<tr>' +
+      '<td class="cls-name">' + fileName + '</td>' +
+      '<td>' + (inv.cliente || '—') + '</td>' +
+      '<td>' + dataFmt + '</td>' +
+      '<td>' + fmtEurAdmin(inv.valor) + '</td>' +
+      '<td><div class="invoice-row-actions">' +
+        '<button class="btn btn-outline" ' + (!inv.downloadUrl ? 'disabled' : '') + ' onclick="window.open(\'' + (inv.downloadUrl||'') + '\',\'_blank\')">Ver</button>' +
+        (inv.downloadUrl
+          ? '<a class="btn btn-gold" style="text-decoration:none; display:inline-flex; align-items:center;" href="' + inv.downloadUrl + '" download="' + fileName + '">Descarregar</a>'
+          : '<button class="btn btn-gold" disabled>Descarregar</button>') +
+      '</div></td>' +
+    '</tr>';
+  }).join('');
+}
+async function gerarFaturaManual(){
+  const statusEl = document.getElementById('inv-gen-status');
+  const id = (document.getElementById('inv-gen-id').value||'').trim();
+  const cliente = (document.getElementById('inv-gen-cliente').value||'').trim();
+  const email = (document.getElementById('inv-gen-email').value||'').trim();
+  const valor = parseFloat(document.getElementById('inv-gen-valor').value);
+  if(!id || isNaN(valor) || valor<=0){
+    if(statusEl){ statusEl.textContent = 'Preenche pelo menos o ID e um valor válido.'; statusEl.style.color = 'var(--danger)'; }
+    return;
+  }
+  if(statusEl){ statusEl.textContent = 'A gerar XML…'; statusEl.style.color = 'var(--muted)'; }
+  try{
+    const resp = await fetch(GERAR_FATURA_XML_URL, {
+      method:'POST',
+      headers:{ 'Content-Type':'application/json' },
+      body: JSON.stringify({ id, cliente, email, valor, moeda:'EUR' })
+    });
+    const data = await resp.json();
+    if(data && data.ok){
+      if(statusEl){ statusEl.textContent = '✓ XML gerado: ' + data.fileName; statusEl.style.color = 'var(--success)'; }
+      document.getElementById('inv-gen-id').value = '';
+      document.getElementById('inv-gen-cliente').value = '';
+      document.getElementById('inv-gen-email').value = '';
+      document.getElementById('inv-gen-valor').value = '';
+    } else {
+      if(statusEl){ statusEl.textContent = 'Erro: ' + (data && data.error ? data.error : 'não foi possível gerar o XML.'); statusEl.style.color = 'var(--danger)'; }
+    }
+  }catch(e){
+    console.warn('Falha ao chamar gerarFaturaXml:', e);
+    if(statusEl){ statusEl.textContent = 'Erro de rede — verifica se a Cloud Function já foi publicada.'; statusEl.style.color = 'var(--danger)'; }
+  }
+}
+
 function loadApplications(){
   try{ return JSON.parse(localStorage.getItem(DRIVER_APPS_KEY)) || []; }catch(e){ return []; }
 }
@@ -1137,6 +1711,7 @@ window.addEventListener('storage', function(e){
   if(e.key === DRIVER_APPS_KEY) renderAll();
 });
 checkAdminAuth();
+handleIncomingAdminPasswordResetLink();
 </script>
 </body>
 </html>

@@ -1421,7 +1421,8 @@
           <div class="field-label" data-i18n="lbl_account_email">Email da tua conta</div>
           <div class="auth-field"><input id="d-forgot-email" placeholder="nome@email.com" /></div>
           <div class="auth-error" id="d-forgot-error" data-i18n="err_forgot">Introduz o teu email.</div>
-          <button class="btn btn-gold" data-i18n="btn_send_code" onclick="doForgot('d')">Enviar código</button>
+          <div class="auth-success" id="d-forgot-success" style="display:none; color:var(--success); font-size:12.5px; margin:-8px 0 12px 2px;">✓ Se existir uma conta com este email, enviámos um link real para definires uma nova password. Verifica a tua caixa de entrada (e spam).</div>
+          <button class="btn btn-gold" id="d-forgot-btn" data-i18n="btn_send_code" onclick="doForgot('d')">Enviar link de recuperação</button>
           <div class="auth-switch-row"><a class="link-inline" data-i18n="link_back_to_login" onclick="goTo('d-auth-login')">Voltar a entrar</a></div>
         </div>
       </div>
@@ -1430,9 +1431,11 @@
       <div class="screen" id="d-auth-reset">
         <div class="auth-scroll">
           <div class="auth-logo"><div class="mark">LuxDriver</div><div class="tag" data-i18n="reset_title">Definir nova palavra-passe</div></div>
-          <div class="otp-hint" data-i18n="reset_hint">Modo demonstração: introduz qualquer código de 6 dígitos (ex: <strong>123456</strong>).</div>
-          <div class="field-label" data-i18n="lbl_code_received">Código recebido</div>
-          <div class="otp-row"><div class="otp-field"><input id="d-reset-code" maxlength="6" inputmode="numeric" placeholder="000000" /></div></div>
+          <div class="otp-hint" id="d-reset-hint" data-i18n="reset_hint">Modo demonstração: introduz qualquer código de 6 dígitos (ex: <strong>123456</strong>).</div>
+          <div id="d-reset-code-block">
+            <div class="field-label" data-i18n="lbl_code_received">Código recebido</div>
+            <div class="otp-row"><div class="otp-field"><input id="d-reset-code" maxlength="6" inputmode="numeric" placeholder="000000" /></div></div>
+          </div>
           <div class="field-label" data-i18n="lbl_new_password">Nova palavra-passe</div>
           <div class="auth-field"><input id="d-reset-pass" type="password" placeholder="Mínimo 6 caracteres" /></div>
           <div class="field-label" data-i18n="lbl_confirm_new_password">Confirmar nova palavra-passe</div>
@@ -2762,14 +2765,72 @@ async function doVerify(p){
     finishRegistration();
   }, u && u.email, u && u.name);
 }
-function doForgot(p){
+/* ===================== RECUPERAÇÃO DE PASSWORD (real via Firebase Auth) =====================
+   Ver luxdriver-motorista.html para a explicação completa do fluxo — este
+   ficheiro combinado replica exatamente o mesmo comportamento. */
+let pendingResetOob = { c:null, d:null };
+function resetForgotUI(p){
+  const successEl = document.getElementById(p+'-forgot-success');
+  if(successEl) successEl.style.display = 'none';
+  showErr(p+'-forgot-error', false);
+  const emailField = document.getElementById(p+'-forgot-email');
+  if(emailField) emailField.disabled = false;
+  const btn = document.getElementById(p+'-forgot-btn');
+  if(btn){ btn.disabled = false; btn.textContent = 'Enviar link de recuperação'; }
+}
+function resetResetScreenUI(p){
+  pendingResetOob[p] = null;
+  const codeBlock = document.getElementById(p+'-reset-code-block');
+  if(codeBlock) codeBlock.style.display = '';
+  const hint = document.getElementById(p+'-reset-hint');
+  if(hint) hint.innerHTML = 'Modo demonstração: introduz qualquer código de 6 dígitos (ex: <strong>123456</strong>).';
+}
+async function doForgot(p){
   const email = (document.getElementById(p+'-forgot-email').value||'').trim();
   const ok = validEmail(email);
   showErr(p+'-forgot-error', !ok);
   if(!ok) return;
+  const auth = initAuth();
+  if(auth){
+    const btn = document.getElementById(p+'-forgot-btn');
+    const emailField = document.getElementById(p+'-forgot-email');
+    if(btn){ btn.disabled = true; btn.textContent = 'A enviar…'; }
+    if(emailField) emailField.disabled = true;
+    try{
+      const actionUrl = window.location.origin + window.location.pathname;
+      await auth.sendPasswordResetEmail(email, { url: actionUrl, handleCodeInApp: true });
+    }catch(e){
+      console.warn('Envio do email de recuperação:', e && e.code);
+    }
+    const successEl = document.getElementById(p+'-forgot-success');
+    if(successEl) successEl.style.display = 'block';
+    if(btn){ btn.disabled = false; btn.textContent = 'Reenviar link'; }
+    if(emailField) emailField.disabled = false;
+    return;
+  }
+  resetResetScreenUI(p);
   goTo(p+'-auth-reset');
 }
-function doReset(p){
+async function doReset(p){
+  if(pendingResetOob[p] && pendingResetOob[p].oobCode){
+    const pass = document.getElementById(p+'-reset-pass').value||'';
+    const pass2 = document.getElementById(p+'-reset-pass2').value||'';
+    const ok = pass.length>=6 && pass===pass2;
+    showErr(p+'-reset-error', !ok);
+    if(!ok) return;
+    const auth = initAuth();
+    try{
+      await auth.confirmPasswordReset(pendingResetOob[p].oobCode, pass);
+      pendingResetOob[p] = null;
+      goTo(p+'-auth-login');
+      toast(p+'-auth-login', 'Password redefinida com sucesso — inicia sessão.');
+    }catch(e){
+      const errEl = document.getElementById(p+'-reset-error');
+      if(errEl) errEl.textContent = 'Este link já não é válido — pede um novo em "Esqueci a palavra-passe".';
+      showErr(p+'-reset-error', true);
+    }
+    return;
+  }
   const code = (document.getElementById(p+'-reset-code').value||'').trim();
   const pass = document.getElementById(p+'-reset-pass').value||'';
   const pass2 = document.getElementById(p+'-reset-pass2').value||'';
@@ -2777,6 +2838,26 @@ function doReset(p){
   showErr(p+'-reset-error', !ok);
   if(!ok) return;
   goTo(p+'-auth-login');
+}
+async function handleIncomingPasswordResetLink(){
+  const params = new URLSearchParams(window.location.search);
+  if(params.get('mode') !== 'resetPassword' || !params.get('oobCode')) return;
+  const oobCode = params.get('oobCode');
+  history.replaceState({}, '', window.location.pathname);
+  const auth = initAuth();
+  if(!auth) return;
+  try{
+    const email = await auth.verifyPasswordResetCode(oobCode);
+    const p = 'd';
+    pendingResetOob[p] = { oobCode, email };
+    const codeBlock = document.getElementById(p+'-reset-code-block');
+    if(codeBlock) codeBlock.style.display = 'none';
+    const hint = document.getElementById(p+'-reset-hint');
+    if(hint) hint.textContent = 'A definir nova password para ' + email + '.';
+    goTo(p+'-auth-reset');
+  }catch(e){
+    alert('Este link de recuperação é inválido ou expirou. Pede um novo em "Esqueci a palavra-passe".');
+  }
 }
 function doLogout(p){
   clearAllTimers();
@@ -3458,6 +3539,8 @@ goTo = function(id){
   originalGoTo(id);
   if(id==='c-vehicles' && typeof renderVehicleList==='function') renderVehicleList();
   if(id==='d-documents' && typeof renderDocumentsScreen==='function') renderDocumentsScreen();
+  if((id==='d-auth-forgot' || id==='c-auth-forgot') && typeof resetForgotUI==='function') resetForgotUI(id.charAt(0));
+  if((id==='d-auth-login' || id==='c-auth-login') && typeof resetResetScreenUI==='function') resetResetScreenUI(id.charAt(0));
 };
 
 /* ===================== DOCUMENTOS DO MOTORISTA (driver only) =====================
@@ -5443,6 +5526,7 @@ function backToDriverHome(){
 
 /* init */
 renderVehicleList();
+if(typeof handleIncomingPasswordResetLink==='function') handleIncomingPasswordResetLink();
 </script>
 </body>
 </html>

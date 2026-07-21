@@ -174,6 +174,165 @@ exports.checkAdminLogin = onRequest({ secrets: [adminCredentialsJson] }, (req, r
 });
 
 /**
+ * ===================== FATURAS XML (Stripe → XML tipo SAF-T) =====================
+ * Gera automaticamente um ficheiro XML por cada pagamento Stripe concluído e
+ * guarda-o no Firebase Storage (pasta faturas-xml/), com metadados espelhados
+ * na coleção Firestore "invoices_xml" (é essa coleção que alimenta a tabela
+ * "Faturas XML" no painel admin).
+ *
+ * IMPORTANTE — nota de conformidade fiscal: o XML gerado aqui segue uma
+ * estrutura inspirada no SAF-T-PT (cabeçalho + documento de venda) apenas
+ * como registo interno de apoio à contabilidade. NÃO é emitido por software
+ * de faturação certificado pela Autoridade Tributária (requisito legal em
+ * Portugal para faturas válidas), pelo que este ficheiro NÃO substitui a
+ * fatura fiscal oficial. Para emitir faturas legalmente válidas é necessário
+ * usar um programa de faturação certificado pela AT.
+ *
+ * Antes do deploy:
+ *   1. No Stripe Dashboard → Developers → Webhooks, cria um endpoint apontando
+ *      para o URL da função stripeWebhook (depois do deploy) para o evento
+ *      "checkout.session.completed", e copia o "Signing secret" (whsec_...).
+ *   2. firebase functions:secrets:set STRIPE_WEBHOOK_SECRET   (cola o whsec_...)
+ *   3. Confirma que o Firebase Storage está ativado no projeto (Firebase
+ *      Console → Storage → Começar).
+ *   4. firebase deploy --only functions
+ */
+const stripeWebhookSecret = defineSecret('STRIPE_WEBHOOK_SECRET');
+
+function escapeXml(str) {
+  return String(str == null ? '' : str).replace(/[<>&'"]/g, function (c) {
+    return { '<': '&lt;', '>': '&gt;', '&': '&amp;', "'": '&apos;', '"': '&quot;' }[c];
+  });
+}
+
+/**
+ * Monta o XML (estrutura tipo SAF-T-PT, apenas para registo interno — ver
+ * nota de conformidade acima) de uma fatura a partir dos dados do pagamento.
+ */
+function buildFaturaXml({ id, cliente, email, valor, moeda, data }) {
+  const dataISO = data || new Date().toISOString();
+  return '<?xml version="1.0" encoding="UTF-8"?>\n' +
+    '<!-- Documento gerado automaticamente pela Lux Transfers. NAO constitui um ficheiro SAF-T-PT certificado pela Autoridade Tributaria — serve apenas como registo interno de apoio a contabilidade. -->\n' +
+    '<AuditFile xmlns="urn:OECD:StandardAuditFile-Tax:PT_1.04_01">\n' +
+    '  <Header>\n' +
+    '    <AuditFileVersion>1.04_01</AuditFileVersion>\n' +
+    '    <CompanyName>Lux Transfers</CompanyName>\n' +
+    '    <TaxAccountingBasis>F</TaxAccountingBasis>\n' +
+    '  </Header>\n' +
+    '  <SourceDocuments>\n' +
+    '    <SalesInvoices>\n' +
+    '      <Invoice>\n' +
+    '        <InvoiceNo>FT ' + escapeXml(id) + '</InvoiceNo>\n' +
+    '        <InvoiceDate>' + escapeXml(String(dataISO).slice(0, 10)) + '</InvoiceDate>\n' +
+    '        <InvoiceType>FT</InvoiceType>\n' +
+    '        <CustomerInfo>\n' +
+    '          <Name>' + escapeXml(cliente || 'Cliente') + '</Name>\n' +
+    '          <Email>' + escapeXml(email || '') + '</Email>\n' +
+    '        </CustomerInfo>\n' +
+    '        <DocumentTotals>\n' +
+    '          <GrossTotal>' + Number(valor || 0).toFixed(2) + '</GrossTotal>\n' +
+    '          <Currency>' + escapeXml(moeda || 'EUR') + '</Currency>\n' +
+    '        </DocumentTotals>\n' +
+    '        <PaymentReference>' + escapeXml(id) + '</PaymentReference>\n' +
+    '      </Invoice>\n' +
+    '    </SalesInvoices>\n' +
+    '  </SourceDocuments>\n' +
+    '</AuditFile>\n';
+}
+
+/**
+ * Gera o XML, guarda-o no Storage (faturas-xml/fatura_{id}.xml) e escreve os
+ * metadados em Firestore (invoices_xml/{id}) para a tabela do painel admin.
+ */
+async function gerarESalvarFaturaXml({ id, cliente, email, valor, moeda, data }) {
+  if (!id) throw new Error('id é obrigatório.');
+  const xml = buildFaturaXml({ id, cliente, email, valor, moeda, data });
+  const fileName = 'fatura_' + id + '.xml';
+  const filePath = 'faturas-xml/' + fileName;
+  const bucket = admin.storage().bucket();
+  const file = bucket.file(filePath);
+  await file.save(Buffer.from(xml, 'utf8'), { contentType: 'application/xml; charset=utf-8' });
+  await file.makePublic().catch(function (e) { console.warn('makePublic falhou (verifica as regras do Storage):', e.message); });
+  const downloadUrl = 'https://storage.googleapis.com/' + bucket.name + '/' + filePath;
+  await admin.firestore().collection('invoices_xml').doc(String(id)).set({
+    id: String(id),
+    cliente: cliente || '',
+    email: email || '',
+    valor: Number(valor || 0),
+    moeda: moeda || 'EUR',
+    data: data || new Date().toISOString(),
+    fileName,
+    storagePath: filePath,
+    downloadUrl,
+    createdAt: admin.firestore.FieldValue.serverTimestamp()
+  }, { merge: true });
+  return { fileName, downloadUrl };
+}
+
+/**
+ * Webhook do Stripe — chamado automaticamente pelo Stripe a cada evento.
+ * No evento "checkout.session.completed", gera e guarda o XML da fatura.
+ * A assinatura do pedido é sempre verificada com o STRIPE_WEBHOOK_SECRET,
+ * para garantir que o pedido vem mesmo do Stripe.
+ */
+exports.stripeWebhook = onRequest({ secrets: [stripeSecretKey, stripeWebhookSecret] }, async (req, res) => {
+  let event;
+  try {
+    const stripe = Stripe(stripeSecretKey.value());
+    const sig = req.headers['stripe-signature'];
+    event = stripe.webhooks.constructEvent(req.rawBody, sig, stripeWebhookSecret.value());
+  } catch (err) {
+    console.error('Assinatura do webhook Stripe inválida:', err.message);
+    res.status(400).send('Webhook Error: ' + err.message);
+    return;
+  }
+  try {
+    if (event.type === 'checkout.session.completed') {
+      const session = event.data.object;
+      const id = session.payment_intent || session.id;
+      const cliente = (session.customer_details && session.customer_details.name) || '';
+      const email = (session.customer_details && session.customer_details.email) || '';
+      const valor = (session.amount_total || 0) / 100;
+      const moeda = (session.currency || 'eur').toUpperCase();
+      await gerarESalvarFaturaXml({ id, cliente, email, valor, moeda, data: new Date().toISOString() });
+      console.log('Fatura XML gerada para', id);
+    }
+    res.status(200).json({ received: true });
+  } catch (err) {
+    console.error('stripeWebhook falhou:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * Endpoint manual para gerar uma fatura XML fora do fluxo Stripe (ex.: pagamentos
+ * feitos fora da plataforma). Chamado pelo painel admin (secção "Faturas XML").
+ *
+ * Espera um POST JSON: { id, cliente, email, valor, moeda }
+ * Devolve: { ok:true, fileName, downloadUrl }
+ */
+exports.gerarFaturaXml = onRequest({}, (req, res) => {
+  cors(req, res, async () => {
+    if (req.method !== 'POST') {
+      res.status(405).send('Method Not Allowed');
+      return;
+    }
+    try {
+      const { id, cliente, email, valor, moeda, data } = req.body || {};
+      if (!id || valor == null) {
+        res.status(400).json({ error: 'id e valor são obrigatórios.' });
+        return;
+      }
+      const result = await gerarESalvarFaturaXml({ id, cliente, email, valor, moeda, data });
+      res.status(200).json({ ok: true, fileName: result.fileName, downloadUrl: result.downloadUrl });
+    } catch (err) {
+      console.error('gerarFaturaXml falhou:', err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+});
+
+/**
  * Envia uma notificação push a um único dispositivo via FCM.
  */
 async function sendPush(token, title, body) {
