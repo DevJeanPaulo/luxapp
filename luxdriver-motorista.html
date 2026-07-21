@@ -174,10 +174,22 @@
   }
   .brand .dot{ color:var(--gold); }
   .icon-btn{
+    position:relative;
     width:38px; height:38px; border-radius:50%;
     background:var(--panel2); border:1px solid var(--line);
     display:flex; align-items:center; justify-content:center;
     color:var(--text); cursor:pointer;
+  }
+  .chat-notify-dot{
+    position:absolute; top:-2px; right:-2px; width:12px; height:12px; border-radius:50%;
+    background:var(--danger); border:2px solid var(--panel); display:none;
+    animation:chat-dot-pulse 1.8s ease-out infinite;
+  }
+  .chat-notify-dot.show{ display:block; }
+  @keyframes chat-dot-pulse{
+    0%{ box-shadow:0 0 0 0 rgba(255,71,87,.55); }
+    70%{ box-shadow:0 0 0 8px rgba(255,71,87,0); }
+    100%{ box-shadow:0 0 0 0 rgba(255,71,87,0); }
   }
 
   /* Map */
@@ -1059,6 +1071,17 @@
             <div class="switch" id="d-push-switch" onclick="togglePush('d')"><div class="knob"></div></div>
           </div>
           <button class="btn btn-outline" style="margin-top:24px;" data-i18n="btn_logout" onclick="doLogout('d')">Terminar sessão</button>
+          <button class="btn btn-danger-text" onclick="openDeleteAccountConfirm('d')">Excluir conta</button>
+        </div>
+      </div>
+
+      <!-- EXCLUIR CONTA (confirmação) -->
+      <div class="req-overlay" id="delete-account-overlay">
+        <div class="req-sheet">
+          <h1 class="title" style="text-align:center;">Excluir conta</h1>
+          <p style="text-align:center; color:var(--muted); margin:0 0 18px;">Esta ação é permanente e não pode ser desfeita. Os teus dados de perfil serão eliminados e a sessão será terminada. Tens a certeza?</p>
+          <button class="btn btn-danger-text" onclick="confirmDeleteAccount()">Sim, excluir a minha conta</button>
+          <button class="btn btn-ghost-text" onclick="closeDeleteAccountConfirm()">Cancelar</button>
         </div>
       </div>
 
@@ -1208,7 +1231,7 @@
             </div>
             <div class="card-actions">
               <div class="icon-btn" onclick="callClient()">📞</div>
-              <div class="icon-btn" onclick="openChat()">💬</div>
+              <div class="icon-btn" onclick="openChat()">💬<span class="chat-notify-dot" id="chat-notify-pickup"></span></div>
             </div>
           </div>
           <div class="nav-row">
@@ -1245,7 +1268,7 @@
             </div>
             <div class="card-actions">
               <div class="icon-btn" onclick="callClient()">📞</div>
-              <div class="icon-btn" onclick="openChat()">💬</div>
+              <div class="icon-btn" onclick="openChat()">💬<span class="chat-notify-dot" id="chat-notify-waiting"></span></div>
             </div>
           </div>
           <button class="btn btn-gold" onclick="startTripFromWaiting()">Iniciar viagem</button>
@@ -1689,13 +1712,25 @@ function listenDriverNameRequest(){
   const db = initFirestore();
   if(!db || !currentUser.d.email) return;
   if(nameRequestUnsub){ nameRequestUnsub(); nameRequestUnsub = null; }
+  /* Sem .orderBy() de propósito: combinar .where('driverEmail',...) com
+     .orderBy('createdAt',...) num campo diferente exige um índice composto
+     manual no Firestore que nunca foi criado — a consulta falhava sempre em
+     silêncio (só visível na consola), por isso o nome nunca era atualizado
+     aqui mesmo depois de aprovado no admin. Em vez disso, ouve todos os
+     pedidos deste motorista (só uma equality — não precisa de índice) e
+     escolhe o mais recente do lado do cliente. */
   nameRequestUnsub = db.collection('driver_name_requests')
     .where('driverEmail','==', currentUser.d.email)
-    .orderBy('createdAt','desc')
-    .limit(1)
     .onSnapshot(function(snap){
       if(snap.empty){ setNamePendingUI(null); return; }
-      const doc = snap.docs[0].data();
+      let latestDoc = null, latestTime = -1;
+      snap.forEach(function(d){
+        const data = d.data();
+        const t = data.createdAt && typeof data.createdAt.toMillis==='function' ? data.createdAt.toMillis() : 0;
+        if(t >= latestTime){ latestTime = t; latestDoc = data; }
+      });
+      if(!latestDoc){ setNamePendingUI(null); return; }
+      const doc = latestDoc;
       if(doc.status === 'pending'){
         setNamePendingUI(doc.newName);
       } else if(doc.status === 'approved'){
@@ -1990,10 +2025,70 @@ function doLogout(p){
     if(typeof waitInterval!=='undefined' && waitInterval) clearInterval(waitInterval);
     if(typeof stopSharingLocation==='function') stopSharingLocation();
     if(typeof stopListeningForRides==='function') stopListeningForRides();
+    if(typeof stopChatWatch==='function') stopChatWatch();
     currentRideId = null; currentRideData = null;
     if(typeof setDriverRidePhase==='function') setDriverRidePhase(null);
   }
   clearSession(p);
+  goTo(p+'-auth-welcome');
+}
+/* ===================== EXCLUIR CONTA =====================
+   Ação permanente: remove o perfil da conta do Firestore (drivers/{id} e
+   driver_locations/{id} no caso do motorista — o cliente não tem coleção de
+   perfil própria, só as corridas, que ficam por histórico), o registo de
+   sessão única (active_sessions) e todos os dados locais desta conta
+   (sessão, foto, e no caso do motorista também os dados do veículo), e volta
+   ao ecrã de boas-vindas. Não apaga o histórico de corridas (rides) nem
+   registos financeiros (driver_recharges), para não corromper o histórico
+   partilhado com clientes/admin. */
+let deleteAccountCtx = null;
+function openDeleteAccountConfirm(p){
+  deleteAccountCtx = p;
+  document.getElementById('delete-account-overlay').classList.add('show');
+}
+function closeDeleteAccountConfirm(){
+  document.getElementById('delete-account-overlay').classList.remove('show');
+}
+async function confirmDeleteAccount(){
+  const p = deleteAccountCtx;
+  closeDeleteAccountConfirm();
+  if(!p) return;
+  const email = currentUser[p] && currentUser[p].email;
+  clearAllTimers();
+  if(typeof stopSingleSessionWatch==='function') stopSingleSessionWatch(p);
+  if(p==='d'){
+    isOnline = false;
+    if(typeof waitInterval!=='undefined' && waitInterval) clearInterval(waitInterval);
+    if(typeof stopSharingLocation==='function') stopSharingLocation();
+    if(typeof stopListeningForRides==='function') stopListeningForRides();
+    if(typeof stopChatWatch==='function') stopChatWatch();
+    currentRideId = null; currentRideData = null;
+    if(typeof setDriverRidePhase==='function') setDriverRidePhase(null);
+    if(nameRequestUnsub){ nameRequestUnsub(); nameRequestUnsub = null; }
+  }
+  const db = initFirestore();
+  if(db && email){
+    try{
+      const jobs = [];
+      if(p==='d' && typeof driverDocId==='function'){
+        const id = driverDocId(email);
+        jobs.push(db.collection('drivers').doc(id).delete().catch(function(){}));
+        jobs.push(db.collection('driver_locations').doc(id).delete().catch(function(){}));
+      }
+      if(typeof sanitizeSessionKey==='function'){
+        jobs.push(db.collection('active_sessions').doc(p+'_'+sanitizeSessionKey(email)).delete().catch(function(){}));
+      }
+      await Promise.all(jobs);
+    }catch(e){ console.warn('Falha ao remover dados da conta:', e); }
+  }
+  try{
+    localStorage.removeItem('lux-session-'+p);
+    localStorage.removeItem('lux-photo-'+p);
+    localStorage.removeItem('lux_push_asked_'+p);
+    if(p==='d') localStorage.removeItem('lux-driver-vehicle');
+  }catch(e){}
+  userPhoto[p] = null;
+  if(p==='d' && typeof driverVehicle!=='undefined') driverVehicle = { brand:'', model:'', color:'', plate:'' };
   goTo(p+'-auth-welcome');
 }
 function setTheme(mode){
@@ -2932,6 +3027,53 @@ function chatCollection(){
   const col = ridesCollection();
   return col ? col.doc(currentRideId).collection('messages') : null;
 }
+
+/* Vigilante em segundo plano: avisa o motorista com um alerta/badge quando o
+   cliente envia uma mensagem e o chat não está aberto no ecrã. Arranca
+   quando aceita a corrida e para quando a viagem termina/é cancelada. */
+let chatWatchUnsub = null;
+let chatWatchRideId = null;
+function isChatOverlayOpen(){
+  const ov = document.getElementById('chat-overlay');
+  return !!(ov && ov.classList.contains('show'));
+}
+function showChatNotifyDot(){
+  document.querySelectorAll('.chat-notify-dot').forEach(function(el){ el.classList.add('show'); });
+}
+function hideChatNotifyDot(){
+  document.querySelectorAll('.chat-notify-dot').forEach(function(el){ el.classList.remove('show'); });
+}
+function notifyNewChatMessage(){
+  showChatNotifyDot();
+  const activeScreen = document.querySelector('.screen.active');
+  if(activeScreen && activeScreen.querySelector('.toast')){
+    toast(activeScreen.id, 'Nova mensagem do cliente 💬');
+  }
+  if(typeof playStatusBeep === 'function'){ try{ playStatusBeep(); }catch(e){} }
+}
+function startChatWatch(){
+  if(chatWatchUnsub && chatWatchRideId === currentRideId) return;
+  stopChatWatch();
+  const col = chatCollection();
+  if(!col) return;
+  chatWatchRideId = currentRideId;
+  let firstSnapshot = true;
+  chatWatchUnsub = col.orderBy('createdAt','asc').onSnapshot(function(snapshot){
+    if(firstSnapshot){ firstSnapshot = false; return; }
+    snapshot.docChanges().forEach(function(change){
+      if(change.type !== 'added') return;
+      const m = change.doc.data();
+      if(m.sender && m.sender !== 'driver' && !isChatOverlayOpen()){
+        notifyNewChatMessage();
+      }
+    });
+  }, function(e){ console.warn('Falha ao vigiar novas mensagens do chat:', e); });
+}
+function stopChatWatch(){
+  if(chatWatchUnsub){ chatWatchUnsub(); chatWatchUnsub = null; }
+  chatWatchRideId = null;
+  hideChatNotifyDot();
+}
 function chatInitials(name){
   return (name || '').split(' ').filter(Boolean).slice(0,2).map(w=>w[0].toUpperCase()).join('') || '?';
 }
@@ -2942,6 +3084,7 @@ function openChat(){
   if(nameEl) nameEl.textContent = clientName;
   if(avatarEl) avatarEl.textContent = chatInitials(clientName);
   document.getElementById('chat-overlay').classList.add('show');
+  hideChatNotifyDot();
   const list = document.getElementById('chat-messages');
   const input = document.getElementById('chat-input');
   const sendBtn = document.getElementById('chat-send-btn');
@@ -3215,6 +3358,7 @@ function acceptRequest(){
     }
     const nameEl = document.querySelector('#d-to-pickup .driver-card .name');
     if(nameEl && currentRideData) nameEl.textContent = currentRideData.clientName || 'Cliente Lux';
+    startChatWatch();
   }
   if(!showRealRoute('map-d-pickup', LUX_PLACES.near, LUX_PLACES.pickup, 3800)){
     drawRoute(document.getElementById('svg-route-d-pickup'), 30,25,70,70,'#FFC94D');
@@ -3326,6 +3470,7 @@ function cancelWaitingTrip(){
   if(currentRideId){
     const col = ridesCollection();
     if(col) col.doc(currentRideId).set({ status:'cancelled', updatedAt: firebase.firestore.FieldValue.serverTimestamp() }, { merge:true }).catch(function(){});
+    stopChatWatch();
     currentRideId = null; currentRideData = null;
   }
   document.querySelectorAll('#d-to-pickup .swipe-btn').forEach(b=>b.classList.remove('filled'));
@@ -3364,6 +3509,7 @@ function markTripComplete(el){
           updatedAt: firebase.firestore.FieldValue.serverTimestamp()
         }, { merge:true }).catch(function(){});
       }
+      stopChatWatch();
       currentRideId = null; currentRideData = null; declinedRideIds.clear();
     }
     setDriverRidePhase(null);

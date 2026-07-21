@@ -606,12 +606,21 @@ function initNameRequestsView(){
   }
   if(nameRequestsUnsubscribe) return; // já a ouvir
   if(el) el.innerHTML = '<div class="empty-state"><div class="emoji">✎</div><p>A carregar pedidos…</p></div>';
+  /* Sem .orderBy() de propósito: combinar .where('status',...) com
+     .orderBy('createdAt',...) num campo diferente exige um índice composto
+     manual no Firestore que nunca foi criado — a consulta falhava sempre em
+     silêncio, por isso esta lista podia nunca chegar a mostrar pedidos
+     pendentes. Ordena-se do lado do cliente em vez disso. */
   nameRequestsUnsubscribe = db.collection('driver_name_requests')
     .where('status', '==', 'pending')
-    .orderBy('createdAt', 'desc')
     .onSnapshot(function(snapshot){
       const list = [];
       snapshot.forEach(function(doc){ list.push(Object.assign({ id: doc.id }, doc.data())); });
+      list.sort(function(a,b){
+        const ta = a.createdAt && typeof a.createdAt.toMillis==='function' ? a.createdAt.toMillis() : 0;
+        const tb = b.createdAt && typeof b.createdAt.toMillis==='function' ? b.createdAt.toMillis() : 0;
+        return tb - ta;
+      });
       renderNameRequestsList(list);
     }, function(err){
       console.warn('Falha ao ouvir driver_name_requests:', err);
