@@ -846,6 +846,11 @@
   .wait-timer-box.expired .time{ color:var(--danger); }
   .wait-warning{ font-size:12px; color:var(--danger); text-align:center; margin:-4px 0 14px; display:none; line-height:1.5; }
   .wait-warning.show{ display:block; }
+  .stops-banner{
+    display:none; align-items:center; gap:8px; background:rgba(255,201,77,.12); border:1px solid var(--gold);
+    border-radius:var(--radius-md); padding:10px 14px; margin:-6px 0 10px; font-size:12.5px; font-weight:600; color:var(--gold);
+  }
+  .stops-banner.show{ display:flex; }
 
   ::-webkit-scrollbar{ display:none; }
 
@@ -858,6 +863,18 @@
 <body>
 <div class="standalone-root">
 <div class="app" id="app-driver">
+
+      <!-- Notificação de gorjeta — sobrepõe-se a qualquer ecrã, porque pode
+           chegar depois de já ter terminado a viagem e voltado ao início. -->
+      <div class="req-overlay" id="tip-notify-overlay" style="z-index:120;">
+        <div class="req-sheet" style="text-align:center;">
+          <div style="font-size:40px; margin-bottom:6px;">🎉</div>
+          <h1 class="title" style="text-align:center;">Recebeu uma gorjeta!</h1>
+          <p class="subtitle" style="text-align:center;"><span id="tip-notify-name">O cliente</span> deixou-lhe <strong id="tip-notify-amount">0,00€</strong> — o valor foi 100% para o seu saldo, sem comissão.</p>
+          <button class="btn btn-gold" onclick="thankClientForTip()">🙏 Agradecer ao cliente</button>
+          <button class="btn btn-ghost-text" onclick="closeTipNotify()">Fechar</button>
+        </div>
+      </div>
 
       <!-- AUTH: WELCOME -->
       <div class="screen active" id="d-auth-welcome">
@@ -1294,7 +1311,7 @@
             <div><div class="lbl">Chegada estimada</div><div class="big" id="d-trip-eta">16 min</div></div>
             <div style="text-align:right;"><div class="lbl">Destino</div><div style="font-size:13px; font-weight:700;" id="d-trip-dest-label">Aeroporto LIS</div></div>
           </div>
-          <div id="d-trip-stops-info" style="display:none; font-size:12px; color:var(--muted); margin:-6px 0 10px;"></div>
+          <div class="stops-banner" id="d-trip-stops-info"><span>🛑</span><span id="d-trip-stops-info-text"></span></div>
           <div class="nav-row">
             <div class="nav-btn" onclick="openNav('google','dest')"><span class="ic">🗺️</span>Google Maps</div>
             <div class="nav-btn" onclick="openNav('waze','dest')"><span class="ic">🧭</span>Waze</div>
@@ -1304,6 +1321,7 @@
             <div class="lbl">Tempo de espera na parada</div>
           </div>
           <button class="btn btn-outline" id="stop-timer-btn" style="margin-bottom:10px;" onclick="toggleStopTimer()">▶ Iniciar parada</button>
+          <button class="btn btn-gold" id="stop-resume-btn" style="display:none; margin-bottom:10px;" onclick="resumeTripAfterStop()">➤ Seguir para o destino</button>
           <div class="swipe-btn" id="complete-trip-btn" onclick="markTripComplete(this)"><div class="fill"></div><span>Terminar viagem</span></div>
         </div>
       </div>
@@ -1552,7 +1570,7 @@ function showRealRoute(containerId, originPlace, destPlace, showCar, stops){
   const directionsService = new google.maps.DirectionsService();
   const renderer = new google.maps.DirectionsRenderer({
     suppressMarkers:true, preserveViewport:true,
-    polylineOptions:{ strokeColor:'#FFC94D', strokeWeight:4, strokeOpacity:.85 }
+    polylineOptions:{ strokeColor:'#FFC94D', strokeWeight:7, strokeOpacity:.85 }
   });
   renderer.setMap(map);
   // O carro aparece já na posição REAL do motorista (última localização GPS
@@ -3656,27 +3674,43 @@ let stopWaitInterval = null;
 let stopWaitActive = false;
 let currentStopOverageSeconds = 0;
 let driverStopWaitFee = 0;
+/* Nº de paradas planeadas nesta viagem (limitado a MAX_TRIP_STOPS) e quantas
+   já foram concluídas — controla quando o botão "Iniciar parada" volta a
+   aparecer (entre paradas) e quando fica escondido em definitivo (depois da
+   última). Corridas sem paradas pré-planeadas mantêm o comportamento antigo:
+   uma utilização "avulsa" possível, depois escondido. */
+const MAX_TRIP_STOPS = 2;
+let tripTotalStops = 1;
+let tripStopsCompleted = 0;
 function resetStopTimerState(){
   if(stopWaitInterval) clearInterval(stopWaitInterval);
   stopWaitInterval = null;
   stopWaitActive = false;
   currentStopOverageSeconds = 0;
   driverStopWaitFee = 0;
+  tripStopsCompleted = 0;
   const box = document.getElementById('stop-timer-box');
   const btn = document.getElementById('stop-timer-btn');
+  const resumeBtn = document.getElementById('stop-resume-btn');
+  const completeBtn = document.getElementById('complete-trip-btn');
   if(box){ box.style.display='none'; box.classList.remove('expired'); }
-  if(btn){ btn.textContent = '▶ Iniciar parada'; }
+  if(btn){ btn.textContent = '▶ Iniciar parada'; btn.style.display = ''; }
+  if(resumeBtn) resumeBtn.style.display = 'none';
+  if(completeBtn) completeBtn.style.display = '';
 }
 function renderTripStopsInfo(){
   const info = document.getElementById('d-trip-stops-info');
-  if(!info) return;
+  const textEl = document.getElementById('d-trip-stops-info-text');
   const stops = (currentRideData && Array.isArray(currentRideData.stops)) ? currentRideData.stops : [];
+  tripTotalStops = stops.length ? Math.min(stops.length, MAX_TRIP_STOPS) : 1;
+  if(!info) return;
   if(stops.length){
-    info.style.display = 'block';
-    info.textContent = 'Paradas: ' + stops.map(function(s){ return s && s.address; }).filter(Boolean).join(' → ');
+    info.classList.add('show');
+    const n = stops.length === 1 ? '1 paragem' : (stops.length + ' paragens');
+    if(textEl) textEl.textContent = 'Esta viagem tem ' + n + ': ' + stops.map(function(s){ return s && s.address; }).filter(Boolean).join(' → ');
   } else {
-    info.style.display = 'none';
-    info.textContent = '';
+    info.classList.remove('show');
+    if(textEl) textEl.textContent = '';
   }
 }
 function endActiveStopTimer(){
@@ -3696,11 +3730,15 @@ function toggleStopTimer(){
   const box = document.getElementById('stop-timer-box');
   const display = document.getElementById('stop-timer-display');
   const labelEl = box ? box.querySelector('.lbl') : null;
+  const completeBtn = document.getElementById('complete-trip-btn');
   if(!stopWaitActive){
     stopWaitActive = true;
     currentStopOverageSeconds = 0;
     if(box){ box.style.display='block'; box.classList.add('expired'); }
     if(btn) btn.textContent = '■ Terminar parada';
+    // Enquanto a paragem está a ser cobrada, esconde "Terminar viagem" — só
+    // volta a aparecer depois de confirmar que seguiu viagem novamente.
+    if(completeBtn) completeBtn.style.display = 'none';
     if(display) display.textContent = '+' + formatWaitTime(currentStopOverageSeconds);
     if(labelEl) labelEl.textContent = 'A cobrar tempo de paragem';
     if(stopWaitInterval) clearInterval(stopWaitInterval);
@@ -3712,8 +3750,31 @@ function toggleStopTimer(){
     }, 1000);
   } else {
     const fee = endActiveStopTimer();
+    tripStopsCompleted++;
+    // O botão "Iniciar parada" fica escondido assim que a paragem termina —
+    // só volta se ainda faltarem paragens planeadas por fazer; depois da
+    // última, fica escondido pelo resto da viagem.
+    if(btn) btn.style.display = 'none';
+    const resumeBtn = document.getElementById('stop-resume-btn');
+    if(resumeBtn) resumeBtn.style.display = '';
     toast('d-trip', fee>0 ? ('Parada: +' + fmtEur(fee)) : 'Parada terminada');
   }
+}
+function resumeTripAfterStop(){
+  const resumeBtn = document.getElementById('stop-resume-btn');
+  const btn = document.getElementById('stop-timer-btn');
+  const completeBtn = document.getElementById('complete-trip-btn');
+  if(resumeBtn) resumeBtn.style.display = 'none';
+  if(completeBtn) completeBtn.style.display = '';
+  if(btn){
+    if(tripStopsCompleted < tripTotalStops){
+      btn.textContent = '▶ Iniciar parada';
+      btn.style.display = '';
+    } else {
+      btn.style.display = 'none';
+    }
+  }
+  toast('d-trip','A seguir para o destino');
 }
 function startTripFromWaiting(){
   if(waitInterval) clearInterval(waitInterval);
@@ -3783,6 +3844,7 @@ function markTripComplete(el){
     document.getElementById('stat-trips').textContent = driverTrips;
     renderBalanceUI();
     if(currentRideId){
+      const rideIdForTip = currentRideId;
       const col = ridesCollection();
       if(col){
         col.doc(currentRideId).set({
@@ -3793,6 +3855,11 @@ function markTripComplete(el){
         }, { merge:true }).catch(function(){});
       }
       stopChatWatch();
+      // O cliente só escolhe a gorjeta DEPOIS de o motorista terminar a
+      // viagem — continuamos a vigiar esta corrida específica por mais
+      // alguns minutos, mesmo já sem ligação ativa a ela, só para apanhar
+      // essa gorjeta e notificar o motorista assim que chegar.
+      watchForTip(rideIdForTip);
       currentRideId = null; currentRideData = null; declinedRideIds.clear();
     }
     clearRouteCarMarker('map-d-trip');
@@ -3800,6 +3867,68 @@ function markTripComplete(el){
     goTo('d-complete');
   }, 500);
   activeTimers.push(t);
+}
+
+/* ===================== GORJETA (notificação + crédito 100%) =====================
+   O cliente grava a gorjeta na corrida no Firestore ao concluir a viagem.
+   Vigiamos esse documento específico durante alguns minutos depois de o
+   motorista terminar, para conseguir notificá-lo e creditar o valor mesmo
+   que ele já tenha voltado ao ecrã inicial. A gorjeta é sempre 100% do
+   motorista — ao contrário da tarifa, não tem os 10% de comissão da Lux
+   Transfers descontados. */
+let tipWatchUnsub = null;
+let lastTipRideId = null;
+function watchForTip(rideId){
+  if(tipWatchUnsub){ tipWatchUnsub(); tipWatchUnsub = null; }
+  const col = ridesCollection();
+  if(!col || !rideId) return;
+  const ref = col.doc(rideId);
+  tipWatchUnsub = ref.onSnapshot(function(doc){
+    const data = doc.data();
+    if(data && data.tip > 0 && !data.tipCreditedToDriver){
+      creditDriverTip(rideId, data.tip, data.clientName);
+      ref.set({ tipCreditedToDriver:true }, { merge:true }).catch(function(){});
+      if(tipWatchUnsub){ tipWatchUnsub(); tipWatchUnsub = null; }
+    }
+  }, function(e){ console.warn('Falha ao vigiar gorjeta:', e); });
+  const t = setTimeout(function(){ if(tipWatchUnsub){ tipWatchUnsub(); tipWatchUnsub = null; } }, 10*60*1000);
+  activeTimers.push(t);
+}
+function creditDriverTip(rideId, tip, clientName){
+  driverBalance += tip;
+  driverEarnings += tip;
+  const earnEl = document.getElementById('stat-earn');
+  if(earnEl) earnEl.textContent = maskedOrValue(driverEarnings);
+  renderBalanceUI();
+  lastTipRideId = rideId;
+  showTipNotification(tip, clientName);
+}
+function showTipNotification(tip, clientName){
+  const overlay = document.getElementById('tip-notify-overlay');
+  const amountEl = document.getElementById('tip-notify-amount');
+  const nameEl = document.getElementById('tip-notify-name');
+  if(amountEl) amountEl.textContent = fmtEur(tip);
+  if(nameEl) nameEl.textContent = clientName || 'O cliente';
+  if(overlay) overlay.classList.add('show');
+  toast(currentDriverScreenId() || 'd-home', 'Recebeu uma gorjeta de ' + fmtEur(tip) + '! 🎉');
+  if(typeof playStatusBeep === 'function'){ try{ playStatusBeep(); }catch(e){} }
+}
+function closeTipNotify(){
+  const overlay = document.getElementById('tip-notify-overlay');
+  if(overlay) overlay.classList.remove('show');
+}
+function thankClientForTip(){
+  if(lastTipRideId){
+    const col = ridesCollection();
+    if(col){
+      col.doc(lastTipRideId).collection('messages').add({
+        sender:'driver', text:'Obrigado pela gorjeta! 🙏',
+        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+      }).catch(function(e){ console.warn('Falha ao agradecer gorjeta:', e); });
+    }
+  }
+  closeTipNotify();
+  toast(currentDriverScreenId() || 'd-home', 'Agradecimento enviado ao cliente');
 }
 function backToDriverHome(){
   goTo('d-home');

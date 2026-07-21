@@ -1493,7 +1493,7 @@ function showRealRoute(containerId, originPlace, destPlace, showCar, stops){
   const directionsService = new google.maps.DirectionsService();
   const renderer = new google.maps.DirectionsRenderer({
     suppressMarkers:true, preserveViewport:true,
-    polylineOptions:{ strokeColor:'#FFC94D', strokeWeight:4, strokeOpacity:.85 }
+    polylineOptions:{ strokeColor:'#FFC94D', strokeWeight:7, strokeOpacity:.85 }
   });
   renderer.setMap(map);
   // O carro aparece já na última posição GPS real conhecida do motorista
@@ -1578,7 +1578,9 @@ let selectedDestLatLng = null;
    no documento da corrida. */
 let tripStops = []; // { uid, value, latLng }
 let tripStopSeq = 0;
+const MAX_TRIP_STOPS = 2;
 function addTripStop(){
+  if(tripStops.length >= MAX_TRIP_STOPS) return;
   tripStops.push({ uid: 'c-stop-'+(++tripStopSeq), value:'', latLng:null });
   renderTripStops();
 }
@@ -1602,6 +1604,8 @@ function renderTripStops(){
       '</div>';
   }).join('');
   tripStops.forEach(function(s){ bindStopAutocomplete(s.uid); });
+  const addBtn = document.querySelector('.add-stop-btn');
+  if(addBtn) addBtn.style.display = tripStops.length >= MAX_TRIP_STOPS ? 'none' : '';
 }
 function onTripStopInput(uid){
   const s = tripStops.find(function(x){ return x.uid===uid; });
@@ -2360,6 +2364,19 @@ async function submitPayment(scope){
     if(btn) btn.disabled = false;
   }
 }
+function recordTipOnRide(){
+  // Grava a gorjeta na corrida no Firestore ANTES de largar o currentRideId
+  // (finishClientTrip limpa-o), para o motorista poder ser notificado — a
+  // gorjeta é 100% dele, sem comissão da Lux Transfers.
+  if(selectedTip > 0 && currentRideId){
+    const col = ridesCollection();
+    if(col){
+      col.doc(currentRideId).set({
+        tip: selectedTip, tipAt: firebase.firestore.FieldValue.serverTimestamp(), tipCreditedToDriver: false
+      }, { merge:true }).catch(function(){});
+    }
+  }
+}
 function payAndFinishTrip(){
   // A tarifa base já foi cobrada no pedido (ver payThenRequestRide). O tempo de
   // espera/paragem extra é cobrado automaticamente aqui, SEM mostrar o ecrã de
@@ -2367,6 +2384,7 @@ function payAndFinishTrip(){
   // espera e tem sempre de receber por isso; o cliente não pode fugir a essa
   // cobrança. Só a gorjeta, que é uma escolha voluntária do cliente, ainda
   // passa pelo ecrã de pagamento, se houver alguma.
+  recordTipOnRide();
   if(unlimitedAccount.c || selectedTip<=0){ finishClientTrip(); return; }
   openPayment('c', selectedTip, function(){ finishClientTrip(); });
 }
