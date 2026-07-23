@@ -3060,24 +3060,33 @@ function setOnlineStatusText(online){
   el.textContent = entry ? (entry[currentLang] || entry.pt) : (online ? 'Online' : 'Offline');
 }
 function openNav(provider, which){
-  let dest;
+  // Waze precisa do parâmetro "ll" (não "q") quando temos lat/lng reais,
+  // para abrir já com o destino definido e a navegação a arrancar sozinha
+  // — "q" é só para pesquisa de texto livre (endereço).
+  let lat = null, lng = null, addressText = null;
   if(which==='pickup'){
     const pos = ridePickupPos();
-    dest = pos.lat + ',' + pos.lng;
+    lat = pos.lat; lng = pos.lng;
   } else {
     if(driverRideData && driverRideData.dropoffLat!=null && driverRideData.dropoffLng!=null){
-      dest = driverRideData.dropoffLat + ',' + driverRideData.dropoffLng;
+      lat = driverRideData.dropoffLat; lng = driverRideData.dropoffLng;
     } else if(driverRideData && driverRideData.destination){
-      dest = driverRideData.destination;
+      addressText = driverRideData.destination;
     } else {
       const pos = rideDropoffPos();
-      dest = pos.lat + ',' + pos.lng;
+      lat = pos.lat; lng = pos.lng;
     }
   }
-  const q = encodeURIComponent(dest);
-  const url = provider==='waze'
-    ? `https://waze.com/ul?q=${q}&navigate=yes`
-    : `https://www.google.com/maps/dir/?api=1&destination=${q}&travelmode=driving`;
+  const hasCoords = lat!=null && lng!=null;
+  let url;
+  if(provider==='waze'){
+    url = hasCoords
+      ? `https://waze.com/ul?ll=${lat},${lng}&navigate=yes`
+      : `https://waze.com/ul?q=${encodeURIComponent(addressText)}&navigate=yes`;
+  } else {
+    const dest = hasCoords ? (lat+','+lng) : addressText;
+    url = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(dest)}&travelmode=driving`;
+  }
   window.open(url, '_blank');
 }
 function initClientApp(){ goTo('c-auth-welcome'); }
@@ -3435,13 +3444,38 @@ function driverLocationId(){
   return id;
 }
 let lastDriverLatLng = null;
+/* Mantém o ecrã "acordado" enquanto o motorista está online/em viagem —
+   em muitos telemóveis, o browser suspende/limita o GPS (watchPosition)
+   assim que o ecrã bloqueia ou a app passa para segundo plano, e é isso
+   que fazia a posição parecer "parada" no mapa do cliente. O Wake Lock
+   evita que o ecrã bloqueie sozinho enquanto a app estiver aberta. */
+let driverWakeLock = null;
+async function requestDriverWakeLock(){
+  try{
+    if('wakeLock' in navigator){
+      driverWakeLock = await navigator.wakeLock.request('screen');
+      driverWakeLock.addEventListener('release', function(){ driverWakeLock = null; });
+    }
+  }catch(e){ console.warn('Wake Lock indisponível:', e); }
+}
+function releaseDriverWakeLock(){
+  try{ if(driverWakeLock){ driverWakeLock.release(); driverWakeLock = null; } }catch(e){}
+}
+document.addEventListener('visibilitychange', function(){
+  if(document.visibilityState === 'visible' && typeof isOnline !== 'undefined' && isOnline){
+    requestDriverWakeLock();
+  }
+});
+let geoErrorWarned = false;
 function startSharingLocation(){
   const db = initFirestore();
   if(!db || !navigator.geolocation) return;
   const id = driverLocationId();
   const u = currentUser.d;
+  geoErrorWarned = false;
+  requestDriverWakeLock();
   if(geoWatchId!==null) navigator.geolocation.clearWatch(geoWatchId);
-  geoWatchId = navigator.geolocation.watchPosition(function(pos){
+  function handlePosition(pos){
     const lat = pos.coords.latitude, lng = pos.coords.longitude;
     lastDriverLatLng = { lat: lat, lng: lng };
     db.collection('driver_locations').doc(id).set({
@@ -3452,9 +3486,24 @@ function startSharingLocation(){
     updateDriverPickupEtaDisplay(lat, lng);
     const activeMapId = (typeof activeRouteMapId==='function') ? activeRouteMapId() : null;
     if(activeMapId) updateRouteCarPosition(activeMapId, lat, lng);
-  }, function(err){
+  }
+  function handleGeoError(err){
     console.warn('Geolocalização indisponível:', err);
-  }, { enableHighAccuracy:true, maximumAge:5000, timeout:10000 });
+    if(!geoErrorWarned){
+      geoErrorWarned = true;
+      const msg = (err && err.code === 1)
+        ? 'Ativa a partilha de localização no telemóvel/browser — sem isso o cliente não te vê a aproximar no mapa.'
+        : 'Não foi possível obter a tua localização GPS. Verifica o GPS do telemóvel.';
+      if(typeof toast === 'function'){
+        const scope = (typeof currentScreenId === 'function' && currentScreenId()) || 'd-home';
+        toast(scope, msg);
+      } else {
+        alert(msg);
+      }
+    }
+  }
+  navigator.geolocation.getCurrentPosition(handlePosition, handleGeoError, { enableHighAccuracy:true, maximumAge:5000, timeout:10000 });
+  geoWatchId = navigator.geolocation.watchPosition(handlePosition, handleGeoError, { enableHighAccuracy:true, maximumAge:5000, timeout:10000 });
 }
 /* ETA real ao vivo (lado motorista): a cada atualização de GPS, se estiver
    a caminho da recolha de uma corrida aceite, recalcula a distância/ETA
@@ -3470,6 +3519,7 @@ function updateDriverPickupEtaDisplay(driverLat, driverLng){
 }
 function stopSharingLocation(){
   if(geoWatchId!==null && navigator.geolocation){ navigator.geolocation.clearWatch(geoWatchId); geoWatchId = null; }
+  releaseDriverWakeLock();
   const db = initFirestore();
   if(!db) return;
   db.collection('driver_locations').doc(driverLocationId())
@@ -3848,7 +3898,7 @@ function renderTripStops(){
     return '<div class="field-divider"></div>' +
       '<div class="field">' +
         '<span class="dot-marker s"></span>' +
-        '<input id="'+s.uid+'" placeholder="Parada" value="'+(s.value||'').replace(/"/g,'&quot;')+'" oninput="onTripStopInput(\''+s.uid+'\')">' +
+        '<input id="'+s.uid+'" placeholder="Parada" value="'+(s.value||'').replace(/"/g,'&quot;')+'" oninput="onTripStopInput(\''+s.uid+'\')" onblur="onTripStopBlur(\''+s.uid+'\')">' +
         '<button type="button" class="stop-remove" onclick="removeTripStop(\''+s.uid+'\')">✕</button>' +
       '</div>';
   }).join('');
@@ -3862,6 +3912,23 @@ function onTripStopInput(uid){
   const el = document.getElementById(uid);
   s.value = el ? el.value : '';
   s.latLng = null;
+}
+/* Se o cliente escrever uma paragem à mão e sair do campo sem escolher
+   nenhuma sugestão do autocomplete, a paragem ficava sem coordenadas e
+   era silenciosamente ignorada na rota (showRealRoute só desenha
+   waypoints com lat/lng válidos). Geocodifica ao perder o foco e avisa
+   visivelmente se mesmo assim não conseguir localizar a morada. */
+async function onTripStopBlur(uid){
+  const s = tripStops.find(function(x){ return x.uid===uid; });
+  if(!s || s.latLng || !(s.value||'').trim()) return;
+  const resolved = await geocodeAddress(s.value);
+  const current = tripStops.find(function(x){ return x.uid===uid; });
+  if(!current || current.value !== s.value) return;
+  if(resolved){
+    current.latLng = resolved;
+  } else if(typeof toast === 'function'){
+    toast('c-home', 'Não consegui localizar essa paragem — escolhe uma sugestão da lista para garantir que a rota passa por lá.');
+  }
 }
 function bindStopAutocomplete(uid){
   if(!(typeof google !== 'undefined' && google.maps && google.maps.places)) return;

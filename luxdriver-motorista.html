@@ -2397,24 +2397,34 @@ function openNav(provider, which){
   // Usa sempre as coordenadas reais da corrida quando existem — nunca a
   // morada de demonstração — para o motorista ser navegado até ao cliente
   // (recolha) ou ao destino real da corrida, e não para pontos fixos.
-  let dest;
+  // Importante: quando temos lat/lng reais, o Waze precisa do parâmetro
+  // "ll" (não "q") para abrir já com o destino definido e a navegação a
+  // arrancar sozinha — "q" é só para pesquisa de texto livre (endereço),
+  // e passar coordenadas ali fazia o Waze abrir sem destino nenhum.
+  let lat = null, lng = null, addressText = null;
   if(which==='pickup'){
     const pos = ridePickupPos();
-    dest = pos.lat + ',' + pos.lng;
+    lat = pos.lat; lng = pos.lng;
   } else {
     if(currentRideData && currentRideData.dropoffLat!=null && currentRideData.dropoffLng!=null){
-      dest = currentRideData.dropoffLat + ',' + currentRideData.dropoffLng;
+      lat = currentRideData.dropoffLat; lng = currentRideData.dropoffLng;
     } else if(currentRideData && currentRideData.destination){
-      dest = currentRideData.destination;
+      addressText = currentRideData.destination;
     } else {
       const pos = rideDropoffPos();
-      dest = pos.lat + ',' + pos.lng;
+      lat = pos.lat; lng = pos.lng;
     }
   }
-  const q = encodeURIComponent(dest);
-  const url = provider==='waze'
-    ? `https://waze.com/ul?q=${q}&navigate=yes`
-    : `https://www.google.com/maps/dir/?api=1&destination=${q}&travelmode=driving`;
+  const hasCoords = lat!=null && lng!=null;
+  let url;
+  if(provider==='waze'){
+    url = hasCoords
+      ? `https://waze.com/ul?ll=${lat},${lng}&navigate=yes`
+      : `https://waze.com/ul?q=${encodeURIComponent(addressText)}&navigate=yes`;
+  } else {
+    const dest = hasCoords ? (lat+','+lng) : addressText;
+    url = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(dest)}&travelmode=driving`;
+  }
   window.open(url, '_blank');
 }
 function initClientApp(){ goTo('c-auth-welcome'); }
@@ -2801,13 +2811,41 @@ function driverLocationId(){
   }
   return id;
 }
+/* Mantém o ecrã "acordado" enquanto o motorista está online/em viagem —
+   em muitos telemóveis, o browser suspende/limita o GPS (watchPosition)
+   assim que o ecrã bloqueia ou a app passa para segundo plano, e é isso
+   que fazia a posição parecer "parada" no mapa do cliente. O Wake Lock
+   evita que o ecrã bloqueie sozinho enquanto a app estiver aberta. */
+let driverWakeLock = null;
+async function requestDriverWakeLock(){
+  try{
+    if('wakeLock' in navigator){
+      driverWakeLock = await navigator.wakeLock.request('screen');
+      driverWakeLock.addEventListener('release', function(){ driverWakeLock = null; });
+    }
+  }catch(e){ console.warn('Wake Lock indisponível:', e); }
+}
+function releaseDriverWakeLock(){
+  try{ if(driverWakeLock){ driverWakeLock.release(); driverWakeLock = null; } }catch(e){}
+}
+document.addEventListener('visibilitychange', function(){
+  // Muitos browsers libertam o Wake Lock automaticamente quando o separador
+  // fica em segundo plano; ao voltar a ficar visível (motorista reabre a
+  // app), pedimos de novo se ainda estivermos online.
+  if(document.visibilityState === 'visible' && typeof isOnline !== 'undefined' && isOnline){
+    requestDriverWakeLock();
+  }
+});
+let geoErrorWarned = false;
 function startSharingLocation(){
   const db = initFirestore();
   if(!db || !navigator.geolocation) return;
   const id = driverLocationId();
   const u = currentUser.d;
+  geoErrorWarned = false;
+  requestDriverWakeLock();
   if(geoWatchId!==null) navigator.geolocation.clearWatch(geoWatchId);
-  geoWatchId = navigator.geolocation.watchPosition(function(pos){
+  function handlePosition(pos){
     const lat = pos.coords.latitude, lng = pos.coords.longitude;
     lastDriverLatLng = { lat: lat, lng: lng };
     db.collection('driver_locations').doc(id).set({
@@ -2820,9 +2858,31 @@ function startSharingLocation(){
     // posição GPS REAL — nunca com uma animação de duração fixa.
     const activeMapId = (typeof activeRouteMapId==='function') ? activeRouteMapId() : null;
     if(activeMapId) updateRouteCarPosition(activeMapId, lat, lng);
-  }, function(err){
+  }
+  function handleGeoError(err){
     console.warn('Geolocalização indisponível:', err);
-  }, { enableHighAccuracy:true, maximumAge:5000, timeout:10000 });
+    // Sem localização real partilhada, o cliente nunca vê o motorista a
+    // mover-se no mapa — por isso avisamos de forma visível (só uma vez
+    // por sessão online, para não repetir o alerta a cada tentativa falhada)
+    // em vez de falhar silenciosamente.
+    if(!geoErrorWarned){
+      geoErrorWarned = true;
+      const msg = (err && err.code === 1)
+        ? 'Ativa a partilha de localização no telemóvel/browser — sem isso o cliente não te vê a aproximar no mapa.'
+        : 'Não foi possível obter a tua localização GPS. Verifica o GPS do telemóvel.';
+      if(typeof toast === 'function'){
+        const scope = (typeof currentScreenId === 'function' && currentScreenId()) || 'd-home';
+        toast(scope, msg);
+      } else {
+        alert(msg);
+      }
+    }
+  }
+  // Pedido imediato de uma posição (getCurrentPosition), além do watchPosition
+  // contínuo — garante que já existe uma posição real gravada assim que o
+  // motorista fica online, sem esperar pelo primeiro tick do watch.
+  navigator.geolocation.getCurrentPosition(handlePosition, handleGeoError, { enableHighAccuracy:true, maximumAge:5000, timeout:10000 });
+  geoWatchId = navigator.geolocation.watchPosition(handlePosition, handleGeoError, { enableHighAccuracy:true, maximumAge:5000, timeout:10000 });
 }
 /* ETA real ao vivo (lado motorista): a cada atualização de GPS, se estiver
    a caminho da recolha de uma corrida aceite, recalcula a distância/ETA
@@ -2838,6 +2898,7 @@ function updateDriverPickupEtaDisplay(driverLat, driverLng){
 }
 function stopSharingLocation(){
   if(geoWatchId!==null && navigator.geolocation){ navigator.geolocation.clearWatch(geoWatchId); geoWatchId = null; }
+  releaseDriverWakeLock();
   const db = initFirestore();
   if(!db) return;
   db.collection('driver_locations').doc(driverLocationId())

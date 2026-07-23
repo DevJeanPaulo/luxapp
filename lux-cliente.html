@@ -1602,7 +1602,7 @@ function renderTripStops(){
     return '<div class="field-divider"></div>' +
       '<div class="field">' +
         '<span class="dot-marker s"></span>' +
-        '<input id="'+s.uid+'" placeholder="Parada" value="'+(s.value||'').replace(/"/g,'&quot;')+'" oninput="onTripStopInput(\''+s.uid+'\')">' +
+        '<input id="'+s.uid+'" placeholder="Parada" value="'+(s.value||'').replace(/"/g,'&quot;')+'" oninput="onTripStopInput(\''+s.uid+'\')" onblur="onTripStopBlur(\''+s.uid+'\')">' +
         '<button type="button" class="stop-remove" onclick="removeTripStop(\''+s.uid+'\')">✕</button>' +
       '</div>';
   }).join('');
@@ -1616,6 +1616,25 @@ function onTripStopInput(uid){
   const el = document.getElementById(uid);
   s.value = el ? el.value : '';
   s.latLng = null;
+}
+/* Se o cliente escrever uma paragem à mão e sair do campo sem escolher
+   nenhuma sugestão do autocomplete (place_changed nunca disparou), a
+   paragem ficava sem coordenadas — e como showRealRoute() só desenha
+   waypoints para paragens com lat/lng válidos, essa paragem era
+   silenciosamente ignorada na rota, sem o cliente perceber porquê.
+   Aqui tentamos geocodificar assim que o campo perde o foco, e avisamos
+   de forma visível se mesmo assim não for possível localizar a morada. */
+async function onTripStopBlur(uid){
+  const s = tripStops.find(function(x){ return x.uid===uid; });
+  if(!s || s.latLng || !(s.value||'').trim()) return;
+  const resolved = await geocodeAddress(s.value);
+  const current = tripStops.find(function(x){ return x.uid===uid; });
+  if(!current || current.value !== s.value) return; // o utilizador já mudou o texto entretanto
+  if(resolved){
+    current.latLng = resolved;
+  } else if(typeof toast === 'function'){
+    toast('c-home', 'Não consegui localizar essa paragem — escolhe uma sugestão da lista para garantir que a rota passa por lá.');
+  }
 }
 function bindStopAutocomplete(uid){
   if(!(typeof google !== 'undefined' && google.maps && google.maps.places)) return;
