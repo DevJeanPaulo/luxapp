@@ -1577,7 +1577,7 @@
         </div>
         <div class="auth-scroll" style="padding-top:6px;">
           <div id="d-trip-history-list"></div>
-          <div id="d-trip-history-empty" style="display:none; text-align:center; color:var(--muted); margin-top:40px; font-size:14px;">Ainda não tens viagens concluídas.</div>
+          <div id="d-trip-history-empty" style="display:none; text-align:center; color:var(--muted); margin-top:40px; font-size:14px;">Ainda não tens viagens concluídas nos últimos 7 dias.</div>
         </div>
       </div>
 
@@ -5746,11 +5746,20 @@ function loadDriverTripHistory(){
   if(!col || !myId){ listEl.innerHTML = ''; if(emptyEl) emptyEl.style.display = 'block'; return; }
   col.where('driverId', '==', myId).where('status', '==', 'completed').get().then(function(snap){
     if(snap.empty){ listEl.innerHTML = ''; if(emptyEl) emptyEl.style.display = 'block'; return; }
-    const docs = snap.docs.slice().sort(function(a, b){
+    /* O ecrã só mostra viagens dos últimos 7 dias — mais antigas "desaparecem"
+       sozinhas daqui, mas o documento da corrida continua no Firestore
+       intacto (é usado pelo Financeiro do admin e pelas Faturas XML/SAF-T,
+       que não podem perder dados fiscais). */
+    const limiteMs = Date.now() - (7 * 24 * 60 * 60 * 1000);
+    const docs = snap.docs.filter(function(doc){
+      const ts = doc.data().completedAt && doc.data().completedAt.toMillis ? doc.data().completedAt.toMillis() : 0;
+      return ts >= limiteMs;
+    }).sort(function(a, b){
       const ta = a.data().completedAt && a.data().completedAt.toMillis ? a.data().completedAt.toMillis() : 0;
       const tb = b.data().completedAt && b.data().completedAt.toMillis ? b.data().completedAt.toMillis() : 0;
       return tb - ta;
     }).slice(0, 50);
+    if(!docs.length){ listEl.innerHTML = ''; if(emptyEl) emptyEl.style.display = 'block'; return; }
     listEl.innerHTML = docs.map(function(doc){
       const r = doc.data();
       const when = (r.completedAt && r.completedAt.toDate) ? r.completedAt.toDate() : null;
