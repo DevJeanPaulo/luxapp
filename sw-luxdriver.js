@@ -27,9 +27,8 @@ try{
   });
 }catch(e){ /* configuração Firebase ainda não preenchida — ignora em modo demo */ }
 
-const CACHE_NAME = 'luxdriver-v1';
+const CACHE_NAME = 'luxdriver-v2';
 const APP_SHELL = [
-  './luxdriver-motorista.html',
   './luxdriver-manifest.json',
   './icons/luxdriver-icon-192.png',
   './icons/luxdriver-icon-512.png',
@@ -51,8 +50,29 @@ self.addEventListener('activate', (event) => {
   );
 });
 
+/* O HTML principal (e qualquer navegação) nunca usa cache-first — vai
+   sempre à rede buscar a versão mais recente publicada no servidor, com o
+   cache só como reserva para quando o telemóvel está offline. Antes disto,
+   a app ficava presa na primeira versão instalada mesmo depois de novos
+   deploys, porque o ficheiro .html já estava pré-guardado no cache e nunca
+   mais era pedido de novo à rede. Os restantes ficheiros (ícones, manifest)
+   continuam cache-first, que é seguro porque raramente mudam. */
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
+  const isHtml = event.request.mode === 'navigate' ||
+    (event.request.headers.get('accept') || '').includes('text/html');
+  if (isHtml) {
+    event.respondWith(
+      fetch(event.request)
+        .then((response) => {
+          const copy = response.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
+          return response;
+        })
+        .catch(() => caches.match(event.request))
+    );
+    return;
+  }
   event.respondWith(
     caches.match(event.request).then((cached) => {
       if (cached) return cached;

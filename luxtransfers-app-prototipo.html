@@ -1978,6 +1978,20 @@ function initPlacesAutocomplete(){
       selectedOriginLatLng = (place && place.geometry && place.geometry.location) ? { lat: place.geometry.location.lat(), lng: place.geometry.location.lng() } : null;
     });
     originInput.addEventListener('input', function(){ selectedOriginLatLng = null; });
+    /* Ao tocar no campo "De" enquanto ainda tiver o texto padrão da
+       localização atual, limpa-o antes do Google Places tentar pesquisar
+       esse texto literal (senão aparecem negócios com "minha" no nome).
+       Se o utilizador sair do campo sem escrever nada, repõe o texto
+       padrão para continuar a usar o GPS. */
+    originInput.addEventListener('focus', function(){
+      if(originInput.value === 'A minha localização atual') originInput.value = '';
+    });
+    originInput.addEventListener('blur', function(){
+      if(!originInput.value.trim()){
+        originInput.value = 'A minha localização atual';
+        selectedOriginLatLng = null;
+      }
+    });
   }
   if(destInput){
     const acDest = new google.maps.places.Autocomplete(destInput, opts);
