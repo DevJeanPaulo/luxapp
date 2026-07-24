@@ -3049,6 +3049,8 @@ function startListeningDriverLocationEta(driverId){
     // viagem começar.
     if(!currentRide || currentRide.status === 'accepted'){
       updatePickupEtaDisplay(d.lat, d.lng);
+    } else if(currentRide.status === 'in_progress'){
+      updateTripEtaDisplay(d.lat, d.lng);
     }
     if(d.lat!=null && d.lng!=null){
       lastKnownDriverLatLng = { lat: d.lat, lng: d.lng };
@@ -3079,6 +3081,33 @@ function updatePickupEtaDisplay(driverLat, driverLng){
   calcEtaSmart('client-pickup-eta', driverLat, driverLng, pLat, pLng, function(mins, isTrafficAware){
     etaEl.textContent = mins + ' min';
     if(msgEl) msgEl.textContent = 'Motorista chega em ' + mins + ' min' + (isTrafficAware ? ' (com trânsito)' : '');
+  });
+}
+/* Devolve a próxima paragem por visitar desta viagem (com base no que o
+   motorista já marcou como concluído via stopsCompleted), ou null se não
+   houver paragens ou já estiverem todas feitas — para o ETA "Chegada
+   estimada" do cliente apontar para o sítio certo em cada momento. */
+function nextPendingRideStop(){
+  if(!currentRide || !Array.isArray(currentRide.stops) || !currentRide.stops.length) return null;
+  const completed = currentRide.stopsCompleted || 0;
+  if(completed < currentRide.stops.length) return currentRide.stops[completed];
+  return null;
+}
+/* ETA real ao vivo durante a viagem (depois de o passageiro entrar no
+   carro): substitui a antiga contagem decorativa que ficava presa em
+   "A chegar"/"1 min" — recalcula a cada posição GPS real do motorista,
+   apontando para a próxima paragem por visitar ou, se não houver, para o
+   destino final. */
+function updateTripEtaDisplay(driverLat, driverLng){
+  const etaEl = document.getElementById('trip-eta');
+  if(!etaEl || !currentRide) return;
+  const pending = nextPendingRideStop();
+  let tLat, tLng;
+  if(pending && pending.lat!=null && pending.lng!=null){ tLat = pending.lat; tLng = pending.lng; }
+  else { tLat = currentRide.dropoffLat; tLng = currentRide.dropoffLng; }
+  if(tLat==null || tLng==null || driverLat==null || driverLng==null){ etaEl.textContent = 'Em viagem'; return; }
+  calcEtaSmart('client-trip-eta', driverLat, driverLng, tLat, tLng, function(mins){
+    etaEl.textContent = mins + ' min';
   });
 }
 /* Persistência da corrida ativa (Task #178): grava o ID da corrida em curso
@@ -3620,19 +3649,23 @@ function startTrip(){
     const car = document.getElementById('car-trip');
     car.style.left='25%'; car.style.top='80%';
   }
-  let s = 6;
-  document.getElementById('trip-eta').textContent = s+' min';
-  // Em modo real (currentRideId ativo), quem termina a viagem é o motorista — o ETA aqui é só decorativo.
-  const iv = setInterval(()=>{
-    s--;
-    if(s<=0){
-      clearInterval(iv);
-      if(!currentRideId) showClientSummary();
-      else document.getElementById('trip-eta').textContent = 'A chegar';
-    } else {
-      document.getElementById('trip-eta').textContent = s+' min';
-    }
-  }, 900);
+  if(!currentRideId){
+    // Modo demonstração (sem corrida real): mantém a contagem decorativa
+    // antiga, que termina a viagem sozinha ao chegar a zero.
+    let s = 6;
+    document.getElementById('trip-eta').textContent = s+' min';
+    const iv = setInterval(()=>{
+      s--;
+      if(s<=0){ clearInterval(iv); showClientSummary(); }
+      else document.getElementById('trip-eta').textContent = s+' min';
+    }, 900);
+  } else {
+    // Modo real: quem termina a viagem é o motorista — o "Chegada estimada"
+    // passa a ser um ETA ao vivo, recalculado a cada posição GPS real dele
+    // (ver updateTripEtaDisplay), em vez de uma contagem falsa que ficava
+    // presa em "1 min"/"A chegar".
+    document.getElementById('trip-eta').textContent = 'Em viagem';
+  }
 }
 function showClientSummary(){
   const base = (currentRide && currentRide.status==='completed' && currentRide.totalFare!=null)
@@ -3652,9 +3685,11 @@ function updateTotals(){
   if(waitEl) waitEl.textContent = fmtEur(wait);
   document.getElementById('sum-tip').textContent = fmtEur(selectedTip);
   document.getElementById('sum-total').textContent = fmtEur(base + wait + selectedTip);
-  const extra = wait + selectedTip;
+  // O tempo de espera/paragem (wait) é cobrado automaticamente, sem exigir
+  // nenhuma ação do cliente — o botão só deve pedir um "pagamento" quando
+  // há uma gorjeta voluntária escolhida; caso contrário é só "Concluir".
   const finishBtn = document.getElementById('c-finish-btn');
-  if(finishBtn) finishBtn.textContent = extra > 0 ? ('Pagar ' + fmtEur(extra) + ' e concluir') : 'Concluir viagem';
+  if(finishBtn) finishBtn.textContent = selectedTip > 0 ? ('Pagar ' + fmtEur(selectedTip) + ' e concluir') : 'Concluir viagem';
 }
 document.getElementById('stars-row').addEventListener('click', (e)=>{
   if(!e.target.dataset.v) return;

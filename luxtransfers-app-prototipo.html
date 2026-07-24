@@ -232,9 +232,17 @@
     100%{ box-shadow:0 0 0 0 rgba(255,201,77,0); }
   }
   .ride-float-widget .rfw-icon{
-    width:36px; height:36px; border-radius:50%; background:var(--gold);
-    display:flex; align-items:center; justify-content:center; font-size:18px; flex-shrink:0;
+    position:relative;
+    width:40px; height:40px; border-radius:50%; background:var(--gold);
+    display:flex; align-items:center; justify-content:center; font-size:19px; flex-shrink:0;
+    box-shadow:0 0 0 2px var(--panel2), 0 0 14px rgba(255,201,77,.5);
   }
+  .rfw-stop-badge{
+    position:absolute; bottom:-2px; right:-2px; min-width:15px; height:15px; padding:0 3px;
+    border-radius:999px; background:var(--danger); color:#fff; font-size:9.5px; font-weight:800;
+    display:none; align-items:center; justify-content:center; box-shadow:0 0 0 2px var(--panel2);
+  }
+  .rfw-stop-badge.show{ display:flex; }
   .ride-float-widget .rfw-label{ font-size:12.5px; font-weight:700; }
   .ride-float-widget .rfw-sub{ font-size:10.5px; color:var(--muted); }
   .pin{
@@ -869,6 +877,11 @@
     border-radius:var(--radius-md); padding:10px 14px; margin:-6px 0 10px; font-size:12.5px; font-weight:600; color:var(--gold);
   }
   .stops-banner.show{ display:flex; }
+  /* Bloqueio de ações com o veículo em movimento (terminar viagem, iniciar
+     parada) — só ficam disponíveis com o carro parado. */
+  .disabled-moving{ opacity:.4; pointer-events:none; filter:grayscale(.3); }
+  .moving-warning{ font-size:12px; color:var(--danger); text-align:center; margin:-4px 0 10px; display:none; line-height:1.5; }
+  .moving-warning.show{ display:block; }
 
   ::-webkit-scrollbar{ display:none; }
 
@@ -1648,8 +1661,9 @@
             <div class="req-route">
               <div class="r-item"><span class="l">Recolha</span><span id="req-origin">Av. da Liberdade, Lisboa</span></div>
               <div class="r-item"><span class="l">Destino</span><span id="req-dest">Aeroporto de Lisboa (LIS)</span></div>
-              <div class="r-item"><span class="l">Distância</span><span>12,4 km · 3 min até ao cliente</span></div>
+              <div class="r-item"><span class="l">Distância</span><span id="req-distance">12,4 km · 3 min até ao cliente</span></div>
             </div>
+            <div class="stops-banner" id="req-stops-info"><span>🛑</span><span id="req-stops-info-text"></span></div>
             <div class="req-fare glow-frame">
               <div>
                 <div class="lbl" style="font-size:10.5px; color:var(--muted); text-transform:uppercase;">Vai receber</div>
@@ -1762,6 +1776,7 @@
             <div class="time" id="stop-timer-display">03:00</div>
             <div class="lbl">Tempo de espera na parada</div>
           </div>
+          <div class="moving-warning" id="d-trip-moving-warning">🚗 Pare o veículo para usar estas ações</div>
           <button class="btn btn-outline" id="stop-timer-btn" style="margin-bottom:10px;" onclick="toggleStopTimer()">▶ Iniciar parada</button>
           <button class="btn btn-gold" id="stop-resume-btn" style="display:none; margin-bottom:10px;" onclick="resumeTripAfterStop()">➤ Seguir para o destino</button>
           <div class="swipe-btn" id="complete-trip-btn" onclick="markTripComplete(this)"><div class="fill"></div><span>Terminar viagem</span></div>
@@ -1807,10 +1822,10 @@
       <!-- Widget flutuante: viagem ativa -->
       <div class="ride-float-widget" id="ride-float-widget" onclick="goToActiveRideScreen()">
         <div class="rfw-dot"></div>
-        <div class="rfw-icon">🚙</div>
+        <div class="rfw-icon">🚙<span class="rfw-stop-badge" id="rfw-stop-badge"></span></div>
         <div class="rfw-text">
           <div class="rfw-label" id="rfw-label">Em viagem</div>
-          <div class="rfw-sub">Toca para voltar</div>
+          <div class="rfw-sub" id="rfw-sub">Toca para voltar</div>
         </div>
       </div>
 
@@ -3059,6 +3074,17 @@ function setOnlineStatusText(online){
   const entry = LANG_DICT[key];
   el.textContent = entry ? (entry[currentLang] || entry.pt) : (online ? 'Online' : 'Offline');
 }
+/* Devolve a próxima paragem por visitar (ainda não concluída pelo motorista)
+   desta corrida, ou null — usada para a navegação (Maps/Waze) apontar
+   primeiro para a paragem seguinte, e só para o destino final depois de
+   todas terminadas, tal como Uber/Bolt. */
+function nextPendingTripStop(){
+  if(!driverRideData || !Array.isArray(driverRideData.stops) || !driverRideData.stops.length) return null;
+  const stops = driverRideData.stops.slice(0, MAX_TRIP_STOPS_D);
+  const completed = (typeof tripStopsCompleted !== 'undefined') ? tripStopsCompleted : 0;
+  if(completed < stops.length) return stops[completed];
+  return null;
+}
 function openNav(provider, which){
   // Waze precisa do parâmetro "ll" (não "q") quando temos lat/lng reais,
   // para abrir já com o destino definido e a navegação a arrancar sozinha
@@ -3068,7 +3094,15 @@ function openNav(provider, which){
     const pos = ridePickupPos();
     lat = pos.lat; lng = pos.lng;
   } else {
-    if(driverRideData && driverRideData.dropoffLat!=null && driverRideData.dropoffLng!=null){
+    // Se ainda há uma paragem por visitar, a navegação deve apontar para lá
+    // primeiro — nunca direto para o destino final enquanto houver paragens
+    // pendentes.
+    const pendingStop = nextPendingTripStop();
+    if(pendingStop && pendingStop.lat!=null && pendingStop.lng!=null){
+      lat = pendingStop.lat; lng = pendingStop.lng;
+    } else if(pendingStop && pendingStop.address){
+      addressText = pendingStop.address;
+    } else if(driverRideData && driverRideData.dropoffLat!=null && driverRideData.dropoffLng!=null){
       lat = driverRideData.dropoffLat; lng = driverRideData.dropoffLng;
     } else if(driverRideData && driverRideData.destination){
       addressText = driverRideData.destination;
@@ -3466,6 +3500,38 @@ document.addEventListener('visibilitychange', function(){
     requestDriverWakeLock();
   }
 });
+/* ===================== DETEÇÃO DE VEÍCULO EM MOVIMENTO =====================
+   Calcula uma velocidade aproximada (km/h) a partir de duas posições GPS
+   consecutivas, para bloquear ações que só fazem sentido com o veículo
+   parado (terminar viagem, iniciar/terminar uma paragem). */
+const MOVING_SPEED_THRESHOLD_KMH = 6;
+let lastPosForSpeed = null; // {lat,lng,t}
+let driverSpeedKmh = 0;
+function updateDriverSpeed(lat, lng){
+  const now = Date.now();
+  if(lastPosForSpeed){
+    const dtHours = (now - lastPosForSpeed.t) / 3600000;
+    const distKm = haversineKm(lastPosForSpeed.lat, lastPosForSpeed.lng, lat, lng);
+    if(dtHours > 0 && distKm != null){
+      driverSpeedKmh = distKm < 0.006 ? 0 : (distKm / dtHours);
+    }
+  }
+  lastPosForSpeed = { lat: lat, lng: lng, t: now };
+  updateMovementGatingUI();
+}
+function isVehicleMoving(){ return driverSpeedKmh > MOVING_SPEED_THRESHOLD_KMH; }
+function updateMovementGatingUI(){
+  const moving = isVehicleMoving();
+  const stopBtn = document.getElementById('stop-timer-btn');
+  const completeBtn = document.getElementById('complete-trip-btn');
+  const resumeBtn = document.getElementById('stop-resume-btn');
+  const warn = document.getElementById('d-trip-moving-warning');
+  [stopBtn, completeBtn, resumeBtn].forEach(function(b){
+    if(b) b.classList.toggle('disabled-moving', moving);
+  });
+  const tripActive = document.getElementById('d-trip') && document.getElementById('d-trip').classList.contains('active');
+  if(warn) warn.classList.toggle('show', moving && !!tripActive);
+}
 let geoErrorWarned = false;
 function startSharingLocation(){
   const db = initFirestore();
@@ -3478,6 +3544,7 @@ function startSharingLocation(){
   function handlePosition(pos){
     const lat = pos.coords.latitude, lng = pos.coords.longitude;
     lastDriverLatLng = { lat: lat, lng: lng };
+    updateDriverSpeed(lat, lng);
     db.collection('driver_locations').doc(id).set({
       name: u.name, lat: lat, lng: lng, online: true,
       updatedAt: firebase.firestore.FieldValue.serverTimestamp()
@@ -4145,6 +4212,8 @@ function startListeningDriverLocationEta(driverId){
     // viagem começar.
     if(!clientRide || clientRide.status === 'accepted'){
       updatePickupEtaDisplay(d.lat, d.lng);
+    } else if(clientRide.status === 'in_progress'){
+      updateTripEtaDisplay(d.lat, d.lng);
     }
     if(d.lat!=null && d.lng!=null){
       lastKnownDriverLatLng = { lat: d.lat, lng: d.lng };
@@ -4170,6 +4239,31 @@ function updatePickupEtaDisplay(driverLat, driverLng){
   calcEtaSmart('client-pickup-eta', driverLat, driverLng, pLat, pLng, function(mins, isTrafficAware){
     etaEl.textContent = mins + ' min';
     if(msgEl) msgEl.textContent = 'Motorista chega em ' + mins + ' min' + (isTrafficAware ? ' (com trânsito)' : '');
+  });
+}
+/* Devolve a próxima paragem por visitar desta viagem (com base no que o
+   motorista já marcou como concluído via stopsCompleted), ou null se não
+   houver paragens ou já estiverem todas feitas. */
+function nextPendingRideStop(){
+  if(!clientRide || !Array.isArray(clientRide.stops) || !clientRide.stops.length) return null;
+  const completed = clientRide.stopsCompleted || 0;
+  if(completed < clientRide.stops.length) return clientRide.stops[completed];
+  return null;
+}
+/* ETA real ao vivo durante a viagem: substitui a antiga contagem decorativa
+   que ficava presa em "A chegar"/"1 min" — recalcula a cada posição GPS
+   real do motorista, apontando para a próxima paragem por visitar ou, se
+   não houver, para o destino final. */
+function updateTripEtaDisplay(driverLat, driverLng){
+  const etaEl = document.getElementById('trip-eta');
+  if(!etaEl || !clientRide) return;
+  const pending = nextPendingRideStop();
+  let tLat, tLng;
+  if(pending && pending.lat!=null && pending.lng!=null){ tLat = pending.lat; tLng = pending.lng; }
+  else { tLat = clientRide.dropoffLat; tLng = clientRide.dropoffLng; }
+  if(tLat==null || tLng==null || driverLat==null || driverLng==null){ etaEl.textContent = 'Em viagem'; return; }
+  calcEtaSmart('client-trip-eta', driverLat, driverLng, tLat, tLng, function(mins){
+    etaEl.textContent = mins + ' min';
   });
 }
 function listenToClientRide(rideId){
@@ -4658,19 +4752,23 @@ function startTrip(){
     const car = document.getElementById('car-trip');
     car.style.left='25%'; car.style.top='80%';
   }
-  let s = 6;
-  document.getElementById('trip-eta').textContent = s+' min';
-  // Em modo real (clientRideId ativo), quem termina a viagem é o motorista — o ETA aqui é só decorativo.
-  const iv = setInterval(()=>{
-    s--;
-    if(s<=0){
-      clearInterval(iv);
-      if(!clientRideId) showClientSummary();
-      else document.getElementById('trip-eta').textContent = 'A chegar';
-    } else {
-      document.getElementById('trip-eta').textContent = s+' min';
-    }
-  }, 900);
+  if(!clientRideId){
+    // Modo demonstração (sem corrida real): mantém a contagem decorativa
+    // antiga, que termina a viagem sozinha ao chegar a zero.
+    let s = 6;
+    document.getElementById('trip-eta').textContent = s+' min';
+    const iv = setInterval(()=>{
+      s--;
+      if(s<=0){ clearInterval(iv); showClientSummary(); }
+      else document.getElementById('trip-eta').textContent = s+' min';
+    }, 900);
+  } else {
+    // Modo real: quem termina a viagem é o motorista — o "Chegada estimada"
+    // passa a ser um ETA ao vivo, recalculado a cada posição GPS real dele
+    // (ver updateTripEtaDisplay), em vez de uma contagem falsa que ficava
+    // presa em "1 min"/"A chegar".
+    document.getElementById('trip-eta').textContent = 'Em viagem';
+  }
 }
 function showClientSummary(){
   const base = (clientRide && clientRide.status==='completed' && clientRide.totalFare!=null)
@@ -4690,9 +4788,11 @@ function updateTotals(){
   if(waitEl) waitEl.textContent = fmtEur(wait);
   document.getElementById('sum-tip').textContent = fmtEur(selectedTip);
   document.getElementById('sum-total').textContent = fmtEur(base + wait + selectedTip);
-  const extra = wait + selectedTip;
+  // O tempo de espera/paragem (wait) é cobrado automaticamente, sem exigir
+  // nenhuma ação do cliente — o botão só deve pedir um "pagamento" quando
+  // há uma gorjeta voluntária escolhida; caso contrário é só "Concluir".
   const finishBtn = document.getElementById('c-finish-btn');
-  if(finishBtn) finishBtn.textContent = extra > 0 ? ('Pagar ' + fmtEur(extra) + ' e concluir') : 'Concluir viagem';
+  if(finishBtn) finishBtn.textContent = selectedTip > 0 ? ('Pagar ' + fmtEur(selectedTip) + ' e concluir') : 'Concluir viagem';
 }
 document.getElementById('stars-row').addEventListener('click', (e)=>{
   if(!e.target.dataset.v) return;
@@ -4932,6 +5032,18 @@ function updateFloatingWidget(){
   w.classList.toggle('show', !onRideScreen);
   const labelEl = document.getElementById('rfw-label');
   if(labelEl) labelEl.textContent = RIDE_PHASE_LABEL[driverRidePhase] || 'Em viagem';
+  // Info contextual (paragens por fazer) — pequeno "badge" de aviso.
+  const subEl = document.getElementById('rfw-sub');
+  const badgeEl = document.getElementById('rfw-stop-badge');
+  const stops = (driverRideData && Array.isArray(driverRideData.stops)) ? driverRideData.stops : [];
+  const pending = stops.length ? Math.max(0, Math.min(stops.length, MAX_TRIP_STOPS_D) - tripStopsCompleted) : 0;
+  if(pending > 0){
+    if(subEl) subEl.textContent = pending === 1 ? '1 paragem por fazer' : (pending + ' paragens por fazer');
+    if(badgeEl){ badgeEl.textContent = pending; badgeEl.classList.add('show'); }
+  } else {
+    if(subEl) subEl.textContent = 'Toca para voltar';
+    if(badgeEl) badgeEl.classList.remove('show');
+  }
 }
 function goToActiveRideScreen(){
   if(!driverRidePhase) return;
@@ -5056,6 +5168,34 @@ function showRealIncomingRequest(rideId, data){
   if(nameEl) nameEl.textContent = data.clientName || 'Cliente Lux';
   const fareEl = document.querySelector('#req-overlay .req-fare .amount');
   if(fareEl) fareEl.textContent = fmtEur(data.price || 0);
+  // Distância/tempo REAIS até ao cliente (antes era sempre o valor de
+  // exemplo do HTML, nunca atualizado).
+  const distEl = document.getElementById('req-distance');
+  if(distEl){
+    const pLat = data.pickupLat, pLng = data.pickupLng;
+    if(lastDriverLatLng && pLat!=null && pLng!=null){
+      const km = haversineKm(lastDriverLatLng.lat, lastDriverLatLng.lng, pLat, pLng);
+      const mins = calcEtaMinutes(lastDriverLatLng.lat, lastDriverLatLng.lng, pLat, pLng);
+      distEl.textContent = (km!=null && mins!=null) ? (km.toFixed(1).replace('.', ',') + ' km · ' + mins + ' min até ao cliente') : 'A calcular distância…';
+    } else {
+      distEl.textContent = 'A calcular distância…';
+    }
+  }
+  // Aviso imediato de paragem(ns) — o motorista precisa de saber isto já no
+  // pedido, antes de aceitar, tal como a Uber/Bolt mostram.
+  const stopsInfo = document.getElementById('req-stops-info');
+  const stopsInfoText = document.getElementById('req-stops-info-text');
+  const stops = Array.isArray(data.stops) ? data.stops : [];
+  if(stopsInfo){
+    if(stops.length){
+      stopsInfo.classList.add('show');
+      const n = stops.length === 1 ? '1 paragem' : (stops.length + ' paragens');
+      if(stopsInfoText) stopsInfoText.textContent = 'Esta viagem tem ' + n + ': ' + stops.map(function(s){ return s && s.address; }).filter(Boolean).join(' → ');
+    } else {
+      stopsInfo.classList.remove('show');
+      if(stopsInfoText) stopsInfoText.textContent = '';
+    }
+  }
   document.getElementById('req-overlay').classList.add('show');
   playRequestSound();
   let s = 15;
@@ -5342,6 +5482,11 @@ function resetStopTimerState(){
   if(btn){ btn.textContent = '▶ Iniciar parada'; btn.style.display = ''; }
   if(resumeBtn) resumeBtn.style.display = 'none';
   if(completeBtn) completeBtn.style.display = '';
+  if(driverRideId){
+    const col = ridesCollection();
+    if(col) col.doc(driverRideId).set({ stopsCompleted: 0 }, { merge:true }).catch(function(){});
+  }
+  if(typeof updateMovementGatingUI === 'function') updateMovementGatingUI();
 }
 function renderTripStopsInfo(){
   const info = document.getElementById('d-trip-stops-info');
@@ -5371,6 +5516,13 @@ function endActiveStopTimer(){
   return fee;
 }
 function toggleStopTimer(){
+  // Segurança: iniciar/terminar uma paragem só faz sentido com o veículo
+  // parado — com o carro em movimento, o botão fica visualmente desativado,
+  // mas bloqueamos aqui também a própria ação, por segurança.
+  if(typeof isVehicleMoving === 'function' && isVehicleMoving()){
+    toast('d-trip', 'Pare o veículo para iniciar/terminar uma paragem.');
+    return;
+  }
   const btn = document.getElementById('stop-timer-btn');
   const box = document.getElementById('stop-timer-box');
   const display = document.getElementById('stop-timer-display');
@@ -5396,6 +5548,13 @@ function toggleStopTimer(){
   } else {
     const fee = endActiveStopTimer();
     tripStopsCompleted++;
+    // Grava no Firestore quantas paragens já foram concluídas — sem isto o
+    // cliente não tinha forma de saber quando a navegação/ETA devia deixar
+    // de apontar para a paragem e passar a apontar para o destino final.
+    if(driverRideId){
+      const col = ridesCollection();
+      if(col) col.doc(driverRideId).set({ stopsCompleted: tripStopsCompleted, updatedAt: firebase.firestore.FieldValue.serverTimestamp() }, { merge:true }).catch(function(){});
+    }
     // O botão "Iniciar parada" fica escondido assim que a paragem termina —
     // só volta se ainda faltarem paragens planeadas por fazer; depois da
     // última, fica escondido pelo resto da viagem.
@@ -5466,6 +5625,11 @@ function cancelWaitingTrip(){
 }
 const CURRENT_RIDE_FARE = 22.40; // tarifa de demonstração — usada só quando não há pedido real (driverRideData)
 function markTripComplete(el){
+  // Segurança: só se pode terminar a viagem com o veículo parado.
+  if(typeof isVehicleMoving === 'function' && isVehicleMoving()){
+    toast('d-trip', 'Pare o veículo para terminar a viagem.');
+    return;
+  }
   el.classList.add('filled');
   if(typeof stopWaitActive!=='undefined' && stopWaitActive) endActiveStopTimer();
   const t = setTimeout(()=>{
