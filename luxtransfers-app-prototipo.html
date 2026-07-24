@@ -1245,7 +1245,7 @@
               <div class="big" id="trip-eta">18 min</div>
             </div>
             <div style="text-align:right;">
-              <div class="lbl">Destino</div>
+              <div class="lbl" id="trip-dest-caption">Destino</div>
               <div style="font-size:13px; font-weight:700;" id="trip-dest-label">Aeroporto de Lisboa</div>
             </div>
           </div>
@@ -1568,6 +1568,19 @@
         </div>
       </div>
 
+      <!-- HISTÓRICO DE VIAGENS -->
+      <div class="screen" id="d-trip-history">
+        <div class="topbar">
+          <div class="icon-btn" onclick="goTo('d-home')">←</div>
+          <div class="brand" style="font-size:13px;">HISTÓRICO DE VIAGENS</div>
+          <div style="width:38px;"></div>
+        </div>
+        <div class="auth-scroll" style="padding-top:6px;">
+          <div id="d-trip-history-list"></div>
+          <div id="d-trip-history-empty" style="display:none; text-align:center; color:var(--muted); margin-top:40px; font-size:14px;">Ainda não tens viagens concluídas.</div>
+        </div>
+      </div>
+
       <!-- 1. DRIVER HOME -->
       <div class="screen" id="d-home">
         <div class="toast" id="toast-d-home">Saldo atualizado</div>
@@ -1577,7 +1590,7 @@
         </div>
         <div class="sub-badge">
           <span class="l" data-i18n="sub_active">✓ Subscrição ativa</span>
-          <span class="r">50€/mês · renova a 15 Ago</span>
+          <span class="r">90€/mês (IVA 6% incl.) · renova a 15 Ago</span>
         </div>
         <div class="online-toggle-wrap glow-frame">
           <div class="lbl-group">
@@ -1599,7 +1612,7 @@
         </div>
         <div class="stat-row">
           <div class="stat-card glow-frame"><div class="num" id="stat-earn">0€</div><div class="lbl">Ganhos hoje</div></div>
-          <div class="stat-card glow-frame"><div class="num" id="stat-trips">0</div><div class="lbl">Viagens</div></div>
+          <div class="stat-card glow-frame" style="cursor:pointer;" onclick="openDriverTripHistory()"><div class="num" id="stat-trips">0</div><div class="lbl">Viagens</div></div>
           <div class="stat-card glow-frame"><div class="num">4.9★</div><div class="lbl">Avaliação</div></div>
         </div>
         <div class="map-wrap">
@@ -4268,9 +4281,27 @@ function nextPendingRideStop(){
    que ficava presa em "A chegar"/"1 min" — recalcula a cada posição GPS
    real do motorista, apontando para a próxima paragem por visitar ou, se
    não houver, para o destino final. */
+/* Atualiza a morada mostrada no topo do ecrã de viagem (e o rótulo
+   "Destino"/"Próxima paragem") consoante haja ou não uma paragem por
+   visitar — antes disto mostrava sempre a morada final, mesmo enquanto o
+   motorista ainda ia a caminho de uma paragem intermédia. */
+function updateTripDestLabel(){
+  const labelEl = document.getElementById('trip-dest-label');
+  const captionEl = document.getElementById('trip-dest-caption');
+  if(!labelEl || !clientRide) return;
+  const pending = nextPendingRideStop();
+  if(pending && pending.address){
+    labelEl.textContent = pending.address;
+    if(captionEl) captionEl.textContent = 'Próxima paragem';
+  } else {
+    labelEl.textContent = clientRide.destination || labelEl.textContent;
+    if(captionEl) captionEl.textContent = 'Destino';
+  }
+}
 function updateTripEtaDisplay(driverLat, driverLng){
   const etaEl = document.getElementById('trip-eta');
   if(!etaEl || !clientRide) return;
+  updateTripDestLabel();
   const pending = nextPendingRideStop();
   let tLat, tLng;
   if(pending && pending.lat!=null && pending.lng!=null){ tLat = pending.lat; tLng = pending.lng; }
@@ -4755,6 +4786,7 @@ function startPickupCountdown(){
 function startTrip(){
   const dest = (clientRide && clientRide.destination) || document.getElementById('c-dest').value || 'destino';
   document.getElementById('trip-dest-label').textContent = dest;
+  if(typeof updateTripDestLabel === 'function') updateTripDestLabel();
   goTo('c-trip');
   toast('c-trip', 'Motorista chegou — viagem iniciada');
   const pickupPos = (clientRide && clientRide.pickupLat!=null && clientRide.pickupLng!=null) ? { lat: clientRide.pickupLat, lng: clientRide.pickupLng } : LUX_PLACES.pickup;
@@ -5690,6 +5722,54 @@ function markTripComplete(el){
     goTo('d-complete');
   }, 500);
   activeTimers.push(t);
+}
+
+/* ===================== HISTÓRICO DE VIAGENS =====================
+   O cartão "Viagens" no ecrã inicial passa a ser clicável e mostra a lista
+   real das corridas já concluídas por este motorista, lida diretamente da
+   coleção "rides" (onde markTripComplete já grava status:'completed' com
+   driverId). Evita filtrar por duas condições + orderBy em simultâneo
+   (que exigiria um índice composto novo no Firestore) — em vez disso
+   ordena-se no cliente depois de obter os documentos. */
+function openDriverTripHistory(){
+  goTo('d-trip-history');
+  loadDriverTripHistory();
+}
+function loadDriverTripHistory(){
+  const listEl = document.getElementById('d-trip-history-list');
+  const emptyEl = document.getElementById('d-trip-history-empty');
+  if(!listEl) return;
+  listEl.innerHTML = '<div style="text-align:center; color:var(--muted); margin-top:20px; font-size:13px;">A carregar…</div>';
+  if(emptyEl) emptyEl.style.display = 'none';
+  const col = ridesCollection();
+  const myId = (currentUser.d && currentUser.d.email) ? driverDocId(currentUser.d.email) : null;
+  if(!col || !myId){ listEl.innerHTML = ''; if(emptyEl) emptyEl.style.display = 'block'; return; }
+  col.where('driverId', '==', myId).where('status', '==', 'completed').get().then(function(snap){
+    if(snap.empty){ listEl.innerHTML = ''; if(emptyEl) emptyEl.style.display = 'block'; return; }
+    const docs = snap.docs.slice().sort(function(a, b){
+      const ta = a.data().completedAt && a.data().completedAt.toMillis ? a.data().completedAt.toMillis() : 0;
+      const tb = b.data().completedAt && b.data().completedAt.toMillis ? b.data().completedAt.toMillis() : 0;
+      return tb - ta;
+    }).slice(0, 50);
+    listEl.innerHTML = docs.map(function(doc){
+      const r = doc.data();
+      const when = (r.completedAt && r.completedAt.toDate) ? r.completedAt.toDate() : null;
+      const dateStr = when ? (when.toLocaleDateString('pt-PT', { day:'2-digit', month:'2-digit', year:'numeric' }) + ' · ' + when.toLocaleTimeString('pt-PT', { hour:'2-digit', minute:'2-digit' })) : '';
+      const fare = r.totalFare != null ? fmtEur(r.totalFare) : (r.price != null ? fmtEur(r.price) : '—');
+      const route = [r.origin, r.destination].filter(Boolean).join(' → ');
+      return '<div class="settings-row" style="flex-direction:column; align-items:stretch; gap:4px; cursor:default;">' +
+        '<div style="display:flex; justify-content:space-between; width:100%;">' +
+          '<span class="s-lbl">' + (r.clientName || 'Cliente Lux') + '</span>' +
+          '<span class="s-val" style="color:var(--gold); font-weight:700;">' + fare + '</span>' +
+        '</div>' +
+        (route ? ('<div style="font-size:12px; color:var(--muted);">' + route + '</div>') : '') +
+        (dateStr ? ('<div style="font-size:11px; color:var(--muted);">' + dateStr + '</div>') : '') +
+      '</div>';
+    }).join('');
+  }).catch(function(err){
+    console.warn('Falha ao carregar histórico de viagens:', err);
+    listEl.innerHTML = '<div style="text-align:center; color:var(--muted); margin-top:20px; font-size:13px;">Não foi possível carregar o histórico.</div>';
+  });
 }
 
 /* ===================== GORJETA (notificação + crédito 100%) =====================

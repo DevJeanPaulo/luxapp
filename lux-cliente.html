@@ -1171,7 +1171,7 @@
               <div class="big" id="trip-eta">18 min</div>
             </div>
             <div style="text-align:right;">
-              <div class="lbl">Destino</div>
+              <div class="lbl" id="trip-dest-caption">Destino</div>
               <div style="font-size:13px; font-weight:700;" id="trip-dest-label">Aeroporto de Lisboa</div>
             </div>
           </div>
@@ -3112,9 +3112,28 @@ function nextPendingRideStop(){
    "A chegar"/"1 min" — recalcula a cada posição GPS real do motorista,
    apontando para a próxima paragem por visitar ou, se não houver, para o
    destino final. */
+/* Atualiza a morada mostrada no topo do ecrã de viagem (e o rótulo
+   "Destino"/"Próxima paragem") consoante haja ou não uma paragem por
+   visitar — antes disto mostrava sempre a morada final, mesmo enquanto o
+   motorista ainda ia a caminho de uma paragem intermédia, tal como já
+   corrigido do lado da app do motorista. */
+function updateTripDestLabel(){
+  const labelEl = document.getElementById('trip-dest-label');
+  const captionEl = document.getElementById('trip-dest-caption');
+  if(!labelEl || !currentRide) return;
+  const pending = nextPendingRideStop();
+  if(pending && pending.address){
+    labelEl.textContent = pending.address;
+    if(captionEl) captionEl.textContent = 'Próxima paragem';
+  } else {
+    labelEl.textContent = currentRide.destination || labelEl.textContent;
+    if(captionEl) captionEl.textContent = 'Destino';
+  }
+}
 function updateTripEtaDisplay(driverLat, driverLng){
   const etaEl = document.getElementById('trip-eta');
   if(!etaEl || !currentRide) return;
+  updateTripDestLabel();
   const pending = nextPendingRideStop();
   let tLat, tLng;
   if(pending && pending.lat!=null && pending.lng!=null){ tLat = pending.lat; tLng = pending.lng; }
@@ -3652,6 +3671,7 @@ function startPickupCountdown(){
 function startTrip(){
   const dest = (currentRide && currentRide.destination) || document.getElementById('c-dest').value || 'destino';
   document.getElementById('trip-dest-label').textContent = dest;
+  if(typeof updateTripDestLabel === 'function') updateTripDestLabel();
   goTo('c-trip');
   toast('c-trip', 'Motorista chegou — viagem iniciada');
   const pickupPos = (currentRide && currentRide.pickupLat!=null && currentRide.pickupLng!=null) ? { lat: currentRide.pickupLat, lng: currentRide.pickupLng } : LUX_PLACES.pickup;
