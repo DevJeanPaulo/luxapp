@@ -4799,7 +4799,28 @@ async function scheduleRideForLater(){
    matrícula ao cliente. Quando a reserva for ativada como viagem real
    (status:'accepted'), entrega ao fluxo normal de viagem ao vivo. */
 var reservationWatchers = reservationWatchers || {};
-var shownReservationConfirmations = shownReservationConfirmations || new Set();
+/* Antes, shownReservationConfirmations era só um Set em memória — assim que
+   o telemóvel recarregava a página (muito comum em PWAs/browsers móveis
+   quando a app volta do segundo plano), o Set esvaziava-se e o overlay
+   "Reserva aceite" voltava a aparecer do zero, mesmo já tendo sido visto e
+   fechado pelo cliente. Agora fica guardado em localStorage, sobrevivendo a
+   recarregamentos da página. */
+var SHOWN_RESERVATION_CONFIRMATIONS_KEY = 'lux_shown_reservation_confirmations';
+var shownReservationConfirmations = (function(){
+  try{
+    const raw = localStorage.getItem(SHOWN_RESERVATION_CONFIRMATIONS_KEY);
+    return new Set(raw ? JSON.parse(raw) : []);
+  }catch(e){ return new Set(); }
+})();
+function markReservationConfirmationShown(rideId){
+  shownReservationConfirmations.add(rideId);
+  try{ localStorage.setItem(SHOWN_RESERVATION_CONFIRMATIONS_KEY, JSON.stringify(Array.from(shownReservationConfirmations))); }catch(e){}
+}
+function forgetReservationConfirmation(rideId){
+  if(shownReservationConfirmations.delete(rideId)){
+    try{ localStorage.setItem(SHOWN_RESERVATION_CONFIRMATIONS_KEY, JSON.stringify(Array.from(shownReservationConfirmations))); }catch(e){}
+  }
+}
 function watchReservation(rideId){
   if(!rideId || reservationWatchers[rideId]) return;
   const col = ridesCollection();
@@ -4808,10 +4829,11 @@ function watchReservation(rideId){
     if(!doc.exists) return;
     const ride = doc.data();
     if(ride.status === 'reserved' && !shownReservationConfirmations.has(rideId)){
-      shownReservationConfirmations.add(rideId);
+      markReservationConfirmationShown(rideId);
       showReservationConfirmedOverlay(ride);
     } else if(ride.status === 'accepted'){
       stopWatchingReservation(rideId);
+      forgetReservationConfirmation(rideId);
       if(!clientRideId){
         clientRideId = rideId;
         clientLastHandledRideStatus = null;
@@ -4820,9 +4842,11 @@ function watchReservation(rideId){
       }
     } else if(ride.status === 'cancelled'){
       stopWatchingReservation(rideId);
+      forgetReservationConfirmation(rideId);
       toast('c-home', 'A reserva foi cancelada.');
     } else if(ride.status === 'completed'){
       stopWatchingReservation(rideId);
+      forgetReservationConfirmation(rideId);
     }
   }, function(e){ console.warn('Falha ao vigiar reserva:', e); });
 }
@@ -4874,8 +4898,11 @@ function clientReservationRowHtml(item){
   const sf = r.scheduledFor && r.scheduledFor.toDate ? r.scheduledFor.toDate() : null;
   const whenStr = sf ? (sf.toLocaleDateString('pt-PT') + ' às ' + sf.toLocaleTimeString('pt-PT',{hour:'2-digit',minute:'2-digit'})) : '--';
   const isConfirmed = r.status === 'reserved';
+  const vLabel = [r.vehicleBrand, r.vehicleModel].filter(Boolean).join(' ') || r.vehicleName || 'Veículo Lux';
+  const vFull = vLabel + (r.vehicleColor ? (' · ' + r.vehicleColor) : '') + (r.vehiclePlate ? (' · ' + r.vehiclePlate) : '');
   const statusHtml = isConfirmed
-    ? '<div style="font-size:12px; color:#5fd68a; font-weight:700; margin-top:6px;">✓ Confirmada — ' + (r.driverName || 'Motorista Lux') + (r.vehiclePlate ? (' · ' + r.vehiclePlate) : '') + '</div>'
+    ? '<div style="font-size:12px; color:#5fd68a; font-weight:700; margin-top:6px;">✓ Confirmada — ' + (r.driverName || 'Motorista Lux') + '</div>' +
+      '<div style="font-size:12px; color:var(--muted); margin-top:2px;">' + vFull + '</div>'
     : '<div style="font-size:12px; color:var(--gold); font-weight:700; margin-top:6px;">A aguardar motorista</div>';
   return '<div style="background:var(--panel2); border:1px solid var(--line); border-radius:var(--radius-md); padding:14px; margin-bottom:10px;">' +
     '<div style="font-weight:700; font-size:14px;">' + whenStr + '</div>' +
