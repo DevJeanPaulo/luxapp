@@ -1334,6 +1334,26 @@
         </div>
       </div>
 
+      <div class="req-overlay" id="reservation-confirmed-overlay">
+        <div class="req-sheet">
+          <h1 class="title" style="text-align:center;">✓ Reserva aceite</h1>
+          <p style="text-align:center; color:var(--muted); margin:0 0 16px;" id="resv-when">--</p>
+          <div class="driver-card">
+            <div class="avatar" id="resv-avatar">RA</div>
+            <div class="driver-info">
+              <div class="name" id="resv-driver-name">Motorista Lux</div>
+              <div class="meta" id="resv-car-name">Veículo Lux</div>
+            </div>
+          </div>
+          <div class="settings-row" style="cursor:default;">
+            <span class="s-lbl">Matrícula</span>
+            <span class="s-val" id="resv-plate">—</span>
+          </div>
+          <p style="font-size:12px; color:var(--muted); text-align:center; margin:16px 0 0;">O motorista vai receber um lembrete 30 min antes da hora marcada.</p>
+          <button class="btn btn-gold" style="margin-top:16px;" onclick="closeReservationConfirmedOverlay()">Fechar</button>
+        </div>
+      </div>
+
       <div class="chat-overlay" id="c-chat-overlay">
         <div class="chat-header">
           <div class="avatar" id="c-chat-avatar">RA</div>
@@ -1599,6 +1619,20 @@
         </div>
       </div>
 
+      <!-- RESERVAS FUTURAS -->
+      <div class="screen" id="d-reservations">
+        <div class="topbar">
+          <div class="icon-btn" onclick="goTo('d-home')">←</div>
+          <div class="brand" style="font-size:13px;">RESERVAS FUTURAS</div>
+          <div style="width:38px;"></div>
+        </div>
+        <div class="auth-scroll" style="padding-top:6px;">
+          <p style="font-size:11.5px; color:var(--muted); margin:0 0 12px; padding:0 2px;">Toca em "Aceitar reserva" para ficares responsável por uma viagem futura — é por ordem de chegada, quem aceita primeiro fica com ela. O cliente sabe logo o teu nome e veículo. Recebes um lembrete 30 min antes da hora marcada e podes tocar em "Iniciar viagem" quando estiveres pronto para ires buscar o cliente. Se ninguém aceitar a tempo, a Lux Transfers despacha automaticamente ao motorista disponível mais próximo.</p>
+          <div id="d-reservations-list"></div>
+          <div id="d-reservations-empty" style="display:none; text-align:center; color:var(--muted); margin-top:40px; font-size:14px;">Não há reservas futuras de momento.</div>
+        </div>
+      </div>
+
       <!-- 1. DRIVER HOME -->
       <div class="screen" id="d-home">
         <div class="toast" id="toast-d-home">Saldo atualizado</div>
@@ -1626,12 +1660,15 @@
             <button class="link-btn" data-i18n="btn_recharge" onclick="openRecharge()">Recarregar</button>
           </div>
           <div class="balance-bar"><div class="fill" id="balance-fill" style="width:100%;"></div></div>
-          <div class="note" data-i18n="balance_note">A Lux Transfers retém 10% do valor de cada corrida, descontado automaticamente deste saldo. Sem saldo, deixa de receber novos pedidos.</div>
+          <div class="note" id="balance-note" data-i18n="balance_note">A Lux Transfers retém 10% do valor de cada corrida, descontado automaticamente deste saldo. Sem saldo, deixa de receber novos pedidos.</div>
         </div>
         <div class="stat-row">
           <div class="stat-card glow-frame"><div class="num" id="stat-earn">0€</div><div class="lbl">Ganhos hoje</div></div>
           <div class="stat-card glow-frame" style="cursor:pointer;" onclick="openDriverTripHistory()"><div class="num" id="stat-trips">0</div><div class="lbl">Viagens</div></div>
           <div class="stat-card glow-frame"><div class="num">4.9★</div><div class="lbl">Avaliação</div></div>
+        </div>
+        <div class="stops-banner" id="d-reservations-banner" style="cursor:pointer;" onclick="openDriverReservations()">
+          <span>📅</span><span id="d-reservations-banner-text">Tens reservas futuras</span>
         </div>
         <div class="map-wrap">
           <div class="map" id="map-driver-home">
@@ -2608,6 +2645,10 @@ function listenDriverProfile(){
   driverProfileUnsub = db.collection('drivers').doc(id).onSnapshot(function(snap){
     if(!snap.exists) return;
     const data = snap.data();
+    if(typeof data.balance === 'number' && !unlimitedAccount.d && data.balance !== driverBalance){
+      driverBalance = data.balance;
+      renderBalanceUI();
+    }
     let nameOrPhoneChanged = false;
     if(data.name && data.name !== currentUser.d.name){ currentUser.d.name = data.name; nameOrPhoneChanged = true; }
     if(data.phone!=null && data.phone !== currentUser.d.phone){ currentUser.d.phone = data.phone; nameOrPhoneChanged = true; }
@@ -3162,7 +3203,8 @@ const LANG_DICT = {
   online_hint: { pt:'Ativa para receber pedidos', en:'Turn on to receive ride requests', es:'Actívalo para recibir pedidos' },
   lbl_commission_balance: { pt:'Saldo de comissão', en:'Commission balance', es:'Saldo de comisión' },
   btn_recharge: { pt:'Recarregar', en:'Top up', es:'Recargar' },
-  balance_note: { pt:'A Lux Transfers retém 10% do valor de cada corrida, descontado automaticamente deste saldo. Sem saldo, deixa de receber novos pedidos.', en:'Lux Transfers withholds 10% of each ride, automatically deducted from this balance. Without balance, you stop receiving new requests.', es:'Lux Transfers retiene el 10% del valor de cada carrera, descontado automáticamente de este saldo. Sin saldo, dejas de recibir nuevos pedidos.' }
+  balance_note: { pt:'A Lux Transfers retém 10% do valor de cada corrida, descontado automaticamente deste saldo. Sem saldo, deixa de receber novos pedidos.', en:'Lux Transfers withholds 10% of each ride, automatically deducted from this balance. Without balance, you stop receiving new requests.', es:'Lux Transfers retiene el 10% del valor de cada carrera, descontado automáticamente de este saldo. Sin saldo, dejas de recibir nuevos pedidos.' },
+  balance_note_negative: { pt:'Saldo negativo: {amount} — a diferença será descontada automaticamente no próximo carregamento. Não vais receber novos pedidos até recarregares.', en:'Negative balance: {amount} — the difference will be automatically deducted from your next top-up. You won\'t receive new requests until you top up.', es:'Saldo negativo: {amount} — la diferencia se descontará automáticamente en la próxima recarga. No recibirás nuevos pedidos hasta recargar.' }
 };
 let currentLang = 'pt';
 function setLanguage(lang){
@@ -4718,7 +4760,8 @@ async function scheduleRideForLater(){
     price: selectedVehicle.price,
     createdAt: firebase.firestore.FieldValue.serverTimestamp(),
     updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-  }).then(function(){
+  }).then(function(ref){
+    watchReservation(ref.id);
     resetClientFlow();
     goTo('c-home');
     toast('c-home', '✓ Reserva confirmada para ' + scheduledForDate.toLocaleDateString('pt-PT') + ' às ' + scheduledForDate.toLocaleTimeString('pt-PT',{hour:'2-digit',minute:'2-digit'}) + '.');
@@ -4726,6 +4769,63 @@ async function scheduleRideForLater(){
     console.warn('Falha ao criar reserva:', e);
     toast('c-vehicles', 'Não foi possível criar a reserva. Tenta novamente.');
   });
+}
+/* Vigia uma reserva própria independentemente do fluxo de viagem "ao vivo"
+   (clientRideId/listenToClientRide), para não confundir uma reserva ainda
+   por acontecer daqui a horas/dias com uma viagem em curso. Assim que um
+   motorista aceita (status:'reserved'), mostra logo o nome/foto/veículo/
+   matrícula ao cliente. Quando a reserva for ativada como viagem real
+   (status:'accepted'), entrega ao fluxo normal de viagem ao vivo. */
+var reservationWatchers = reservationWatchers || {};
+var shownReservationConfirmations = shownReservationConfirmations || new Set();
+function watchReservation(rideId){
+  if(!rideId || reservationWatchers[rideId]) return;
+  const col = ridesCollection();
+  if(!col) return;
+  reservationWatchers[rideId] = col.doc(rideId).onSnapshot(function(doc){
+    if(!doc.exists) return;
+    const ride = doc.data();
+    if(ride.status === 'reserved' && !shownReservationConfirmations.has(rideId)){
+      shownReservationConfirmations.add(rideId);
+      showReservationConfirmedOverlay(ride);
+    } else if(ride.status === 'accepted'){
+      stopWatchingReservation(rideId);
+      if(!clientRideId){
+        clientRideId = rideId;
+        clientLastHandledRideStatus = null;
+        selectedVehicle = VEHICLES.find(function(v){ return v.id === ride.vehicleId; }) || selectedVehicle;
+        listenToClientRide(rideId);
+      }
+    } else if(ride.status === 'cancelled'){
+      stopWatchingReservation(rideId);
+      toast('c-home', 'A reserva foi cancelada.');
+    } else if(ride.status === 'completed'){
+      stopWatchingReservation(rideId);
+    }
+  }, function(e){ console.warn('Falha ao vigiar reserva:', e); });
+}
+function stopWatchingReservation(rideId){
+  if(reservationWatchers[rideId]){ reservationWatchers[rideId](); delete reservationWatchers[rideId]; }
+}
+function showReservationConfirmedOverlay(ride){
+  const nameEl = document.getElementById('resv-driver-name');
+  if(nameEl) nameEl.textContent = ride.driverName || 'Motorista Lux';
+  const vLabel = [ride.vehicleBrand, ride.vehicleModel].filter(Boolean).join(' ') || ride.vehicleName || 'Veículo Lux';
+  const carEl = document.getElementById('resv-car-name');
+  if(carEl) carEl.textContent = vLabel + (ride.vehicleColor ? (' · ' + ride.vehicleColor) : '');
+  const plateEl = document.getElementById('resv-plate');
+  if(plateEl) plateEl.textContent = ride.vehiclePlate || '—';
+  setDriverAvatar('resv-avatar', ride.driverPhotoUrl, ride.driverName);
+  const whenEl = document.getElementById('resv-when');
+  const sf = ride.scheduledFor && ride.scheduledFor.toDate ? ride.scheduledFor.toDate() : null;
+  if(whenEl) whenEl.textContent = sf ? ('Reserva para ' + sf.toLocaleDateString('pt-PT') + ' às ' + sf.toLocaleTimeString('pt-PT',{hour:'2-digit',minute:'2-digit'})) : 'Reserva confirmada';
+  const overlay = document.getElementById('reservation-confirmed-overlay');
+  if(overlay) overlay.classList.add('show');
+  if(typeof playStatusBeep === 'function'){ try{ playStatusBeep(); }catch(e){} }
+}
+function closeReservationConfirmedOverlay(){
+  const overlay = document.getElementById('reservation-confirmed-overlay');
+  if(overlay) overlay.classList.remove('show');
 }
 /* Corre periodicamente enquanto a app estiver aberta (ver setInterval mais
    abaixo, junto à inicialização). Procura reservas próprias ainda por
@@ -4736,7 +4836,14 @@ async function scheduleRideForLater(){
 function checkMyScheduledRides(){
   const col = ridesCollection();
   const u = currentUser.c;
-  if(!col || !u || !u.email || clientRideId) return; // não interrompe uma viagem já em curso
+  if(!col || !u || !u.email) return;
+  // Reatacha o vigilante a reservas já aceites por um motorista mas ainda
+  // não vigiadas nesta sessão (ex.: a app foi fechada e reaberta depois de
+  // o motorista ter aceite) — para o cliente não perder a confirmação.
+  col.where('clientEmail', '==', u.email).where('status', '==', 'reserved').get().then(function(snap){
+    snap.forEach(function(doc){ watchReservation(doc.id); });
+  }).catch(function(e){ console.warn('Falha ao verificar reservas aceites:', e); });
+  if(clientRideId) return; // não interrompe uma viagem já em curso
   const limitTs = firebase.firestore.Timestamp.fromDate(new Date(Date.now() + SCHEDULE_ACTIVATION_WINDOW_MINUTES * 60000));
   col.where('clientEmail', '==', u.email).where('status', '==', 'scheduled').get().then(function(snap){
     if(snap.empty) return;
@@ -5089,13 +5196,39 @@ function resetDriverFlow(){
   showRealSingleLocation('map-driver-home', LUX_PLACES.near);
   if(typeof listenDriverNameRequest==='function') listenDriverNameRequest();
   if(typeof listenDriverProfile==='function') listenDriverProfile();
+  if(typeof refreshReservationsBanner==='function') refreshReservationsBanner();
 }
 function renderBalanceUI(){
   const low = driverBalance < MIN_BALANCE_TO_RECEIVE;
+  const negative = driverBalance < 0 && !unlimitedAccount.d;
   const amountEl = document.getElementById('balance-amount');
   amountEl.textContent = unlimitedAccount.d ? '∞' : maskedOrValue(driverBalance);
   document.getElementById('balance-fill').style.width = Math.max(0, Math.min(100, (driverBalance/MAX_BALANCE)*100)) + '%';
   document.getElementById('balance-card').classList.toggle('low', low);
+  document.getElementById('balance-card').classList.toggle('negative', negative);
+  const noteEl = document.getElementById('balance-note');
+  if(noteEl){
+    const key = negative ? 'balance_note_negative' : 'balance_note';
+    noteEl.setAttribute('data-i18n', key);
+    const entry = LANG_DICT[key];
+    let text = entry ? (entry[currentLang] || entry.pt) : '';
+    if(negative) text = text.replace('{amount}', fmtEur(driverBalance));
+    noteEl.textContent = text;
+  }
+}
+/* Grava o saldo corrente do motorista em drivers/{id} (campo "balance"),
+   para que sobreviva a fechar/reabrir a app — antes disto driverBalance
+   era só uma variável em memória, reiniciada em 4.00 a cada carregamento.
+   Chamada após qualquer alteração ao saldo (comissão, gorjeta, recarga). */
+function persistDriverBalance(){
+  if(unlimitedAccount.d) return;
+  try{
+    const db = initFirestore();
+    if(!db || !currentUser.d || !currentUser.d.email) return;
+    const id = driverDocId(currentUser.d.email);
+    db.collection('drivers').doc(id).set({ balance: driverBalance }, { merge:true })
+      .catch(function(e){ console.warn('Falha ao gravar saldo:', e); });
+  }catch(e){ console.warn('Falha ao gravar saldo:', e); }
 }
 
 /* ===================== COMUNICAÇÃO — MOTORISTA (chamada real + chat) =====================
@@ -5386,7 +5519,11 @@ function startListeningForRides(){
   const myId = (currentUser.d && currentUser.d.email) ? driverDocId(currentUser.d.email) : null;
   if(!myId) return false;
   ridesListUnsub = col.where('status','==','searching').where('offerDriverId','==', myId).onSnapshot(function(snapshot){
+    // Mesma regra usada para ficar online: sem saldo suficiente, o
+    // motorista não recebe novos pedidos, mesmo que já estivesse online
+    // quando o saldo caiu (ex.: comissão de uma corrida anterior).
     if(!isOnline || driverRideId || document.getElementById('req-overlay').classList.contains('show')) return;
+    if(!unlimitedAccount.d && driverBalance < MIN_BALANCE_TO_RECEIVE) return;
     let picked = null;
     snapshot.forEach(function(doc){
       if(picked) return;
@@ -5508,7 +5645,11 @@ function selectRecharge(el, val){
 function confirmRecharge(){
   closeRecharge();
   openPayment('d', pendingRechargeAmount, function(){
+    // Se o saldo estiver negativo (dívida de comissão de uma corrida
+    // anterior), a recarga acerta a dívida primeiro automaticamente —
+    // é uma simples soma, ex.: -8,40€ + 20€ = 11,60€ disponíveis.
     driverBalance += pendingRechargeAmount;
+    persistDriverBalance();
     renderBalanceUI();
     if(typeof recordDriverRecharge==='function') recordDriverRecharge(pendingRechargeAmount);
     toast('d-home', `Saldo recarregado: +${fmtEur(pendingRechargeAmount)}`);
@@ -5651,6 +5792,238 @@ function acceptRequest(){
     }, 900);
   }
 }
+/* ===================== RESERVAS FUTURAS (aceitar/claim) =====================
+   O cliente vê a reserva aparecer de imediato a todos os motoristas assim
+   que a cria (status:'scheduled', sem motorista atribuído). O primeiro
+   motorista a tocar em "Aceitar reserva" fica responsável por ela
+   (status:'reserved', driverId preenchido) — o cliente é notificado de
+   imediato com o nome/foto/veículo do motorista. 30 min antes da hora
+   marcada, o motorista já atribuído recebe um lembrete; se ninguém tiver
+   aceite até lá, entra em segurança no despacho automático sequencial já
+   existente (ver checkMyScheduledRides no lado do cliente), para a reserva
+   nunca ficar sem motorista.
+   A aceitação usa uma transação Firestore (runTransaction) para evitar que
+   dois motoristas cliquem "Aceitar" ao mesmo tempo e fiquem ambos
+   atribuídos à mesma reserva. As duas queries abaixo usam sempre uma única
+   condição de igualdade para não precisar de índice composto novo, tal como
+   o histórico de viagens — a ordenação por data é feita no cliente depois
+   de obter os documentos. As reservas ainda por aceitar (abertas) filtram
+   por status=='scheduled', visíveis a qualquer motorista (é assim que
+   conseguem candidatar-se). As reservas já minhas filtram por driverId==myId
+   (não por status), para o pedido ao Firestore nunca trazer dados de
+   reservas aceites por OUTROS motoristas — só as próprias. */
+function fetchOpenReservations(){
+  const col = ridesCollection();
+  if(!col) return Promise.resolve([]);
+  return col.where('status', '==', 'scheduled').get().then(function(snap){
+    const nowMs = Date.now();
+    return snap.docs.map(function(doc){
+      const r = doc.data();
+      const ms = r.scheduledFor && r.scheduledFor.toMillis ? r.scheduledFor.toMillis() : null;
+      return { id: doc.id, data: r, ms: ms };
+    }).filter(function(item){ return item.ms != null && item.ms > nowMs; })
+      .sort(function(a, b){ return a.ms - b.ms; });
+  }).catch(function(err){ console.warn('Falha ao carregar reservas abertas:', err); return []; });
+}
+/* Só traz do Firestore corridas atribuídas a ESTE motorista (driverId==myId)
+   — nunca reservas de outros motoristas. A condição de igualdade tem de ser
+   driverId (não status), senão o pedido ao Firestore devolveria reservas já
+   aceites por OUTROS motoristas (nome/telefone/morada do cliente incluídos)
+   antes de as filtrar no telemóvel — uma fuga de privacidade, mesmo que a
+   lista não as mostrasse no ecrã. O filtro por status:'reserved' é feito
+   aqui já só sobre os documentos deste motorista. */
+function fetchMyReservations(){
+  const col = ridesCollection();
+  const myId = (currentUser.d && currentUser.d.email) ? driverDocId(currentUser.d.email) : null;
+  if(!col || !myId) return Promise.resolve([]);
+  return col.where('driverId', '==', myId).get().then(function(snap){
+    return snap.docs.map(function(doc){
+      const r = doc.data();
+      const ms = r.scheduledFor && r.scheduledFor.toMillis ? r.scheduledFor.toMillis() : null;
+      return { id: doc.id, data: r, ms: ms };
+    }).filter(function(item){ return item.data.status === 'reserved'; })
+      .sort(function(a, b){ return (a.ms||0) - (b.ms||0); });
+  }).catch(function(err){ console.warn('Falha ao carregar as minhas reservas:', err); return []; });
+}
+function refreshReservationsBanner(){
+  const banner = document.getElementById('d-reservations-banner');
+  if(!banner) return;
+  fetchOpenReservations().then(function(items){
+    const textEl = document.getElementById('d-reservations-banner-text');
+    if(items.length){
+      banner.classList.add('show');
+      if(textEl) textEl.textContent = items.length === 1 ? 'Tens 1 reserva por aceitar' : ('Tens ' + items.length + ' reservas por aceitar');
+    } else {
+      banner.classList.remove('show');
+    }
+  });
+}
+function openDriverReservations(){
+  goTo('d-reservations');
+  loadDriverReservations();
+}
+function reservationRowHtml(item, opts){
+  const r = item.data;
+  const when = new Date(item.ms);
+  const dateStr = when.toLocaleDateString('pt-PT', { day:'2-digit', month:'2-digit', year:'numeric' }) + ' · ' + when.toLocaleTimeString('pt-PT', { hour:'2-digit', minute:'2-digit' });
+  const route = [r.origin, r.destination].filter(Boolean).join(' → ');
+  const fare = r.price != null ? fmtEur(r.price) : '—';
+  return '<div class="settings-row" style="flex-direction:column; align-items:stretch; gap:6px; cursor:default;">' +
+    '<div style="display:flex; justify-content:space-between; width:100%; flex-wrap:wrap; gap:4px;">' +
+      '<span class="s-lbl" style="font-weight:700;">' + dateStr + '</span>' +
+      '<span class="s-val" style="color:var(--gold); font-weight:700;">' + fare + '</span>' +
+    '</div>' +
+    (route ? ('<div style="font-size:12px; color:var(--muted); overflow-wrap:anywhere;">' + route + '</div>') : '') +
+    '<div style="font-size:11px; color:var(--muted);">' + (r.vehicleName || 'Veículo Lux') + '</div>' +
+    (opts && opts.mine
+      ? '<div style="font-size:12px; color:#5fd68a; font-weight:700; margin-top:4px;">✓ Reserva aceite — recebes um lembrete 30 min antes</div>' +
+        '<button class="btn btn-gold" style="margin-top:6px; padding:8px; font-size:12.5px;" onclick="startReservedTrip(\'' + item.id + '\')"' + (driverRideId ? ' disabled' : '') + '>Iniciar viagem</button>'
+      : '<button class="btn btn-outline" style="margin-top:4px; padding:8px; font-size:12.5px;" onclick="acceptReservation(\'' + item.id + '\', this)">Aceitar reserva</button>'
+    ) +
+  '</div>';
+}
+// Guarda os dados completos das reservas já aceites por este motorista,
+// obtidos na última carga da lista — usado por startReservedTrip() para não
+// ter de voltar a consultar o Firestore só para saber a morada/paragens.
+let myReservationsCache = {};
+function loadDriverReservations(){
+  const listEl = document.getElementById('d-reservations-list');
+  const emptyEl = document.getElementById('d-reservations-empty');
+  if(!listEl) return;
+  listEl.innerHTML = '<div style="text-align:center; color:var(--muted); margin-top:20px; font-size:13px;">A carregar…</div>';
+  if(emptyEl) emptyEl.style.display = 'none';
+  Promise.all([fetchMyReservations(), fetchOpenReservations()]).then(function(results){
+    const mine = results[0], open = results[1];
+    myReservationsCache = {};
+    mine.forEach(function(item){ myReservationsCache[item.id] = item.data; });
+    if(!mine.length && !open.length){ listEl.innerHTML = ''; if(emptyEl) emptyEl.style.display = 'block'; return; }
+    let html = '';
+    if(mine.length){
+      html += '<div style="font-size:11.5px; color:var(--gold); font-weight:700; text-transform:uppercase; margin:4px 0 6px;">As tuas reservas aceites</div>';
+      html += mine.map(function(item){ return reservationRowHtml(item, { mine:true }); }).join('');
+    }
+    if(open.length){
+      html += '<div style="font-size:11.5px; color:var(--muted); font-weight:700; text-transform:uppercase; margin:14px 0 6px;">Reservas por aceitar</div>';
+      html += open.map(function(item){ return reservationRowHtml(item, { mine:false }); }).join('');
+    }
+    listEl.innerHTML = html;
+  });
+}
+/* Aceitação atómica: só grava se a reserva ainda estiver 'scheduled' (sem
+   motorista) — se dois motoristas clicarem quase ao mesmo tempo, só o
+   primeiro a chegar ao Firestore consegue, o segundo recebe um aviso e a
+   lista atualiza-se sozinha para já não a mostrar como disponível. */
+function acceptReservation(rideId, btnEl){
+  const db = initFirestore();
+  const col = ridesCollection();
+  if(!db || !col || !rideId) return;
+  const myId = driverDocId(currentUser.d.email);
+  if(btnEl){ btnEl.disabled = true; btnEl.textContent = 'A aceitar…'; }
+  const ref = col.doc(rideId);
+  db.runTransaction(function(tx){
+    return tx.get(ref).then(function(snap){
+      if(!snap.exists || snap.data().status !== 'scheduled'){
+        throw new Error('already-taken');
+      }
+      tx.update(ref, {
+        status: 'reserved', driverName: currentUser.d.name, driverPhone: currentUser.d.phone,
+        driverEmail: currentUser.d.email, driverId: myId,
+        vehicleBrand: driverVehicle.brand || '', vehicleModel: driverVehicle.model || '',
+        vehicleColor: driverVehicle.color || '', vehiclePlate: driverVehicle.plate || '',
+        driverPhotoUrl: userPhoto.d || '',
+        reservedAt: firebase.firestore.FieldValue.serverTimestamp(),
+        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+      });
+    });
+  }).then(function(){
+    toast('d-reservations', 'Reserva aceite! Vais receber um lembrete 30 min antes.');
+    loadDriverReservations();
+    refreshReservationsBanner();
+  }).catch(function(e){
+    if(e && e.message === 'already-taken'){
+      toast('d-reservations', 'Essa reserva já foi aceite por outro motorista.');
+    } else {
+      console.warn('Falha ao aceitar reserva:', e);
+      toast('d-reservations', 'Não foi possível aceitar a reserva. Tenta novamente.');
+    }
+    loadDriverReservations();
+  });
+}
+/* Transforma uma reserva já aceite (status:'reserved') na viagem ao vivo
+   (status:'accepted'), reutilizando exatamente o mesmo fluxo de "ir buscar
+   o cliente" (mapa/rota/ETA/chat) usado para pedidos imediatos em
+   acceptRequest() — a diferença é que aqui o motorista decide quando
+   arrancar (normalmente perto da hora marcada, avisado pelo lembrete),
+   em vez de reagir a uma oferta com contagem decrescente. */
+function startReservedTrip(rideId){
+  if(driverRideId){ toast('d-reservations', 'Já tens uma viagem em curso — termina-a primeiro.'); return; }
+  const data = myReservationsCache[rideId];
+  if(!data || !rideId){ toast('d-reservations', 'Não foi possível carregar os dados da reserva.'); return; }
+  const col = ridesCollection();
+  if(!col) return;
+  driverRideId = rideId;
+  driverRideData = data;
+  goTo('d-to-pickup');
+  setDriverRidePhase('pickup');
+  col.doc(rideId).set({
+    status:'accepted',
+    acceptedAt: firebase.firestore.FieldValue.serverTimestamp(),
+    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+  }, { merge:true }).catch(function(e){ console.warn('Falha ao iniciar viagem da reserva:', e); });
+  const nameEl = document.querySelector('#d-to-pickup .driver-card .name');
+  if(nameEl) nameEl.textContent = data.clientName || 'Cliente Lux';
+  startDriverChatWatch();
+  const pickupPos = ridePickupPos();
+  const originPos = (typeof lastDriverLatLng!=='undefined' && lastDriverLatLng) ? lastDriverLatLng : LUX_PLACES.near;
+  if(!showRealRoute('map-d-pickup', originPos, pickupPos, true)){
+    drawRoute(document.getElementById('svg-route-d-pickup'), 30,25,70,70,'#FFC94D');
+    placePins(document.getElementById('map-d-pickup'), 70,70,70,70);
+    const car = document.getElementById('car-d-pickup');
+    car.style.left='30%'; car.style.top='25%';
+  }
+  const hasRealPickupCoords = data.pickupLat!=null && data.pickupLng!=null;
+  if(hasRealPickupCoords && lastDriverLatLng){
+    updateDriverPickupEtaDisplay(lastDriverLatLng.lat, lastDriverLatLng.lng);
+  } else {
+    let s=3;
+    const etaEl = document.getElementById('d-pickup-eta');
+    if(etaEl) etaEl.textContent = s+' min';
+    const iv = setInterval(()=>{
+      s--;
+      if(s<=0){ clearInterval(iv); if(etaEl) etaEl.textContent = 'Chegou'; }
+      else if(etaEl) etaEl.textContent = s+' min';
+    }, 900);
+  }
+  toast('d-to-pickup', 'Viagem iniciada — segue para o cliente.');
+}
+/* ===================== LEMBRETE 30 MIN ANTES DA RESERVA =====================
+   Corre periodicamente (ver setInterval junto à inicialização) enquanto a
+   app estiver aberta. Para cada reserva já aceite por este motorista
+   (status:'reserved', driverId==myId) cujo horário esteja agora a menos de
+   30 min, dispara um lembrete (toast + som) uma única vez — guardado em
+   remindedReservationIds para não repetir a cada verificação. */
+const remindedReservationIds = new Set();
+function checkReservationReminders(){
+  if(!currentUser.d || !currentUser.d.email) return;
+  fetchMyReservations().then(function(items){
+    const nowMs = Date.now();
+    items.forEach(function(item){
+      if(remindedReservationIds.has(item.id)) return;
+      if(item.ms == null) return;
+      if(item.ms - nowMs > SCHEDULE_ACTIVATION_WINDOW_MINUTES_D * 60000) return;
+      remindedReservationIds.add(item.id);
+      const when = new Date(item.ms);
+      const hhmm = when.toLocaleTimeString('pt-PT', { hour:'2-digit', minute:'2-digit' });
+      toast(currentDriverScreenId() || 'd-home', '⏰ Reserva às ' + hhmm + ' — prepara-te, é já a seguir!');
+      if(typeof playRequestSound === 'function'){ try{ playRequestSound(); }catch(e){} }
+    });
+  });
+}
+// Mesma janela de ativação usada no lado do cliente (checkMyScheduledRides)
+// — mantida com nome próprio aqui para não colidir com
+// SCHEDULE_ACTIVATION_WINDOW_MINUTES (cliente) neste ficheiro combinado.
+const SCHEDULE_ACTIVATION_WINDOW_MINUTES_D = 30;
+
 let arrivedFillTimer = null;
 function markArrived(el){
   el.classList.add('filled');
@@ -5926,7 +6299,12 @@ function markTripComplete(el){
     const commission = totalFare * COMMISSION_RATE;
     driverEarnings += totalFare;
     driverTrips += 1;
-    if(!unlimitedAccount.d){ driverBalance = Math.max(0, driverBalance - commission); }
+    // O saldo pode ficar negativo aqui de propósito: a corrida já foi feita
+    // e o cliente já pagou, por isso não faz sentido travar o motorista a
+    // meio da viagem por a comissão (10%) ultrapassar o saldo que tinha
+    // antes de aceitar. A diferença fica registada como dívida e é
+    // descontada automaticamente da próxima recarga (ver confirmRecharge()).
+    if(!unlimitedAccount.d){ driverBalance = driverBalance - commission; persistDriverBalance(); }
     document.getElementById('d-earn-amount').textContent = fmtEur(totalFare);
     const waitRow = document.getElementById('d-wait-row');
     if(waitRow) waitRow.style.display = wait > 0 ? 'flex' : 'none';
@@ -6048,6 +6426,7 @@ function watchForTip(rideId){
 function creditDriverTip(rideId, tip, clientName){
   driverBalance += tip;
   driverEarnings += tip;
+  persistDriverBalance();
   const earnEl = document.getElementById('stat-earn');
   if(earnEl) earnEl.textContent = maskedOrValue(driverEarnings);
   renderBalanceUI();
@@ -6108,6 +6487,8 @@ renderVehicleList();
 if(typeof handleIncomingPasswordResetLink==='function') handleIncomingPasswordResetLink();
 // Verifica reservas por ativar a cada minuto, enquanto a app estiver aberta.
 if(typeof checkMyScheduledRides === 'function') setInterval(checkMyScheduledRides, 60000);
+// Lembrete ao motorista 30 min antes de cada reserva já aceite por ele.
+if(typeof checkReservationReminders === 'function') setInterval(checkReservationReminders, 60000);
 </script>
 </body>
 </html>

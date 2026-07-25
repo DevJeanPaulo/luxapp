@@ -1262,6 +1262,26 @@
         </div>
       </div>
 
+      <div class="req-overlay" id="reservation-confirmed-overlay">
+        <div class="req-sheet">
+          <h1 class="title" style="text-align:center;">✓ Reserva aceite</h1>
+          <p style="text-align:center; color:var(--muted); margin:0 0 16px;" id="resv-when">--</p>
+          <div class="driver-card">
+            <div class="avatar" id="resv-avatar">RA</div>
+            <div class="driver-info">
+              <div class="name" id="resv-driver-name">Motorista Lux</div>
+              <div class="meta" id="resv-car-name">Veículo Lux</div>
+            </div>
+          </div>
+          <div class="settings-row" style="cursor:default;">
+            <span class="s-lbl">Matrícula</span>
+            <span class="s-val" id="resv-plate">—</span>
+          </div>
+          <p style="font-size:12px; color:var(--muted); text-align:center; margin:16px 0 0;">O motorista vai receber um lembrete 30 min antes da hora marcada.</p>
+          <button class="btn btn-gold" style="margin-top:16px;" onclick="closeReservationConfirmedOverlay()">Fechar</button>
+        </div>
+      </div>
+
       <div class="chat-overlay" id="chat-overlay">
         <div class="chat-header">
           <div class="avatar" id="chat-avatar">RA</div>
@@ -3642,7 +3662,8 @@ async function scheduleRideForLater(){
     price: selectedVehicle.price,
     createdAt: firebase.firestore.FieldValue.serverTimestamp(),
     updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-  }).then(function(){
+  }).then(function(ref){
+    watchReservation(ref.id);
     resetClientFlow();
     goTo('c-home');
     toast('c-home', '✓ Reserva confirmada para ' + scheduledForDate.toLocaleDateString('pt-PT') + ' às ' + scheduledForDate.toLocaleTimeString('pt-PT',{hour:'2-digit',minute:'2-digit'}) + '.');
@@ -3650,6 +3671,64 @@ async function scheduleRideForLater(){
     console.warn('Falha ao criar reserva:', e);
     toast('c-vehicles', 'Não foi possível criar a reserva. Tenta novamente.');
   });
+}
+/* Vigia uma reserva própria (própria doc em rides/{id}) independentemente
+   do fluxo de viagem "ao vivo" (currentRideId/listenToRide), para não
+   confundir uma reserva ainda por acontecer daqui a horas/dias com uma
+   viagem em curso. Assim que um motorista aceita (status:'reserved'),
+   mostra logo o nome/foto/veículo/matrícula ao cliente. Quando a Lux
+   Transfers ativar a reserva como viagem real (status:'accepted'), entrega
+   ao fluxo normal de viagem ao vivo (mesmo padrão do despacho automático). */
+var reservationWatchers = reservationWatchers || {};
+var shownReservationConfirmations = shownReservationConfirmations || new Set();
+function watchReservation(rideId){
+  if(!rideId || reservationWatchers[rideId]) return;
+  const col = ridesCollection();
+  if(!col) return;
+  reservationWatchers[rideId] = col.doc(rideId).onSnapshot(function(doc){
+    if(!doc.exists) return;
+    const ride = doc.data();
+    if(ride.status === 'reserved' && !shownReservationConfirmations.has(rideId)){
+      shownReservationConfirmations.add(rideId);
+      showReservationConfirmedOverlay(ride);
+    } else if(ride.status === 'accepted'){
+      stopWatchingReservation(rideId);
+      if(!currentRideId){
+        currentRideId = rideId;
+        lastHandledRideStatus = null;
+        selectedVehicle = VEHICLES.find(function(v){ return v.id === ride.vehicleId; }) || selectedVehicle;
+        listenToRide(rideId);
+      }
+    } else if(ride.status === 'cancelled'){
+      stopWatchingReservation(rideId);
+      toast('c-home', 'A reserva foi cancelada.');
+    } else if(ride.status === 'completed'){
+      stopWatchingReservation(rideId);
+    }
+  }, function(e){ console.warn('Falha ao vigiar reserva:', e); });
+}
+function stopWatchingReservation(rideId){
+  if(reservationWatchers[rideId]){ reservationWatchers[rideId](); delete reservationWatchers[rideId]; }
+}
+function showReservationConfirmedOverlay(ride){
+  const nameEl = document.getElementById('resv-driver-name');
+  if(nameEl) nameEl.textContent = ride.driverName || 'Motorista Lux';
+  const vLabel = [ride.vehicleBrand, ride.vehicleModel].filter(Boolean).join(' ') || ride.vehicleName || 'Veículo Lux';
+  const carEl = document.getElementById('resv-car-name');
+  if(carEl) carEl.textContent = vLabel + (ride.vehicleColor ? (' · ' + ride.vehicleColor) : '');
+  const plateEl = document.getElementById('resv-plate');
+  if(plateEl) plateEl.textContent = ride.vehiclePlate || '—';
+  setDriverAvatar('resv-avatar', ride.driverPhotoUrl, ride.driverName);
+  const whenEl = document.getElementById('resv-when');
+  const sf = ride.scheduledFor && ride.scheduledFor.toDate ? ride.scheduledFor.toDate() : null;
+  if(whenEl) whenEl.textContent = sf ? ('Reserva para ' + sf.toLocaleDateString('pt-PT') + ' às ' + sf.toLocaleTimeString('pt-PT',{hour:'2-digit',minute:'2-digit'})) : 'Reserva confirmada';
+  const overlay = document.getElementById('reservation-confirmed-overlay');
+  if(overlay) overlay.classList.add('show');
+  if(typeof playStatusBeep === 'function'){ try{ playStatusBeep(); }catch(e){} }
+}
+function closeReservationConfirmedOverlay(){
+  const overlay = document.getElementById('reservation-confirmed-overlay');
+  if(overlay) overlay.classList.remove('show');
 }
 /* Corre periodicamente enquanto a app estiver aberta (ver setInterval mais
    abaixo, junto à inicialização). Procura reservas próprias ainda por
@@ -3660,7 +3739,14 @@ async function scheduleRideForLater(){
 function checkMyScheduledRides(){
   const col = ridesCollection();
   const u = currentUser.c;
-  if(!col || !u || !u.email || currentRideId) return; // não interrompe uma viagem já em curso
+  if(!col || !u || !u.email) return;
+  // Reatacha o vigilante a reservas já aceites por um motorista mas ainda
+  // não vigiadas nesta sessão (ex.: a app foi fechada e reaberta depois de
+  // o motorista ter aceite) — para o cliente não perder a confirmação.
+  col.where('clientEmail', '==', u.email).where('status', '==', 'reserved').get().then(function(snap){
+    snap.forEach(function(doc){ watchReservation(doc.id); });
+  }).catch(function(e){ console.warn('Falha ao verificar reservas aceites:', e); });
+  if(currentRideId) return; // não interrompe uma viagem já em curso
   const limitTs = firebase.firestore.Timestamp.fromDate(new Date(Date.now() + SCHEDULE_ACTIVATION_WINDOW_MINUTES * 60000));
   col.where('clientEmail', '==', u.email).where('status', '==', 'scheduled').get().then(function(snap){
     if(snap.empty) return;
