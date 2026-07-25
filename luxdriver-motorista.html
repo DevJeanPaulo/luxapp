@@ -648,8 +648,10 @@
     display:flex; align-items:center; justify-content:center; font-size:11px;
   }
   .req-route{ margin:14px 0; }
-  .req-route .r-item{ display:flex; gap:10px; font-size:13px; padding:6px 0; }
-  .req-route .r-item .l{ color:var(--muted); width:60px; flex-shrink:0; }
+  .req-route .r-item, #d-trip-stops-rows .r-item{ display:flex; gap:10px; font-size:13px; padding:6px 0; }
+  .req-route .r-item .l, #d-trip-stops-rows .r-item .l{ color:var(--muted); width:60px; flex-shrink:0; white-space:nowrap; }
+  .req-route .r-item span:last-child, #d-trip-stops-rows .r-item span:last-child{ overflow-wrap:anywhere; }
+  #d-trip-stops-rows .r-item{ border-top:1px solid var(--border); }
   .req-fare{
     display:flex; justify-content:space-between; align-items:center;
     background:var(--panel2); border-radius:var(--radius-md); padding:14px; margin-bottom:16px;
@@ -1223,7 +1225,7 @@
             <div class="req-countdown-bar"><div class="fill" id="req-countdown-fill"></div></div>
             <div class="req-timer">
               <div class="ring" id="req-ring" data-s="10" style="--pct:100"></div>
-              <span style="font-size:12.5px; color:var(--muted); text-transform:uppercase; letter-spacing:.06em;">Novo pedido</span>
+              <span style="font-size:12.5px; color:var(--muted); text-transform:uppercase; letter-spacing:.06em;" id="req-timer-label">Novo pedido</span>
             </div>
             <div class="driver-card" style="margin-bottom:0;">
               <div class="avatar">JP</div>
@@ -1234,6 +1236,7 @@
             </div>
             <div class="req-route">
               <div class="r-item"><span class="l">Recolha</span><span id="req-origin">Av. da Liberdade, Lisboa</span></div>
+              <div id="req-stops-rows"></div>
               <div class="r-item"><span class="l">Destino</span><span id="req-dest">Aeroporto de Lisboa (LIS)</span></div>
               <div class="r-item"><span class="l">Distância</span><span id="req-distance">12,4 km · 3 min até ao cliente</span></div>
             </div>
@@ -1243,7 +1246,7 @@
                 <div class="lbl" style="font-size:10.5px; color:var(--muted); text-transform:uppercase;">Vai receber</div>
                 <div class="amount">22,40€</div>
               </div>
-              <div style="font-size:12px; color:var(--muted);">Executivo Sedan</div>
+              <div style="font-size:12px; color:var(--muted);" id="req-vehicle-class">Executivo Sedan</div>
             </div>
             <div class="req-actions">
               <button class="btn btn-outline glow-frame" onclick="declineRequestExplicit()">Recusar</button>
@@ -1342,6 +1345,7 @@
             <div style="text-align:right;"><div class="lbl">Destino</div><div style="font-size:13px; font-weight:700;" id="d-trip-dest-label">Aeroporto LIS</div></div>
           </div>
           <div class="stops-banner" id="d-trip-stops-info"><span>🛑</span><span id="d-trip-stops-info-text"></span></div>
+          <div id="d-trip-stops-rows"></div>
           <div class="nav-row">
             <div class="nav-btn" onclick="openNav('google','dest')"><span class="ic">🗺️</span>Google Maps</div>
             <div class="nav-btn" onclick="openNav('waze','dest')"><span class="ic">🧭</span>Waze</div>
@@ -2432,6 +2436,24 @@ function nextPendingTripStop(){
   const completed = (typeof tripStopsCompleted !== 'undefined') ? tripStopsCompleted : 0;
   if(completed < stops.length) return stops[completed];
   return null;
+}
+/* Desenha a morada de cada paragem como uma linha própria do trajeto (estilo
+   Bolt/Uber: Recolha → Paragem 1 → Paragem 2 → Destino), dentro do
+   contentor indicado (id). Se completedCount for passado, marca com ✓ as
+   paragens já concluídas e destaca a próxima por visitar. */
+function renderStopRouteRows(containerId, stops, completedCount){
+  const container = document.getElementById(containerId);
+  if(!container) return;
+  const list = Array.isArray(stops) ? stops.slice(0, MAX_TRIP_STOPS) : [];
+  if(!list.length){ container.innerHTML = ''; return; }
+  const completed = typeof completedCount === 'number' ? completedCount : -1;
+  container.innerHTML = list.map(function(s, i){
+    const addr = (s && s.address) || 'Paragem ' + (i+1);
+    const isDone = completed >= 0 && i < completed;
+    const isNext = completed >= 0 && i === completed;
+    const markStyle = isDone ? 'color:#5fd68a;' : (isNext ? 'color:var(--gold); font-weight:700;' : '');
+    return '<div class="r-item"><span class="l">' + (isDone ? '✓ Paragem ' : 'Paragem ') + (i+1) + '</span><span style="' + markStyle + '">' + addr + '</span></div>';
+  }).join('');
 }
 function openNav(provider, which){
   // Usa sempre as coordenadas reais da corrida quando existem — nunca a
@@ -3620,6 +3642,16 @@ function tryRestoreActiveDriverRide(){
         placePins(document.getElementById('map-d-trip'), 25,75,75,25);
       }
       if(typeof resetStopTimerState==='function') resetStopTimerState();
+      /* Restaura quantas paragens já foram concluídas a partir do próprio
+         documento da corrida (stopsCompleted, gravado em toggleStopTimer) —
+         sem isto, reabrir a app a meio de uma viagem com 2 paragens fazia a
+         navegação voltar sempre à 1ª paragem (já visitada) em vez de ir
+         para a 2ª, porque o progresso local era sempre reposto a zero. */
+      const restoredStops = Array.isArray(ride.stops) ? ride.stops : [];
+      tripTotalStops = restoredStops.length ? Math.min(restoredStops.length, MAX_TRIP_STOPS) : 1;
+      tripStopsCompleted = (typeof ride.stopsCompleted === 'number') ? ride.stopsCompleted : 0;
+      const restoredStopBtn = document.getElementById('stop-timer-btn');
+      if(restoredStopBtn) restoredStopBtn.style.display = (tripStopsCompleted < tripTotalStops) ? '' : 'none';
       if(typeof renderTripStopsInfo==='function') renderTripStopsInfo();
     }
     toast(currentDriverScreenId() || 'd-home', 'Corrida em curso recuperada');
@@ -3666,6 +3698,24 @@ function showRealIncomingRequest(rideId, data){
   if(nameEl) nameEl.textContent = data.clientName || 'Cliente Lux';
   const fareEl = document.querySelector('#req-overlay .req-fare .amount');
   if(fareEl) fareEl.textContent = fmtEur(data.price || 0);
+  // Classe de veículo pedida pelo cliente (gravada em vehicleName ao criar a
+  // corrida) — antes disto o card mostrava sempre o texto fixo "Executivo
+  // Sedan" do HTML, independentemente do que o cliente tinha escolhido.
+  const classEl = document.getElementById('req-vehicle-class');
+  if(classEl) classEl.textContent = data.vehicleName || 'Veículo Lux';
+  // Se esta corrida veio de uma reserva (o cliente agendou com antecedência),
+  // o motorista recebe o pedido tal como um pedido normal, mas com um aviso
+  // extra a dizer que é uma reserva e a que horas foi marcada — assim sabe
+  // que já foi combinada de véspera, não é um pedido espontâneo.
+  const timerLabel = document.getElementById('req-timer-label');
+  if(timerLabel){
+    if(data.scheduledFor && data.scheduledFor.toDate){
+      const when = data.scheduledFor.toDate();
+      timerLabel.textContent = 'Reserva marcada p/ ' + when.toLocaleTimeString('pt-PT',{hour:'2-digit',minute:'2-digit'});
+    } else {
+      timerLabel.textContent = 'Novo pedido';
+    }
+  }
   // Distância/tempo REAIS até ao cliente: Haversine entre a última posição
   // GPS conhecida do motorista e o ponto de recolha do pedido — antes disto
   // o texto ficava sempre com o valor de exemplo do HTML (nunca atualizado).
@@ -3685,7 +3735,10 @@ function showRealIncomingRequest(rideId, data){
     }
   }
   // Aviso imediato de paragem(ns) — o motorista precisa de saber isto já no
-  // pedido, antes de aceitar, tal como a Uber/Bolt mostram.
+  // pedido, antes de aceitar, tal como a Uber/Bolt mostram. Além do aviso,
+  // a morada de cada paragem passa a aparecer como uma linha própria no
+  // trajeto (Recolha → Paragem 1 → Paragem 2 → Destino), tal como a
+  // Bolt/Uber apresentam, em vez de só um texto a avisar "há paragens".
   const stopsInfo = document.getElementById('req-stops-info');
   const stopsInfoText = document.getElementById('req-stops-info-text');
   const stops = Array.isArray(data.stops) ? data.stops : [];
@@ -3693,12 +3746,13 @@ function showRealIncomingRequest(rideId, data){
     if(stops.length){
       stopsInfo.classList.add('show');
       const n = stops.length === 1 ? '1 paragem' : (stops.length + ' paragens');
-      if(stopsInfoText) stopsInfoText.textContent = 'Esta viagem tem ' + n + ': ' + stops.map(function(s){ return s && s.address; }).filter(Boolean).join(' → ');
+      if(stopsInfoText) stopsInfoText.textContent = 'Esta viagem tem ' + n + ' antes do destino final.';
     } else {
       stopsInfo.classList.remove('show');
       if(stopsInfoText) stopsInfoText.textContent = '';
     }
   }
+  renderStopRouteRows('req-stops-rows', stops);
   document.getElementById('req-overlay').classList.add('show');
   playRequestSound();
   let s = 15;
@@ -3985,10 +4039,14 @@ function resetStopTimerState(){
   if(btn){ btn.textContent = '▶ Iniciar parada'; btn.style.display = ''; }
   if(resumeBtn) resumeBtn.style.display = 'none';
   if(completeBtn) completeBtn.style.display = '';
-  if(currentRideId){
-    const col = ridesCollection();
-    if(col) col.doc(currentRideId).set({ stopsCompleted: 0 }, { merge:true }).catch(function(){});
-  }
+  /* Já não escreve stopsCompleted:0 no Firestore aqui — esta função também é
+     chamada ao restaurar uma viagem em curso (app reaberta a meio de uma
+     viagem com paragens), e sobrescrever sempre para 0 apagava o progresso
+     já feito (ex: 1ª paragem concluída), fazendo a navegação "saltar" de
+     volta para uma paragem já visitada em vez de ir para a seguinte. O
+     valor só é escrito quando uma paragem é mesmo concluída (ver
+     toggleStopTimer) ou explicitamente ao iniciar uma viagem nova.
+     Cada corrida é sempre um documento novo, por isso não é preciso zerar. */
   if(typeof updateMovementGatingUI === 'function') updateMovementGatingUI();
 }
 function renderTripStopsInfo(){
@@ -3996,15 +4054,20 @@ function renderTripStopsInfo(){
   const textEl = document.getElementById('d-trip-stops-info-text');
   const stops = (currentRideData && Array.isArray(currentRideData.stops)) ? currentRideData.stops : [];
   tripTotalStops = stops.length ? Math.min(stops.length, MAX_TRIP_STOPS) : 1;
-  if(!info) return;
-  if(stops.length){
-    info.classList.add('show');
-    const n = stops.length === 1 ? '1 paragem' : (stops.length + ' paragens');
-    if(textEl) textEl.textContent = 'Esta viagem tem ' + n + ': ' + stops.map(function(s){ return s && s.address; }).filter(Boolean).join(' → ');
-  } else {
-    info.classList.remove('show');
-    if(textEl) textEl.textContent = '';
+  if(info){
+    if(stops.length){
+      info.classList.add('show');
+      const n = stops.length === 1 ? '1 paragem' : (stops.length + ' paragens');
+      if(textEl) textEl.textContent = 'Esta viagem tem ' + n + ' antes do destino final.';
+    } else {
+      info.classList.remove('show');
+      if(textEl) textEl.textContent = '';
+    }
   }
+  // Lista cada paragem como linha própria (estilo Bolt/Uber), com ✓ nas já
+  // concluídas e destaque a dourado na próxima — assim o motorista vê de
+  // imediato quantas e quais moradas faltam, não só que "há paragens".
+  renderStopRouteRows('d-trip-stops-rows', stops, tripStopsCompleted);
 }
 function endActiveStopTimer(){
   if(!stopWaitActive) return;
@@ -4058,6 +4121,7 @@ function toggleStopTimer(){
       const col = ridesCollection();
       if(col) col.doc(currentRideId).set({ stopsCompleted: tripStopsCompleted, updatedAt: firebase.firestore.FieldValue.serverTimestamp() }, { merge:true }).catch(function(){});
     }
+    if(typeof renderTripStopsInfo==='function') renderTripStopsInfo();
     // O botão "Iniciar parada" fica escondido assim que a paragem termina —
     // só volta se ainda faltarem paragens planeadas por fazer; depois da
     // última, fica escondido pelo resto da viagem.

@@ -1086,6 +1086,22 @@
         <div class="sheet" style="flex:1; display:flex; flex-direction:column; overflow:hidden;">
           <div class="sheet-handle"></div>
           <p class="subtitle" id="route-summary" style="margin-bottom:12px;">Rota calculada</p>
+          <!-- Reserva: o cliente pode pedir a viagem já ou agendar para uma
+               data/hora futura. Corridas agendadas ficam com status
+               "scheduled" e só são despachadas aos motoristas próximos perto
+               da hora marcada, tal como a Uber/Bolt fazem. -->
+          <div class="recharge-amounts" style="margin:0 0 10px;">
+            <div class="chip selected" id="c-timing-now" onclick="setRideTiming('now')">Agora</div>
+            <div class="chip" id="c-timing-later" onclick="setRideTiming('later')">Agendar</div>
+          </div>
+          <div id="c-schedule-wrap" style="display:none; margin-bottom:12px;">
+            <div class="field">
+              <span class="dot-marker d"></span>
+              <span class="field-prefix">Quando</span>
+              <input type="datetime-local" id="c-schedule-datetime" oninput="validateScheduleDatetime()" />
+            </div>
+            <div id="c-schedule-hint" style="font-size:11px; color:var(--muted); margin-top:4px; padding-left:4px;"></div>
+          </div>
           <div class="vehicle-list" id="vehicle-list"></div>
           <button class="btn btn-gold" id="c-confirm-btn" disabled onclick="payThenRequestRide()">Pagar e chamar motorista</button>
         </div>
@@ -1667,6 +1683,72 @@ function bindStopAutocomplete(uid){
   el._acBound = true;
 }
 let selectedVehicle = null;
+/* ===================== RESERVAS (agendar viagem) =====================
+   O cliente pode pedir "Agora" (fluxo normal já existente) ou "Agendar" uma
+   viagem para uma data/hora futura. Corridas agendadas ficam gravadas com
+   status:'scheduled' e scheduledFor (timestamp), e só entram no despacho
+   normal aos motoristas (status:'searching') perto da hora marcada — tal
+   como a Uber/Bolt fazem — através de checkMyScheduledRides(), que corre
+   periodicamente enquanto a app estiver aberta. */
+let rideTiming = 'now';
+let scheduledForDate = null;
+const SCHEDULE_MIN_LEAD_MINUTES = 30;
+const SCHEDULE_MAX_LEAD_DAYS = 30;
+const SCHEDULE_ACTIVATION_WINDOW_MINUTES = 30;
+function setRideTiming(mode){
+  rideTiming = mode;
+  const nowBtn = document.getElementById('c-timing-now');
+  const laterBtn = document.getElementById('c-timing-later');
+  const wrap = document.getElementById('c-schedule-wrap');
+  if(nowBtn) nowBtn.classList.toggle('selected', mode === 'now');
+  if(laterBtn) laterBtn.classList.toggle('selected', mode === 'later');
+  if(wrap) wrap.style.display = mode === 'later' ? '' : 'none';
+  if(mode === 'later'){
+    const input = document.getElementById('c-schedule-datetime');
+    if(input && !input.value){
+      const d = new Date(Date.now() + SCHEDULE_MIN_LEAD_MINUTES * 60000);
+      d.setSeconds(0,0);
+      input.value = d.toISOString().slice(0,16);
+    }
+    validateScheduleDatetime();
+  } else {
+    scheduledForDate = null;
+    refreshConfirmButtonState();
+  }
+}
+function validateScheduleDatetime(){
+  const input = document.getElementById('c-schedule-datetime');
+  const hint = document.getElementById('c-schedule-hint');
+  if(!input) return;
+  const val = input.value;
+  scheduledForDate = null;
+  if(!val){
+    if(hint) hint.textContent = 'Escolhe a data e hora da viagem.';
+    refreshConfirmButtonState();
+    return;
+  }
+  const chosen = new Date(val);
+  const minDate = new Date(Date.now() + SCHEDULE_MIN_LEAD_MINUTES * 60000);
+  const maxDate = new Date(Date.now() + SCHEDULE_MAX_LEAD_DAYS * 86400000);
+  if(isNaN(chosen.getTime()) || chosen < minDate){
+    if(hint) hint.textContent = 'Escolhe uma hora pelo menos ' + SCHEDULE_MIN_LEAD_MINUTES + ' minutos no futuro.';
+  } else if(chosen > maxDate){
+    if(hint) hint.textContent = 'Só é possível agendar até ' + SCHEDULE_MAX_LEAD_DAYS + ' dias à frente.';
+  } else {
+    scheduledForDate = chosen;
+    if(hint) hint.textContent = 'Reserva para ' + chosen.toLocaleDateString('pt-PT') + ' às ' + chosen.toLocaleTimeString('pt-PT',{hour:'2-digit',minute:'2-digit'}) + '.';
+  }
+  refreshConfirmButtonState();
+}
+function refreshConfirmButtonState(){
+  const btn = document.getElementById('c-confirm-btn');
+  if(!btn || !selectedVehicle) return;
+  const blocked = rideTiming === 'later' && !scheduledForDate;
+  btn.disabled = blocked;
+  btn.textContent = rideTiming === 'later'
+    ? `Confirmar reserva · ${fmtEur(selectedVehicle.price)}`
+    : `Confirmar ${selectedVehicle.name} · ${fmtEur(selectedVehicle.price)}`;
+}
 let selectedTip = 0;
 
 /* ===================== ETA EM TEMPO REAL (Haversine + trânsito) =====================
@@ -2939,6 +3021,11 @@ function resetClientFlow(){
   document.getElementById('c-dest').value = '';
   document.getElementById('c-request-btn').disabled = true;
   selectedVehicle = null;
+  rideTiming = 'now';
+  scheduledForDate = null;
+  const schedInput = document.getElementById('c-schedule-datetime');
+  if(schedInput) schedInput.value = '';
+  if(typeof setRideTiming === 'function') setRideTiming('now');
   selectedTip = 0;
   routeKm = null;
   routeMinutes = null;
@@ -3006,9 +3093,7 @@ function selectVehicle(id, el){
   selectedVehicle = VEHICLES.find(v=>v.id===id);
   document.querySelectorAll('.vehicle').forEach(v=>v.classList.remove('selected'));
   el.classList.add('selected');
-  const btn = document.getElementById('c-confirm-btn');
-  btn.disabled = false;
-  btn.textContent = `Confirmar ${selectedVehicle.name} · ${fmtEur(selectedVehicle.price)}`;
+  refreshConfirmButtonState();
 }
 /* ===================== COMUNICAÇÃO (chamada real + chat) =====================
    Chamada real via tel: (abre o marcador do telemóvel) usando o número do
@@ -3324,8 +3409,16 @@ function payThenRequestRide(){
   // Só se chama (pede) um motorista real depois de o pagamento da tarifa
   // estimada ser aprovado — nunca antes. Se o pagamento falhar ou for
   // cancelado, o cliente fica no ecrã de escolha de veículo e nenhum
-  // motorista é notificado.
+  // motorista é notificado. Se o cliente escolheu "Agendar" em vez de
+  // "Agora", a corrida fica reservada (status:'scheduled') em vez de ir já
+  // para o despacho de motoristas — ver scheduleRideForLater().
   if(!selectedVehicle) return;
+  if(rideTiming === 'later'){
+    if(!scheduledForDate){ toast('c-vehicles', 'Escolhe uma data/hora válida para a reserva.'); return; }
+    if(unlimitedAccount.c){ scheduleRideForLater(); return; }
+    openPayment('c', selectedVehicle.price, function(){ scheduleRideForLater(); });
+    return;
+  }
   if(unlimitedAccount.c){ startMatching(); return; }
   openPayment('c', selectedVehicle.price, function(){ startMatching(); });
 }
@@ -3501,6 +3594,95 @@ async function startMatching(){
     console.warn('Falha ao criar pedido real — a usar modo demonstração:', e);
     startMatchingSimulated();
   });
+}
+/* Grava uma reserva (viagem agendada) — mesmos dados de uma corrida normal,
+   mas com status:'scheduled' em vez de 'searching', para não ser despachada
+   já aos motoristas. checkMyScheduledRides() é quem, mais tarde, perto da
+   hora marcada, transforma esta reserva num pedido normal (ver mais abaixo). */
+async function scheduleRideForLater(){
+  const col = ridesCollection();
+  if(!col || !scheduledForDate){
+    toast('c-vehicles', 'Não foi possível criar a reserva. Tenta novamente.');
+    return;
+  }
+  const u = currentUser.c;
+  const originValNow = document.getElementById('c-origin').value || 'A minha localização atual';
+  let pickupLatLng = selectedOriginLatLng || ((originValNow === 'A minha localização atual' && myCurrentLatLng) ? myCurrentLatLng : null);
+  if(!pickupLatLng && originValNow && originValNow !== 'A minha localização atual'){
+    pickupLatLng = await geocodeAddress(originValNow);
+  }
+  const destValNow = document.getElementById('c-dest').value || 'destino';
+  let dropoffLatLng = selectedDestLatLng;
+  if(!dropoffLatLng && destValNow && destValNow !== 'destino'){
+    dropoffLatLng = await geocodeAddress(destValNow);
+  }
+  const stopsWithText = tripStops.filter(function(s){ return (s.value||'').trim().length>0; });
+  for(const s of stopsWithText){
+    if(!s.latLng) s.latLng = await geocodeAddress(s.value);
+  }
+  const stopsPayload = stopsWithText.map(function(s){
+    return { address: s.value, lat: s.latLng ? s.latLng.lat : null, lng: s.latLng ? s.latLng.lng : null };
+  });
+  const scheduledForTs = firebase.firestore.Timestamp.fromDate(scheduledForDate);
+  col.add({
+    status: 'scheduled',
+    scheduledFor: scheduledForTs,
+    clientName: u.name, clientPhone: u.phone, clientEmail: u.email || null,
+    origin: originValNow,
+    destination: destValNow,
+    pickupLat: pickupLatLng ? pickupLatLng.lat : null,
+    pickupLng: pickupLatLng ? pickupLatLng.lng : null,
+    dropoffLat: dropoffLatLng ? dropoffLatLng.lat : null,
+    dropoffLng: dropoffLatLng ? dropoffLatLng.lng : null,
+    stops: stopsPayload,
+    offerDriverId: null,
+    offeredDriverIds: [],
+    declinedDriverIds: [],
+    vehicleId: selectedVehicle.id, vehicleName: selectedVehicle.model || selectedVehicle.name,
+    price: selectedVehicle.price,
+    createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+  }).then(function(){
+    resetClientFlow();
+    goTo('c-home');
+    toast('c-home', '✓ Reserva confirmada para ' + scheduledForDate.toLocaleDateString('pt-PT') + ' às ' + scheduledForDate.toLocaleTimeString('pt-PT',{hour:'2-digit',minute:'2-digit'}) + '.');
+  }).catch(function(e){
+    console.warn('Falha ao criar reserva:', e);
+    toast('c-vehicles', 'Não foi possível criar a reserva. Tenta novamente.');
+  });
+}
+/* Corre periodicamente enquanto a app estiver aberta (ver setInterval mais
+   abaixo, junto à inicialização). Procura reservas próprias ainda por
+   ativar cuja hora marcada já esteja dentro da janela de ativação
+   (SCHEDULE_ACTIVATION_WINDOW_MINUTES) e transforma-as num pedido normal —
+   status:'searching' — entrando de imediato no mesmo despacho sequencial
+   usado para pedidos imediatos, tal como a Uber/Bolt fazem com reservas. */
+function checkMyScheduledRides(){
+  const col = ridesCollection();
+  const u = currentUser.c;
+  if(!col || !u || !u.email || currentRideId) return; // não interrompe uma viagem já em curso
+  const limitTs = firebase.firestore.Timestamp.fromDate(new Date(Date.now() + SCHEDULE_ACTIVATION_WINDOW_MINUTES * 60000));
+  col.where('clientEmail', '==', u.email).where('status', '==', 'scheduled').get().then(function(snap){
+    if(snap.empty) return;
+    let toActivate = null;
+    snap.forEach(function(doc){
+      if(toActivate) return;
+      const data = doc.data();
+      const sf = data.scheduledFor;
+      const sfMillis = sf && sf.toMillis ? sf.toMillis() : null;
+      if(sfMillis != null && sfMillis <= limitTs.toMillis()) toActivate = { id: doc.id, data: data };
+    });
+    if(!toActivate) return;
+    col.doc(toActivate.id).set({ status: 'searching', updatedAt: firebase.firestore.FieldValue.serverTimestamp() }, { merge:true }).then(function(){
+      currentRideId = toActivate.id;
+      lastHandledRideStatus = null;
+      selectedVehicle = VEHICLES.find(function(v){ return v.id === toActivate.data.vehicleId; }) || selectedVehicle;
+      goTo('c-matching');
+      listenToRide(toActivate.id);
+      advanceRideOffer(toActivate.id);
+      toast('c-matching', 'A tua reserva está a ser despachada aos motoristas próximos.');
+    }).catch(function(e){ console.warn('Falha ao ativar reserva:', e); });
+  }).catch(function(e){ console.warn('Falha ao verificar reservas:', e); });
 }
 function startMatchingSimulated(){
   const t = setTimeout(()=>{
@@ -3748,6 +3930,8 @@ function finishClientTrip(){
 renderVehicleList();
 initClientApp();
 if(typeof handleIncomingPasswordResetLink==='function') handleIncomingPasswordResetLink();
+// Verifica reservas por ativar a cada minuto, enquanto a app estiver aberta.
+if(typeof checkMyScheduledRides === 'function') setInterval(checkMyScheduledRides, 60000);
 
 let swRegistration = null;
 if('serviceWorker' in navigator){
