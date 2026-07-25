@@ -1114,7 +1114,10 @@
       <div class="screen" id="c-home">
         <div class="topbar">
           <div class="brand" style="color:var(--gold);">Lux</div>
-          <div class="icon-btn" id="c-header-avatar" onclick="goTo('c-settings')">👤</div>
+          <div style="display:flex; align-items:center; gap:8px;">
+            <div class="icon-btn" onclick="openClientReservations()" title="Reservas">📅</div>
+            <div class="icon-btn" id="c-header-avatar" onclick="goTo('c-settings')">👤</div>
+          </div>
         </div>
         <div class="address-bar-top glow-frame">
           <div class="field">
@@ -1146,6 +1149,20 @@
             </div>
           </div>
           <button class="btn btn-gold" id="c-request-btn" disabled data-i18n="btn_request_ride" onclick="goTo('c-vehicles')">Pedir viagem</button>
+        </div>
+      </div>
+
+      <!-- RESERVAS DO CLIENTE -->
+      <div class="screen" id="c-reservations">
+        <div class="topbar">
+          <div class="icon-btn" onclick="goTo('c-home')">←</div>
+          <div class="brand" style="font-size:13px;">AS TUAS RESERVAS</div>
+          <div style="width:38px;"></div>
+        </div>
+        <div class="auth-scroll" style="padding-top:6px;">
+          <p style="font-size:11.5px; color:var(--muted); margin:0 0 12px; padding:0 2px;">Aqui vês todas as viagens que agendaste com antecedência. Assim que um motorista aceitar, ficas logo a saber o nome, o veículo e a matrícula.</p>
+          <div id="c-reservations-list"></div>
+          <div id="c-reservations-empty" style="display:none; text-align:center; color:var(--muted); font-size:13px; padding:40px 10px;">Ainda não tens reservas agendadas.</div>
         </div>
       </div>
 
@@ -1638,7 +1655,10 @@
         <div class="toast" id="toast-d-home">Saldo atualizado</div>
         <div class="topbar">
           <div class="brand"><span style="color:var(--gold);">Lux</span>Driver</div>
-          <div class="icon-btn" id="d-header-avatar" onclick="goTo('d-settings')">👤</div>
+          <div style="display:flex; align-items:center; gap:8px;">
+            <div class="icon-btn" onclick="openDriverReservations()" title="Reservas">📅</div>
+            <div class="icon-btn" id="d-header-avatar" onclick="goTo('d-settings')">👤</div>
+          </div>
         </div>
         <div class="sub-badge">
           <span class="l" data-i18n="sub_active">✓ Subscrição ativa</span>
@@ -3043,6 +3063,7 @@ function doLogout(p){
     if(typeof stopSharingLocation==='function') stopSharingLocation();
     if(typeof stopListeningForRides==='function') stopListeningForRides();
     if(typeof stopDriverChatWatch==='function') stopDriverChatWatch();
+    if(typeof stopRideStatusWatch==='function') stopRideStatusWatch();
     if(driverProfileUnsub){ driverProfileUnsub(); driverProfileUnsub = null; }
     driverRideId = null; driverRideData = null;
     if(typeof setDriverRidePhase==='function') setDriverRidePhase(null);
@@ -3085,6 +3106,7 @@ async function confirmDeleteAccount(){
     if(typeof stopSharingLocation==='function') stopSharingLocation();
     if(typeof stopListeningForRides==='function') stopListeningForRides();
     if(typeof stopDriverChatWatch==='function') stopDriverChatWatch();
+    if(typeof stopRideStatusWatch==='function') stopRideStatusWatch();
     driverRideId = null; driverRideData = null;
     if(typeof setDriverRidePhase==='function') setDriverRidePhase(null);
     if(nameRequestUnsub){ nameRequestUnsub(); nameRequestUnsub = null; }
@@ -4827,6 +4849,60 @@ function closeReservationConfirmedOverlay(){
   const overlay = document.getElementById('reservation-confirmed-overlay');
   if(overlay) overlay.classList.remove('show');
 }
+/* ===================== ABA "AS TUAS RESERVAS" =====================
+   Ecrã sempre acessível (ícone 📅 no topo do ecrã inicial) para o cliente
+   consultar as suas reservas a qualquer momento — antes disto só via um
+   overlay que aparecia uma única vez quando o motorista aceitava, sem
+   nenhum sítio para voltar a ver a lista depois. Filtro único por
+   clientEmail (sem índice composto) — 'scheduled'/'reserved' aplicado do
+   lado do cliente já sobre os documentos que só a este cliente pertencem. */
+function fetchMyClientReservations(){
+  const col = ridesCollection();
+  const u = currentUser.c;
+  if(!col || !u || !u.email) return Promise.resolve([]);
+  return col.where('clientEmail', '==', u.email).get().then(function(snap){
+    return snap.docs.map(function(doc){
+      const r = doc.data();
+      const ms = r.scheduledFor && r.scheduledFor.toMillis ? r.scheduledFor.toMillis() : null;
+      return { id: doc.id, data: r, ms: ms };
+    }).filter(function(item){ return item.data.status === 'scheduled' || item.data.status === 'reserved'; })
+      .sort(function(a, b){ return (a.ms||0) - (b.ms||0); });
+  }).catch(function(err){ console.warn('Falha ao carregar as minhas reservas:', err); return []; });
+}
+function clientReservationRowHtml(item){
+  const r = item.data;
+  const sf = r.scheduledFor && r.scheduledFor.toDate ? r.scheduledFor.toDate() : null;
+  const whenStr = sf ? (sf.toLocaleDateString('pt-PT') + ' às ' + sf.toLocaleTimeString('pt-PT',{hour:'2-digit',minute:'2-digit'})) : '--';
+  const isConfirmed = r.status === 'reserved';
+  const statusHtml = isConfirmed
+    ? '<div style="font-size:12px; color:#5fd68a; font-weight:700; margin-top:6px;">✓ Confirmada — ' + (r.driverName || 'Motorista Lux') + (r.vehiclePlate ? (' · ' + r.vehiclePlate) : '') + '</div>'
+    : '<div style="font-size:12px; color:var(--gold); font-weight:700; margin-top:6px;">A aguardar motorista</div>';
+  return '<div style="background:var(--panel2); border:1px solid var(--line); border-radius:var(--radius-md); padding:14px; margin-bottom:10px;">' +
+    '<div style="font-weight:700; font-size:14px;">' + whenStr + '</div>' +
+    '<div style="font-size:12.5px; color:var(--muted); margin-top:6px;">De: ' + (r.origin || '—') + '</div>' +
+    '<div style="font-size:12.5px; color:var(--muted);">Para: ' + (r.destination || '—') + '</div>' +
+    statusHtml +
+    '</div>';
+}
+function loadClientReservations(){
+  const listEl = document.getElementById('c-reservations-list');
+  const emptyEl = document.getElementById('c-reservations-empty');
+  if(!listEl) return;
+  listEl.innerHTML = '<div style="text-align:center; color:var(--muted); font-size:13px; padding:20px 0;">A carregar…</div>';
+  if(emptyEl) emptyEl.style.display = 'none';
+  fetchMyClientReservations().then(function(items){
+    if(!items.length){
+      listEl.innerHTML = '';
+      if(emptyEl) emptyEl.style.display = '';
+      return;
+    }
+    listEl.innerHTML = items.map(clientReservationRowHtml).join('');
+  });
+}
+function openClientReservations(){
+  goTo('c-reservations');
+  loadClientReservations();
+}
 /* Corre periodicamente enquanto a app estiver aberta (ver setInterval mais
    abaixo, junto à inicialização). Procura reservas próprias ainda por
    ativar cuja hora marcada já esteja dentro da janela de ativação
@@ -5426,6 +5502,61 @@ function currentDriverScreenId(){
   const activeEl = document.querySelector('.screen.active');
   return activeEl ? activeEl.id : null;
 }
+/* ===================== VIGIAR CANCELAMENTO PELO CLIENTE =====================
+   Antes desta correção, depois de o motorista aceitar um pedido (ou uma
+   reserva), o app NUNCA voltava a ouvir o documento da corrida — só o
+   cliente sabia se ele próprio tinha cancelado. Resultado: se o cliente
+   cancelasse enquanto o motorista ia a caminho (dentro do prazo grátis),
+   o motorista continuava a conduzir às cegas até ao local de recolha sem
+   qualquer aviso. Este listener liga-se assim que uma corrida é aceite
+   (acceptRequest, startReservedTrip) ou restaurada ao reabrir a app
+   (tryRestoreActiveDriverRide), e é desligado quando a corrida termina
+   normalmente ou é cancelada. */
+let rideStatusUnsub = null;
+let rideStatusWatchRideId = null;
+function startRideStatusWatch(rideId){
+  if(!rideId) return;
+  if(rideStatusWatchRideId === rideId && rideStatusUnsub) return; // já a vigiar esta corrida
+  stopRideStatusWatch();
+  const col = ridesCollection();
+  if(!col) return;
+  rideStatusWatchRideId = rideId;
+  rideStatusUnsub = col.doc(rideId).onSnapshot(function(doc){
+    if(!doc.exists || driverRideId !== rideId) return;
+    const ride = doc.data();
+    if(ride.status === 'cancelled'){
+      handleClientCancelledRide();
+    }
+  }, function(e){ console.warn('Falha ao vigiar estado da corrida:', e); });
+}
+function stopRideStatusWatch(){
+  if(rideStatusUnsub){ rideStatusUnsub(); rideStatusUnsub = null; }
+  rideStatusWatchRideId = null;
+}
+/* Chamado quando o CLIENTE cancela uma corrida já aceite pelo motorista
+   (dentro do prazo grátis ou com taxa — para o motorista o resultado é o
+   mesmo: parar e ficar disponível outra vez). Limpa todo o estado da
+   viagem em curso e devolve o motorista ao ecrã inicial, já pronto a
+   receber novos pedidos. */
+function handleClientCancelledRide(){
+  stopRideStatusWatch();
+  if(typeof stopChatWatch==='function') stopChatWatch();
+  if(typeof waitInterval!=='undefined' && waitInterval){ clearInterval(waitInterval); waitInterval = null; }
+  if(typeof stopWaitInterval!=='undefined' && stopWaitInterval){ clearInterval(stopWaitInterval); stopWaitInterval = null; }
+  if(typeof arrivedFillTimer!=='undefined' && arrivedFillTimer){ clearTimeout(arrivedFillTimer); arrivedFillTimer = null; }
+  clearRouteCarMarker('map-d-pickup');
+  clearRouteCarMarker('map-d-waiting');
+  clearRouteCarMarker('map-d-trip');
+  document.querySelectorAll('.swipe-btn').forEach(function(b){ b.classList.remove('filled'); });
+  try{ localStorage.removeItem(DRIVER_ACTIVE_RIDE_STORAGE_KEY); }catch(e){}
+  driverRideId = null; driverRideData = null; declinedRideIds.clear();
+  setDriverRidePhase(null);
+  updateDriverFrames();
+  goTo('d-home');
+  toast('d-home', 'O cliente cancelou a viagem. Já podes receber novos pedidos.');
+  if(navigator.vibrate) try{ navigator.vibrate([120,60,120]); }catch(e){}
+  if(typeof refreshReservationsBanner==='function') refreshReservationsBanner();
+}
 
 let ridesListUnsub = null;
 let driverRideId = null;
@@ -5452,6 +5583,7 @@ function tryRestoreActiveDriverRide(){
     }
     driverRideId = saved.rideId;
     driverRideData = ride;
+    startRideStatusWatch(saved.rideId);
     if(!isOnline){
       isOnline = true;
       const sw = document.getElementById('online-switch');
@@ -5767,6 +5899,7 @@ function acceptRequest(){
     const nameEl = document.querySelector('#d-to-pickup .driver-card .name');
     if(nameEl && driverRideData) nameEl.textContent = driverRideData.clientName || 'Cliente Lux';
     startDriverChatWatch();
+    startRideStatusWatch(driverRideId);
   }
   const pickupPos = ridePickupPos();
   const originPos = (typeof lastDriverLatLng!=='undefined' && lastDriverLatLng) ? lastDriverLatLng : LUX_PLACES.near;
@@ -5973,6 +6106,7 @@ function startReservedTrip(rideId){
   const nameEl = document.querySelector('#d-to-pickup .driver-card .name');
   if(nameEl) nameEl.textContent = data.clientName || 'Cliente Lux';
   startDriverChatWatch();
+  startRideStatusWatch(rideId);
   const pickupPos = ridePickupPos();
   const originPos = (typeof lastDriverLatLng!=='undefined' && lastDriverLatLng) ? lastDriverLatLng : LUX_PLACES.near;
   if(!showRealRoute('map-d-pickup', originPos, pickupPos, true)){
@@ -6274,6 +6408,7 @@ function cancelWaitingTrip(){
     const col = ridesCollection();
     if(col) col.doc(driverRideId).set({ status:'cancelled', updatedAt: firebase.firestore.FieldValue.serverTimestamp() }, { merge:true }).catch(function(){});
     stopDriverChatWatch();
+    stopRideStatusWatch();
     driverRideId = null; driverRideData = null;
   }
   document.querySelectorAll('#d-to-pickup .swipe-btn').forEach(b=>b.classList.remove('filled'));
@@ -6327,6 +6462,7 @@ function markTripComplete(el){
         }, { merge:true }).catch(function(){});
       }
       stopDriverChatWatch();
+      stopRideStatusWatch();
       // O cliente só escolhe a gorjeta DEPOIS de o motorista terminar a
       // viagem — continuamos a vigiar esta corrida específica por mais
       // alguns minutos, mesmo já sem ligação ativa a ela, só para apanhar

@@ -1163,7 +1163,10 @@
         <div class="toast" id="toast-d-home">Saldo atualizado</div>
         <div class="topbar">
           <div class="brand"><span style="color:var(--gold);">Lux</span>Driver</div>
-          <div class="icon-btn" id="d-header-avatar" onclick="goTo('d-settings')">👤</div>
+          <div style="display:flex; align-items:center; gap:8px;">
+            <div class="icon-btn" onclick="openDriverReservations()" title="Reservas">📅</div>
+            <div class="icon-btn" id="d-header-avatar" onclick="goTo('d-settings')">👤</div>
+          </div>
         </div>
         <div class="sub-badge">
           <span class="l" data-i18n="sub_active">✓ Subscrição ativa</span>
@@ -2282,6 +2285,7 @@ function doLogout(p){
     if(typeof stopSharingLocation==='function') stopSharingLocation();
     if(typeof stopListeningForRides==='function') stopListeningForRides();
     if(typeof stopChatWatch==='function') stopChatWatch();
+    if(typeof stopRideStatusWatch==='function') stopRideStatusWatch();
     if(driverProfileUnsub){ driverProfileUnsub(); driverProfileUnsub = null; }
     currentRideId = null; currentRideData = null;
     if(typeof setDriverRidePhase==='function') setDriverRidePhase(null);
@@ -2319,6 +2323,7 @@ async function confirmDeleteAccount(){
     if(typeof stopSharingLocation==='function') stopSharingLocation();
     if(typeof stopListeningForRides==='function') stopListeningForRides();
     if(typeof stopChatWatch==='function') stopChatWatch();
+    if(typeof stopRideStatusWatch==='function') stopRideStatusWatch();
     currentRideId = null; currentRideData = null;
     if(typeof setDriverRidePhase==='function') setDriverRidePhase(null);
     if(nameRequestUnsub){ nameRequestUnsub(); nameRequestUnsub = null; }
@@ -3631,6 +3636,61 @@ function currentDriverScreenId(){
   const activeEl = document.querySelector('.screen.active');
   return activeEl ? activeEl.id : null;
 }
+/* ===================== VIGIAR CANCELAMENTO PELO CLIENTE =====================
+   Antes desta correção, depois de o motorista aceitar um pedido (ou uma
+   reserva), o app NUNCA voltava a ouvir o documento da corrida — só o
+   cliente sabia se ele próprio tinha cancelado. Resultado: se o cliente
+   cancelasse enquanto o motorista ia a caminho (dentro do prazo grátis),
+   o motorista continuava a conduzir às cegas até ao local de recolha sem
+   qualquer aviso. Este listener liga-se assim que uma corrida é aceite
+   (acceptRequest, startReservedTrip) ou restaurada ao reabrir a app
+   (tryRestoreActiveDriverRide), e é desligado quando a corrida termina
+   normalmente ou é cancelada. */
+let rideStatusUnsub = null;
+let rideStatusWatchRideId = null;
+function startRideStatusWatch(rideId){
+  if(!rideId) return;
+  if(rideStatusWatchRideId === rideId && rideStatusUnsub) return; // já a vigiar esta corrida
+  stopRideStatusWatch();
+  const col = ridesCollection();
+  if(!col) return;
+  rideStatusWatchRideId = rideId;
+  rideStatusUnsub = col.doc(rideId).onSnapshot(function(doc){
+    if(!doc.exists || currentRideId !== rideId) return;
+    const ride = doc.data();
+    if(ride.status === 'cancelled'){
+      handleClientCancelledRide();
+    }
+  }, function(e){ console.warn('Falha ao vigiar estado da corrida:', e); });
+}
+function stopRideStatusWatch(){
+  if(rideStatusUnsub){ rideStatusUnsub(); rideStatusUnsub = null; }
+  rideStatusWatchRideId = null;
+}
+/* Chamado quando o CLIENTE cancela uma corrida já aceite pelo motorista
+   (dentro do prazo grátis ou com taxa — para o motorista o resultado é o
+   mesmo: parar e ficar disponível outra vez). Limpa todo o estado da
+   viagem em curso e devolve o motorista ao ecrã inicial, já pronto a
+   receber novos pedidos. */
+function handleClientCancelledRide(){
+  stopRideStatusWatch();
+  if(typeof stopChatWatch==='function') stopChatWatch();
+  if(typeof waitInterval!=='undefined' && waitInterval){ clearInterval(waitInterval); waitInterval = null; }
+  if(typeof stopWaitInterval!=='undefined' && stopWaitInterval){ clearInterval(stopWaitInterval); stopWaitInterval = null; }
+  if(typeof arrivedFillTimer!=='undefined' && arrivedFillTimer){ clearTimeout(arrivedFillTimer); arrivedFillTimer = null; }
+  clearRouteCarMarker('map-d-pickup');
+  clearRouteCarMarker('map-d-waiting');
+  clearRouteCarMarker('map-d-trip');
+  document.querySelectorAll('.swipe-btn').forEach(function(b){ b.classList.remove('filled'); });
+  try{ localStorage.removeItem(DRIVER_ACTIVE_RIDE_STORAGE_KEY); }catch(e){}
+  currentRideId = null; currentRideData = null; declinedRideIds.clear();
+  setDriverRidePhase(null);
+  updateDriverFrames();
+  goTo('d-home');
+  toast('d-home', 'O cliente cancelou a viagem. Já podes receber novos pedidos.');
+  if(navigator.vibrate) try{ navigator.vibrate([120,60,120]); }catch(e){}
+  if(typeof refreshReservationsBanner==='function') refreshReservationsBanner();
+}
 /* Restaura uma corrida ativa depois de o motorista fechar e reabrir a app
    (Task #178). Usa o ESTADO REAL guardado no Firestore (não a fase local
    gravada, que pode estar desatualizada) para decidir o ecrã a mostrar. */
@@ -3652,6 +3712,7 @@ function tryRestoreActiveDriverRide(){
     }
     currentRideId = saved.rideId;
     currentRideData = ride;
+    startRideStatusWatch(saved.rideId);
     // Uma corrida em curso implica que o motorista estava online — restaura
     // o estado online e a partilha de GPS para a seta voltar a seguir a
     // posição real.
@@ -3981,6 +4042,7 @@ function acceptRequest(){
     const nameEl = document.querySelector('#d-to-pickup .driver-card .name');
     if(nameEl && currentRideData) nameEl.textContent = currentRideData.clientName || 'Cliente Lux';
     startChatWatch();
+    startRideStatusWatch(currentRideId);
   }
   const pickupPos = ridePickupPos();
   const originPos = (typeof lastDriverLatLng!=='undefined' && lastDriverLatLng) ? lastDriverLatLng : LUX_PLACES.near;
@@ -4240,6 +4302,7 @@ function cancelWaitingTrip(){
     const col = ridesCollection();
     if(col) col.doc(currentRideId).set({ status:'cancelled', updatedAt: firebase.firestore.FieldValue.serverTimestamp() }, { merge:true }).catch(function(){});
     stopChatWatch();
+    stopRideStatusWatch();
     currentRideId = null; currentRideData = null;
   }
   clearRouteCarMarker('map-d-pickup');
@@ -4294,6 +4357,7 @@ function markTripComplete(el){
         }, { merge:true }).catch(function(){});
       }
       stopChatWatch();
+      stopRideStatusWatch();
       // O cliente só escolhe a gorjeta DEPOIS de o motorista terminar a
       // viagem — continuamos a vigiar esta corrida específica por mais
       // alguns minutos, mesmo já sem ligação ativa a ela, só para apanhar
@@ -4509,6 +4573,7 @@ function startReservedTrip(rideId){
   const nameEl = document.querySelector('#d-to-pickup .driver-card .name');
   if(nameEl) nameEl.textContent = data.clientName || 'Cliente Lux';
   startChatWatch();
+  startRideStatusWatch(rideId);
   const pickupPos = ridePickupPos();
   const originPos = (typeof lastDriverLatLng!=='undefined' && lastDriverLatLng) ? lastDriverLatLng : LUX_PLACES.near;
   if(!showRealRoute('map-d-pickup', originPos, pickupPos, true)){
