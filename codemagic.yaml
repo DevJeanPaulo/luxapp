@@ -28,10 +28,11 @@ workflows:
     artifacts:
       - build/ios/ipa/*.ipa
       - /tmp/xcodebuild_logs/*.log
-    publishing:
-      app_store_connect:
-        auth: integration
-        submit_to_testflight: false
+    # publishing: (reativar quando a conta App Store Connect estiver ativada
+    #   e a integração app_store_connect estiver configurada no Codemagic)
+    #   app_store_connect:
+    #     auth: integration
+    #     submit_to_testflight: false
 
   ios-luxdriver:
     name: LuxDriver (iOS)
@@ -62,7 +63,8 @@ workflows:
     artifacts:
       - build/ios/ipa/*.ipa
       - /tmp/xcodebuild_logs/*.log
-    publishing:
-      app_store_connect:
-        auth: integration
-        submit_to_testflight: false
+    # publishing: (reativar quando a conta App Store Connect estiver ativada
+    #   e a integração app_store_connect estiver configurada no Codemagic)
+    #   app_store_connect:
+    #     auth: integration
+    #     submit_to_testflight: false
