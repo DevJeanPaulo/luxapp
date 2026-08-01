@@ -3459,6 +3459,41 @@ function payThenRequestRide(){
   if(unlimitedAccount.c){ startMatching(); return; }
   openPayment('c', selectedVehicle.price, function(){ startMatching(); });
 }
+/* ===================== DISTRITO (reverse geocoding) =====================
+   Usado apenas para RESERVAS (viagens agendadas): em vez do raio de 20km
+   usado nos pedidos "Agora", uma reserva fica disponível para qualquer
+   motorista que esteja, à hora da reserva, dentro do mesmo distrito do
+   ponto de recolha do cliente — mesmo que o destino seja noutro distrito
+   (ex.: cliente em Leiria reserva viagem para Lisboa; qualquer motorista
+   em Leiria na altura pode aceitar). Google devolve o distrito de Portugal
+   no campo "administrative_area_level_1" (ex.: "Distrito de Leiria"). */
+function normalizeDistrictName(name){
+  if(!name) return null;
+  return String(name)
+    .toLowerCase()
+    .replace(/^distrito\s+(de|do|da)\s+/i, '')
+    .replace(/^regi[aã]o\s+aut[oó]noma\s+(de|do|da)\s+/i, '')
+    .normalize('NFD').replace(/[̀-ͯ]/g, '') // remove acentos
+    .trim();
+}
+function reverseGeocodeDistrict(lat, lng){
+  return new Promise(function(resolve){
+    if(lat==null || lng==null || !(typeof google !== 'undefined' && google.maps)){ resolve(null); return; }
+    try{
+      if(!_geocoder) _geocoder = new google.maps.Geocoder();
+      _geocoder.geocode({ location: { lat: lat, lng: lng } }, function(results, status){
+        if(status === 'OK' && results && results.length){
+          let comp = null;
+          for(const r of results){
+            comp = (r.address_components || []).find(function(c){ return c.types.includes('administrative_area_level_1'); });
+            if(comp) break;
+          }
+          resolve(comp ? normalizeDistrictName(comp.long_name) : null);
+        } else resolve(null);
+      });
+    }catch(e){ resolve(null); }
+  });
+}
 let _geocoder = null;
 /* Geocodifica uma morada de texto livre em coordenadas reais, usando o
    Google Geocoder (restrito a Portugal). Serve de última rede de segurança
@@ -3511,9 +3546,26 @@ function continueSearchingForDrivers(){
    que ainda não esteja na lista de exclusão (excludeIds) e esteja dentro
    do raio máximo. Devolve o ID do motorista (mesmo esquema usado em
    drivers/{id} e driver_locations/{id}) ou null se não houver nenhum. */
-async function pickNextDriverCandidate(pickupLat, pickupLng, excludeIds){
+async function pickNextDriverCandidate(pickupLat, pickupLng, excludeIds, districtFilter){
   const db = initFirestore();
-  if(!db || pickupLat==null || pickupLng==null) return null;
+  if(!db) return null;
+  // Reservas (districtFilter definido): emparelha por distrito do motorista
+  // em vez de raio — não precisa de pickupLat/pickupLng para isso.
+  if(districtFilter){
+    try{
+      const snap = await db.collection('driver_locations').where('online','==', true).get();
+      const candidates = [];
+      snap.forEach(function(doc){
+        if(excludeIds.has(doc.id)) return;
+        const d = doc.data();
+        if(!d.district || normalizeDistrictName(d.district) !== districtFilter) return;
+        candidates.push(doc.id);
+      });
+      if(!candidates.length) return null;
+      return candidates[Math.floor(Math.random() * candidates.length)];
+    }catch(e){ console.warn('Falha ao procurar motoristas no distrito:', e); return null; }
+  }
+  if(pickupLat==null || pickupLng==null) return null;
   try{
     const snap = await db.collection('driver_locations').where('online','==', true).get();
     let best = null, bestKm = Infinity;
@@ -3540,13 +3592,17 @@ async function advanceRideOffer(rideId){
   const offered = new Set(ride.offeredDriverIds || []);
   const declined = new Set(ride.declinedDriverIds || []);
   const excluded = new Set([...offered, ...declined]);
-  let candidate = await pickNextDriverCandidate(ride.pickupLat, ride.pickupLng, excluded);
+  // Corridas que nasceram de uma reserva (têm scheduledFor) emparelham por
+  // distrito do ponto de recolha; pedidos "Agora" continuam a usar o raio
+  // de 20km — ver comentário em cima de reverseGeocodeDistrict().
+  const districtFilter = ride.scheduledFor ? normalizeDistrictName(ride.district) : null;
+  let candidate = await pickNextDriverCandidate(ride.pickupLat, ride.pickupLng, excluded, districtFilter);
   let didReset = false;
   if(!candidate && offered.size > 0){
     // Esgotou a volta atual — reinicia só pelos que não responderam,
     // continuando a excluir apenas quem recusou explicitamente.
     didReset = true;
-    candidate = await pickNextDriverCandidate(ride.pickupLat, ride.pickupLng, declined);
+    candidate = await pickNextDriverCandidate(ride.pickupLat, ride.pickupLng, declined, districtFilter);
   }
   if(!candidate){
     showNoDriversFoundPrompt();
@@ -3660,6 +3716,9 @@ async function scheduleRideForLater(){
   const stopsPayload = stopsWithText.map(function(s){
     return { address: s.value, lat: s.latLng ? s.latLng.lat : null, lng: s.latLng ? s.latLng.lng : null };
   });
+  // Distrito do ponto de recolha — é isto (e não o raio de 20km) que decide
+  // que motoristas podem aceitar esta reserva quando ela for ativada.
+  const pickupDistrict = pickupLatLng ? await reverseGeocodeDistrict(pickupLatLng.lat, pickupLatLng.lng) : null;
   const scheduledForTs = firebase.firestore.Timestamp.fromDate(scheduledForDate);
   col.add({
     status: 'scheduled',
@@ -3671,6 +3730,7 @@ async function scheduleRideForLater(){
     pickupLng: pickupLatLng ? pickupLatLng.lng : null,
     dropoffLat: dropoffLatLng ? dropoffLatLng.lat : null,
     dropoffLng: dropoffLatLng ? dropoffLatLng.lng : null,
+    district: pickupDistrict,
     stops: stopsPayload,
     offerDriverId: null,
     offeredDriverIds: [],

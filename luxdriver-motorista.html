@@ -2735,6 +2735,55 @@ let lastDriverLatLng = null;
    trânsito) quando disponível — resiliente, cai sempre para o cálculo
    simples se o Maps falhar. */
 const ETA_AVG_SPEED_KMH = 28;
+/* ===================== DISTRITO (reverse geocoding) =====================
+   Mesma lógica do app do cliente: usado só para RESERVAS, para saber em
+   que distrito o motorista está agora e comparar com o distrito do ponto
+   de recolha da reserva (ver reverseGeocodeDistrict em lux-cliente.html).
+   Aqui é o motorista que periodicamente atualiza o seu próprio distrito
+   em driver_locations/{id}.district, a partir do GPS real. */
+let _districtGeocoder = null;
+function normalizeDistrictName(name){
+  if(!name) return null;
+  return String(name)
+    .toLowerCase()
+    .replace(/^distrito\s+(de|do|da)\s+/i, '')
+    .replace(/^regi[aã]o\s+aut[oó]noma\s+(de|do|da)\s+/i, '')
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .trim();
+}
+function reverseGeocodeDistrict(lat, lng){
+  return new Promise(function(resolve){
+    if(lat==null || lng==null || !(typeof google !== 'undefined' && google.maps)){ resolve(null); return; }
+    try{
+      if(!_districtGeocoder) _districtGeocoder = new google.maps.Geocoder();
+      _districtGeocoder.geocode({ location: { lat: lat, lng: lng } }, function(results, status){
+        if(status === 'OK' && results && results.length){
+          let comp = null;
+          for(const r of results){
+            comp = (r.address_components || []).find(function(c){ return c.types.includes('administrative_area_level_1'); });
+            if(comp) break;
+          }
+          resolve(comp ? normalizeDistrictName(comp.long_name) : null);
+        } else resolve(null);
+      });
+    }catch(e){ resolve(null); }
+  });
+}
+let lastDistrictGeocodeAt = 0;
+let lastKnownDriverDistrict = null;
+const DISTRICT_GEOCODE_THROTTLE_MS = 3 * 60000; // distrito muda devagar — não vale a pena geocodificar a cada tick de GPS
+function maybeUpdateDriverDistrict(id, lat, lng){
+  const now = Date.now();
+  if((now - lastDistrictGeocodeAt) < DISTRICT_GEOCODE_THROTTLE_MS) return;
+  lastDistrictGeocodeAt = now;
+  reverseGeocodeDistrict(lat, lng).then(function(district){
+    if(!district || district === lastKnownDriverDistrict) return;
+    lastKnownDriverDistrict = district;
+    const db = initFirestore();
+    if(!db) return;
+    db.collection('driver_locations').doc(id).set({ district: district }, { merge:true }).catch(function(){});
+  });
+}
 function haversineKm(lat1, lng1, lat2, lng2){
   if([lat1,lng1,lat2,lng2].some(function(v){ return v==null || isNaN(v); })) return null;
   const R = 6371;
@@ -2985,6 +3034,7 @@ function startSharingLocation(){
       name: u.name, lat: lat, lng: lng, online: true,
       updatedAt: firebase.firestore.FieldValue.serverTimestamp()
     }, { merge:true }).catch(function(e){ console.warn('Falha ao gravar localização:', e); });
+    maybeUpdateDriverDistrict(id, lat, lng);
     showRealSingleLocation('map-driver-home', { lat:lat, lng:lng });
     updateDriverPickupEtaDisplay(lat, lng);
     // Move a seta do carro no ecrã da corrida ativa (se houver) com a
@@ -4457,12 +4507,22 @@ function fetchOpenReservations(){
   if(!col) return Promise.resolve([]);
   return col.where('status', '==', 'scheduled').get().then(function(snap){
     const nowMs = Date.now();
+    // Só mostra reservas do MESMO distrito onde o motorista está agora
+    // (lastKnownDriverDistrict, atualizado em maybeUpdateDriverDistrict) —
+    // é o distrito do ponto de recolha do cliente que decide, não o
+    // destino nem raio de km. Se ainda não sabemos o distrito do motorista
+    // (geocoding ainda não correu) ou a reserva não tem distrito gravado,
+    // mostra na mesma — rede de segurança para nunca esconder reservas por
+    // falta de dados, tal como o resto do projeto faz.
     return snap.docs.map(function(doc){
       const r = doc.data();
       const ms = r.scheduledFor && r.scheduledFor.toMillis ? r.scheduledFor.toMillis() : null;
       return { id: doc.id, data: r, ms: ms };
-    }).filter(function(item){ return item.ms != null && item.ms > nowMs; })
-      .sort(function(a, b){ return a.ms - b.ms; });
+    }).filter(function(item){
+      if(item.ms == null || item.ms <= nowMs) return false;
+      if(!lastKnownDriverDistrict || !item.data.district) return true;
+      return normalizeDistrictName(item.data.district) === lastKnownDriverDistrict;
+    }).sort(function(a, b){ return a.ms - b.ms; });
   }).catch(function(err){ console.warn('Falha ao carregar reservas abertas:', err); return []; });
 }
 /* Só traz do Firestore corridas atribuídas a ESTE motorista (driverId==myId)
