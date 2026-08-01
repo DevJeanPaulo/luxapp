@@ -256,6 +256,10 @@
   }
   .invoice-gen-box .edit-form{ max-width:none; display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:10px; }
 
+  /* ---------- Adicionar utilizador ---------- */
+  #user-docs-fields{ display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:12px; max-width:none; }
+  #user-docs-fields input[type="file"]{ font-size:12.5px; }
+
   /* ---------- Pedidos de nome ---------- */
   .name-req-card{
     background:var(--panel2); border:1px solid var(--line); border-radius:var(--radius-md);
@@ -283,6 +287,7 @@
     .fiscal-table th, .fiscal-table td{ padding:8px 9px; font-size:12.5px; }
     .invoice-gen-box .edit-form{ grid-template-columns:1fr; }
     .invoice-row-actions{ flex-direction:column; align-items:stretch; }
+    #user-docs-fields{ grid-template-columns:1fr; }
   }
 </style>
 </head>
@@ -340,6 +345,7 @@
     </div>
     <nav class="admin-nav" id="view-switch">
       <button data-v="apps" class="active" onclick="switchView('apps')">📋 Candidaturas</button>
+      <button data-v="users" onclick="switchView('users')">👤 Utilizadores</button>
       <button data-v="live" onclick="switchView('live')">🔴 Ao vivo</button>
       <button data-v="pricing" onclick="switchView('pricing')">💶 Tarifário</button>
       <button data-v="names" onclick="switchView('names')">✎ Pedidos de nome</button>
@@ -376,6 +382,36 @@
       <div class="emoji">🗂️</div>
       <p>Seleciona uma candidatura na lista para reveres os documentos.</p>
     </div>
+  </div>
+</div>
+
+<div class="layout" id="view-users" style="display:none;">
+  <div class="col-detail" style="flex:1;">
+    <h2 style="margin:0 0 6px;">Adicionar utilizador</h2>
+    <p class="sub" style="margin:0 0 20px;">Cria diretamente uma conta de cliente ou de motorista (login + registo), sem precisar que a pessoa se registe pela app.</p>
+    <div id="user-create-status" class="live-status" style="margin-bottom:16px;"></div>
+
+    <div class="edit-form">
+      <div>
+        <label>Tipo de utilizador</label>
+        <select id="user-tipo" onchange="onUserTipoChange()">
+          <option value="cliente">Cliente</option>
+          <option value="motorista">Motorista</option>
+        </select>
+      </div>
+      <div><label>Nome</label><input type="text" id="user-nome" placeholder="Nome completo"></div>
+      <div><label>Email</label><input type="email" id="user-email" placeholder="email@exemplo.com"></div>
+      <div><label>Telemóvel</label><input type="tel" id="user-telefone" placeholder="+351 9xx xxx xxx"></div>
+      <div><label>Password de acesso</label><input type="password" id="user-password" placeholder="mínimo 6 caracteres"></div>
+    </div>
+
+    <div id="user-docs-block" style="display:none; margin-top:22px;">
+      <div class="field-label" style="margin:0 0 10px;">Documentos do motorista</div>
+      <p class="sub" style="margin:0 0 14px;">Opcional aqui — podes anexar agora ou pedir depois. Ficam automaticamente com estado "aprovado".</p>
+      <div class="edit-form" id="user-docs-fields"></div>
+    </div>
+
+    <button class="btn btn-gold" style="margin-top:20px;" onclick="submitCreateUser()" id="user-create-btn">Criar utilizador</button>
   </div>
 </div>
 
@@ -544,6 +580,7 @@ function initAuth(){
 // compara a password real.
 // TODO: substitui pelo URL real da tua Cloud Function checkAdminLogin (ver functions/index.js).
 const CHECK_ADMIN_LOGIN_URL = 'https://us-central1-lux-transfers-47cb2.cloudfunctions.net/checkAdminLogin';
+const ADMIN_CREATE_USER_URL = 'https://us-central1-lux-transfers-47cb2.cloudfunctions.net/adminCreateUser';
 const ADMIN_SESSION_KEY = 'lux_admin_session';
 
 function saveAdminSession(email){
@@ -740,6 +777,7 @@ function fmtRelativeTime(ts){
 }
 const VIEW_TITLES = {
   apps: 'Verificação de candidaturas de motoristas',
+  users: 'Adicionar utilizador (cliente ou motorista)',
   live: 'Localização dos motoristas em tempo real',
   pricing: 'Tarifário das classes de veículos',
   names: 'Pedidos de alteração de nome dos motoristas',
@@ -751,6 +789,7 @@ const VIEW_TITLES = {
 function switchView(view){
   document.querySelectorAll('#view-switch button').forEach(b=>b.classList.toggle('active', b.dataset.v===view));
   document.getElementById('view-apps').style.display = view==='apps' ? 'flex' : 'none';
+  document.getElementById('view-users').style.display = view==='users' ? 'flex' : 'none';
   document.getElementById('view-live').style.display = view==='live' ? 'flex' : 'none';
   document.getElementById('view-pricing').style.display = view==='pricing' ? 'flex' : 'none';
   document.getElementById('view-names').style.display = view==='names' ? 'flex' : 'none';
@@ -760,6 +799,7 @@ function switchView(view){
   document.getElementById('view-invoices').style.display = view==='invoices' ? 'flex' : 'none';
   const titleEl = document.getElementById('page-title');
   if(titleEl && VIEW_TITLES[view]) titleEl.textContent = VIEW_TITLES[view];
+  if(view==='users') initUsersView();
   if(view==='live') initLiveTracking();
   if(view==='pricing') initPricingView();
   if(view==='names') initNameRequestsView();
@@ -1406,8 +1446,7 @@ async function saveFiscal(){
    como registo interno de apoio à contabilidade — não é emitido por
    software certificado pela Autoridade Tributária, pelo que NÃO substitui
    a fatura fiscal oficial exigida por lei em Portugal. */
-// TODO: substitui pelo URL real da tua Cloud Function gerarFaturaXml (ver functions/index.js), depois do deploy.
-const GERAR_FATURA_XML_URL = 'https://us-central1-lux-transfers-47cb2.cloudfunctions.net/gerarFaturaXml';
+const GERAR_FATURA_XML_URL = 'https://gerarfaturaxml-odakdsglhq-uc.a.run.app';
 let invoicesUnsubscribe = null;
 function initInvoicesView(){
   const statusEl = document.getElementById('invoices-status');
@@ -1705,6 +1744,126 @@ function renderDetail(){
     </div>
     ${anyMissing ? '<p style="color:var(--muted); font-size:12px; margin-top:14px;">Este motorista ainda não enviou todos os documentos obrigatórios.</p>' : ''}
   `;
+}
+
+/* ===================== ADICIONAR UTILIZADOR (cliente / motorista) ===================== */
+function initUsersView(){
+  onUserTipoChange();
+}
+function onUserTipoChange(){
+  const tipo = document.getElementById('user-tipo').value;
+  const block = document.getElementById('user-docs-block');
+  const fields = document.getElementById('user-docs-fields');
+  if(tipo === 'motorista'){
+    block.style.display = 'block';
+    fields.innerHTML = DRIVER_DOCS.map(d => `
+      <div>
+        <label>${d.name}</label>
+        <input type="file" accept="image/*,.pdf" id="user-doc-${d.key}">
+      </div>
+    `).join('');
+  } else {
+    block.style.display = 'none';
+    fields.innerHTML = '';
+  }
+}
+function fileToDataUrl(file){
+  return new Promise(function(resolve, reject){
+    const reader = new FileReader();
+    reader.onload = function(){ resolve(reader.result); };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+async function getAdminAuthPayload(){
+  const auth = initAuth();
+  if(auth && auth.currentUser){
+    try{
+      const idToken = await auth.currentUser.getIdToken();
+      return { idToken };
+    }catch(e){ console.warn('Falha ao obter idToken do admin:', e); }
+  }
+  const session = getAdminSession();
+  const pass = prompt('Confirma a tua password de administrador para continuar:');
+  if(!pass) return null;
+  return { adminEmail: session ? session.email : '', adminPassword: pass };
+}
+async function submitCreateUser(){
+  const statusEl = document.getElementById('user-create-status');
+  const btn = document.getElementById('user-create-btn');
+  const tipo = document.getElementById('user-tipo').value;
+  const nome = (document.getElementById('user-nome').value||'').trim();
+  const email = (document.getElementById('user-email').value||'').trim();
+  const telefone = (document.getElementById('user-telefone').value||'').trim();
+  const password = document.getElementById('user-password').value||'';
+
+  if(!nome || !email || !password){
+    statusEl.textContent = 'Preenche nome, email e password.';
+    statusEl.style.color = 'var(--danger)';
+    return;
+  }
+  if(password.length < 6){
+    statusEl.textContent = 'A password tem de ter pelo menos 6 caracteres.';
+    statusEl.style.color = 'var(--danger)';
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = 'A criar…';
+  statusEl.style.color = '';
+  statusEl.textContent = 'A preparar dados…';
+
+  try{
+    let documentos = undefined;
+    if(tipo === 'motorista'){
+      documentos = {};
+      for(const d of DRIVER_DOCS){
+        const input = document.getElementById('user-doc-'+d.key);
+        const file = input && input.files && input.files[0];
+        if(file){
+          const dataUrl = await fileToDataUrl(file);
+          documentos[d.key] = { dataUrl, fileName: file.name };
+        }
+      }
+    }
+
+    statusEl.textContent = 'A confirmar autorização…';
+    const authPayload = await getAdminAuthPayload();
+    if(!authPayload){
+      statusEl.textContent = 'Operação cancelada — password de administrador não confirmada.';
+      statusEl.style.color = 'var(--danger)';
+      btn.disabled = false; btn.textContent = 'Criar utilizador';
+      return;
+    }
+
+    statusEl.textContent = 'A criar utilizador…';
+    const resp = await fetch(ADMIN_CREATE_USER_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(Object.assign({ tipo, nome, email, password, telefone, documentos }, authPayload))
+    });
+    const data = await resp.json();
+    if(resp.ok && data.ok){
+      statusEl.style.color = 'var(--gold)';
+      statusEl.textContent = `✓ ${tipo==='cliente' ? 'Cliente' : 'Motorista'} criado com sucesso.`;
+      document.getElementById('user-nome').value = '';
+      document.getElementById('user-email').value = '';
+      document.getElementById('user-telefone').value = '';
+      document.getElementById('user-password').value = '';
+      onUserTipoChange();
+      if(tipo === 'motorista') renderAll();
+    } else {
+      statusEl.style.color = 'var(--danger)';
+      statusEl.textContent = 'Erro: ' + (data.error || 'não foi possível criar o utilizador.');
+    }
+  }catch(e){
+    console.warn('Falha ao criar utilizador:', e);
+    statusEl.style.color = 'var(--danger)';
+    statusEl.textContent = 'Erro de ligação — tenta novamente.';
+  }finally{
+    btn.disabled = false;
+    btn.textContent = 'Criar utilizador';
+  }
 }
 
 window.addEventListener('storage', function(e){

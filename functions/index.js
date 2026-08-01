@@ -174,6 +174,163 @@ exports.checkAdminLogin = onRequest({ secrets: [adminCredentialsJson] }, (req, r
 });
 
 /**
+ * Documentos obrigatórios de motorista (têm de coincidir com DRIVER_DOCS
+ * em admin-panel.html) — usados para saber que chaves aceitar/guardar.
+ */
+const DRIVER_DOC_KEYS = ['licenca', 'cc', 'crc', 'dua', 'seguro', 'ipo'];
+
+/**
+ * Cria um novo utilizador (cliente ou motorista) diretamente a partir do
+ * painel de administração. Usa o Admin SDK porque o SDK do lado do
+ * cliente não permite criar outra conta no Firebase Auth sem terminar a
+ * sessão do próprio admin.
+ *
+ * Autorização: reutiliza o mesmo secret ADMIN_CREDENTIALS_JSON já usado no
+ * login do painel — o pedido tem de incluir o email/password do admin,
+ * validados aqui no servidor antes de qualquer alteração.
+ *
+ * Espera um POST JSON:
+ * {
+ *   idToken,                             // preferido: ID token do admin autenticado via Firebase Auth
+ *   adminEmail, adminPassword,           // alternativa: credenciais do admin (fallback sem Firebase Auth)
+ *   tipo: "cliente" | "motorista",
+ *   nome, email, password, telefone,
+ *   documentos: {                        // só para tipo === "motorista", opcional por chave
+ *     licenca: { dataUrl: "data:image/...;base64,...", fileName: "..." },
+ *     cc: {...}, crc: {...}, dua: {...}, seguro: {...}, ipo: {...}
+ *   }
+ * }
+ * Devolve: { ok: true, uid: "..." } ou { error: "..." }
+ */
+exports.adminCreateUser = onRequest({ secrets: [adminCredentialsJson], timeoutSeconds: 120 }, (req, res) => {
+  cors(req, res, async () => {
+    if (req.method !== 'POST') {
+      res.status(405).send('Method Not Allowed');
+      return;
+    }
+    try {
+      const {
+        idToken, adminEmail, adminPassword,
+        tipo, nome, email, password, telefone,
+        documentos
+      } = req.body || {};
+
+      // 1) Confirma que quem chama é mesmo o admin — por ID token do Firebase
+      // Auth (preferido) ou, em alternativa, pelo mesmo secret do login antigo.
+      let admins = {};
+      try { admins = JSON.parse(adminCredentialsJson.value() || '{}'); } catch (e) { admins = {}; }
+      let isAdmin = false;
+      if (idToken) {
+        try {
+          const decoded = await admin.auth().verifyIdToken(idToken);
+          isAdmin = !!(admins.email && decoded.email
+            && String(admins.email).toLowerCase() === String(decoded.email).toLowerCase());
+        } catch (e) {
+          isAdmin = false;
+        }
+      } else {
+        isAdmin = !!(admins.email && admins.pass
+          && String(admins.email).toLowerCase() === String(adminEmail || '').toLowerCase()
+          && admins.pass === adminPassword);
+      }
+      if (!isAdmin) {
+        res.status(403).json({ error: 'Não autorizado.' });
+        return;
+      }
+
+      // 2) Valida os dados do novo utilizador.
+      if (!tipo || (tipo !== 'cliente' && tipo !== 'motorista')) {
+        res.status(400).json({ error: 'Tipo tem de ser "cliente" ou "motorista".' });
+        return;
+      }
+      if (!nome || !email || !password) {
+        res.status(400).json({ error: 'Nome, email e password são obrigatórios.' });
+        return;
+      }
+      if (String(password).length < 6) {
+        res.status(400).json({ error: 'A password tem de ter pelo menos 6 caracteres.' });
+        return;
+      }
+
+      // 3) Cria a conta no Firebase Auth.
+      const userRecord = await admin.auth().createUser({
+        email: String(email).trim(),
+        password: String(password),
+        displayName: nome
+      });
+      const uid = userRecord.uid;
+
+      // 4) Cria o registo correspondente no Firestore.
+      const db = admin.firestore();
+      if (tipo === 'cliente') {
+        await db.collection('clients').doc(uid).set({
+          name: nome,
+          email: String(email).trim(),
+          phone: telefone || '',
+          criadoPeloAdmin: true,
+          createdAt: admin.firestore.FieldValue.serverTimestamp()
+        }, { merge: true });
+      } else {
+        // Motorista: faz upload dos documentos (se enviados) para o Storage
+        // e monta o mapa "documents" com o mesmo formato usado no resto do painel.
+        const documentsMap = {};
+        if (documentos && typeof documentos === 'object') {
+          const bucket = admin.storage().bucket();
+          for (const key of DRIVER_DOC_KEYS) {
+            const doc = documentos[key];
+            if (!doc || !doc.dataUrl) continue;
+            try {
+              const matches = /^data:(.+?);base64,(.+)$/.exec(doc.dataUrl);
+              if (!matches) continue;
+              const contentType = matches[1];
+              const buffer = Buffer.from(matches[2], 'base64');
+              const ext = (doc.fileName && doc.fileName.includes('.'))
+                ? doc.fileName.split('.').pop()
+                : (contentType.split('/')[1] || 'bin');
+              const filePath = 'driver_documents/' + uid + '/' + key + '.' + ext;
+              const file = bucket.file(filePath);
+              await file.save(buffer, { contentType });
+              await file.makePublic().catch(function (e) {
+                console.warn('makePublic falhou para ' + filePath + ':', e.message);
+              });
+              documentsMap[key] = {
+                url: 'https://storage.googleapis.com/' + bucket.name + '/' + filePath,
+                status: 'approved',
+                fileName: doc.fileName || (key + '.' + ext)
+              };
+            } catch (docErr) {
+              console.warn('Falha ao guardar documento "' + key + '":', docErr.message);
+            }
+          }
+        }
+
+        await db.collection('drivers').doc(uid).set({
+          name: nome,
+          email: String(email).trim(),
+          phone: telefone || '',
+          status: 'approved',
+          documents: documentsMap,
+          criadoPeloAdmin: true,
+          createdAt: admin.firestore.FieldValue.serverTimestamp()
+        }, { merge: true });
+
+        // Espelha o nome em driver_locations/{uid}, tal como acontece noutros
+        // pontos do painel, para que apareça corretamente no ecrã "Ao vivo".
+        await db.collection('driver_locations').doc(uid).set({ name: nome }, { merge: true }).catch(function () {});
+      }
+
+      res.status(200).json({ ok: true, uid });
+    } catch (err) {
+      console.error('adminCreateUser falhou:', err);
+      const message = (err && err.code === 'auth/email-already-exists')
+        ? 'Já existe uma conta com este email.'
+        : (err && err.message) || 'Erro desconhecido.';
+      res.status(500).json({ error: message });
+    }
+  });
+});
+
+/**
  * ===================== FATURAS XML (Stripe → XML tipo SAF-T) =====================
  * Gera automaticamente um ficheiro XML por cada pagamento Stripe concluído e
  * guarda-o no Firebase Storage (pasta faturas-xml/), com metadados espelhados
