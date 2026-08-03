@@ -59,6 +59,13 @@ self.addEventListener('activate', (event) => {
    continuam cache-first, que é seguro porque raramente mudam. */
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
+  // Nunca interceta pedidos de outra origem (ex.: Google Maps, Firestore,
+  // Cloud Functions). Intercetar e colocar em cache o script do Google Maps
+  // faz a própria API detetar que não está a ser carregada diretamente dos
+  // servidores da Google e bloquear-se com "NotLoadingAPIFromGoogleMapsError"
+  // (mapa mostra "Ups! Algo correu mal"). Deixa o browser tratar estes
+  // pedidos normalmente, sem passar pelo cache do service worker.
+  if (new URL(event.request.url).origin !== self.location.origin) return;
   const isHtml = event.request.mode === 'navigate' ||
     (event.request.headers.get('accept') || '').includes('text/html');
   if (isHtml) {
