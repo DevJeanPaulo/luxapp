@@ -1278,6 +1278,7 @@
 
       <!-- 2. TO PICKUP -->
       <div class="screen" id="d-to-pickup">
+        <div class="toast" id="toast-d-to-pickup"></div>
         <div class="topbar">
           <div style="width:38px;"></div>
           <div class="brand" style="font-size:13px;">A CAMINHO DO CLIENTE</div>
@@ -1314,6 +1315,7 @@
 
       <!-- 2b. WAITING FOR PASSENGER -->
       <div class="screen" id="d-waiting">
+        <div class="toast" id="toast-d-waiting"></div>
         <div class="topbar">
           <div style="width:38px;"></div>
           <div class="brand" style="font-size:13px;">À ESPERA DO PASSAGEIRO</div>
@@ -3542,12 +3544,20 @@ function persistDriverBalance(){
 }
 
 /* ===================== COMUNICAÇÃO (chamada real + chat) =====================
-   Chamada real via tel: (abre o marcador do telemóvel) usando o número do
-   cliente da viagem real quando existe, ou o número de demonstração como
-   fallback. O chat está na secção "CHAT AO VIVO" mais abaixo. */
+   Chamada real via tel: (abre o marcador do telemóvel) usando SEMPRE o número
+   real do cliente gravado na própria corrida (rides/{id}.clientPhone, escrito
+   pelo app do cliente ao criar o pedido). Nunca usa um número de reserva —
+   currentUser.c é só um objeto de exemplo usado noutros ecrãs de demonstração
+   desta app e ligar para ele telefonaria para um número que não é o cliente
+   real. Se o número ainda não estiver disponível, avisa em vez de tentar
+   ligar. O chat está na secção "CHAT AO VIVO" mais abaixo. */
 function callClient(){
-  const phone = (currentRideData && currentRideData.clientPhone) ? currentRideData.clientPhone : (currentUser.c && currentUser.c.phone);
-  if(!phone) return;
+  const phone = currentRideData && currentRideData.clientPhone;
+  if(!phone){
+    const activeScreen = document.querySelector('.screen.active');
+    if(activeScreen) toast(activeScreen.id, 'Número do cliente ainda não disponível.');
+    return;
+  }
   window.location.href = 'tel:' + phone.replace(/[^\d+]/g,'');
 }
 

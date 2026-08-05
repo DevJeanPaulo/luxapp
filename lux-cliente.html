@@ -2070,7 +2070,12 @@ function completeAuth(p){
   saveSession(p);
   if(typeof enforceSingleSession==='function') enforceSingleSession(p);
   if(typeof initPushAuto==='function') initPushAuto(p);
-  if(p==='c'){ resetClientFlow(); if(typeof tryRestoreActiveRide==='function') tryRestoreActiveRide(); } else { resetDriverFlow(); }
+  if(p==='c'){
+    if(typeof upsertClientProfile==='function') upsertClientProfile();
+    if(typeof listenClientProfile==='function') listenClientProfile();
+    resetClientFlow();
+    if(typeof tryRestoreActiveRide==='function') tryRestoreActiveRide();
+  } else { resetDriverFlow(); }
 }
 async function doLogin(p){
   const user = (document.getElementById(p+'-login-user').value||'').trim();
@@ -2698,6 +2703,49 @@ let mySessionId = { c:null, d:null };
 function sanitizeSessionKey(str){
   return String(str||'').toLowerCase().replace(/[^a-z0-9]/g,'_').slice(0,120);
 }
+/* ===================== PERFIL REAL DO CLIENTE (Firestore) =====================
+   Antes disto, o telefone do cliente só existia em memória/localStorage neste
+   aparelho (preenchido só no ecrã de Registo). Se o cliente usasse "Entrar"
+   num aparelho novo (sem essa sessão local guardada), currentUser.c.phone
+   ficava preso no valor de demonstração '+351 9XX XXX XXX' — e era esse
+   número "simulado" que callDriver() acabava por ligar. Agora, tal como o
+   motorista já fazia (drivers/{id}), o perfil real do cliente é gravado e
+   sincronizado em clients/{id}, a mesma coleção já usada pela exportação do
+   painel admin. */
+function clientDocId(email){
+  return sanitizeSessionKey(email);
+}
+async function upsertClientProfile(){
+  const db = initFirestore();
+  if(!db || !currentUser.c || !currentUser.c.email) return;
+  try{
+    const id = clientDocId(currentUser.c.email);
+    await db.collection('clients').doc(id).set({
+      name: currentUser.c.name || '',
+      email: currentUser.c.email,
+      phone: currentUser.c.phone || '',
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    }, { merge:true });
+  }catch(e){ console.warn('Falha ao gravar perfil do cliente:', e); }
+}
+let clientProfileUnsub = null;
+function listenClientProfile(){
+  const db = initFirestore();
+  if(!db || !currentUser.c.email) return;
+  if(clientProfileUnsub){ clientProfileUnsub(); clientProfileUnsub = null; }
+  const id = clientDocId(currentUser.c.email);
+  clientProfileUnsub = db.collection('clients').doc(id).onSnapshot(function(snap){
+    if(!snap.exists) return;
+    const data = snap.data();
+    let changed = false;
+    if(data.name && data.name !== currentUser.c.name){ currentUser.c.name = data.name; changed = true; }
+    if(data.phone && data.phone !== currentUser.c.phone){ currentUser.c.phone = data.phone; changed = true; }
+    if(changed){
+      if(typeof updateSettingsUI==='function') updateSettingsUI('c');
+      saveSession('c');
+    }
+  }, function(e){ console.warn('Falha ao ouvir perfil do cliente:', e); });
+}
 function newSessionId(){
   try{ return crypto.randomUUID(); }catch(e){ return Date.now()+'-'+Math.random().toString(36).slice(2); }
 }
@@ -3133,12 +3181,21 @@ function selectVehicle(id, el){
   refreshConfirmButtonState();
 }
 /* ===================== COMUNICAÇÃO (chamada real + chat) =====================
-   Chamada real via tel: (abre o marcador do telemóvel) usando o número do
-   motorista da viagem real quando existe, ou o número de demonstração como
-   fallback. O chat está na secção "CHAT AO VIVO" mais abaixo. */
+   Chamada real via tel: (abre o marcador do telemóvel) usando SEMPRE o número
+   real do motorista gravado na própria corrida (rides/{id}.driverPhone,
+   escrito por acceptRequest() no app do motorista quando aceita o pedido).
+   Nunca usa um número de reserva/demonstração — currentUser.d é só um objeto
+   de exemplo usado noutros ecrãs de demonstração da app, e ligar para ele
+   telefonaria para um número que não é o motorista real. Se o número ainda
+   não estiver disponível (ex.: corrida ainda não foi aceite), avisa em vez
+   de tentar ligar. O chat está na secção "CHAT AO VIVO" mais abaixo. */
 function callDriver(){
-  const phone = (currentRide && currentRide.driverPhone) ? currentRide.driverPhone : (currentUser.d && currentUser.d.phone);
-  if(!phone) return;
+  const phone = currentRide && currentRide.driverPhone;
+  if(!phone){
+    const activeScreen = document.querySelector('.screen.active');
+    if(activeScreen) toast(activeScreen.id, 'Número do motorista ainda não disponível — aguarda a aceitação da corrida.');
+    return;
+  }
   window.location.href = 'tel:' + phone.replace(/[^\d+]/g,'');
 }
 
