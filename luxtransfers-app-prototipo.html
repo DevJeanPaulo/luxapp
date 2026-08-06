@@ -1078,7 +1078,10 @@
               <button class="avatar-edit-btn" onclick="document.getElementById('c-avatar-input').click()">✎</button>
               <input type="file" id="c-avatar-input" accept="image/*" style="display:none;" onchange="handleAvatarUpload(event,'c')" />
             </div>
-            <div class="s-name" id="c-settings-name">Jean Paulo</div>
+            <div style="display:flex; align-items:center; justify-content:center; gap:8px;">
+              <div class="s-name" id="c-settings-name">Jean Paulo</div>
+              <button class="edit-field-btn" onclick="openEditField('c','name')">✎</button>
+            </div>
           </div>
           <div class="section-label" data-i18n="section_profile">Perfil</div>
           <div class="settings-row">

@@ -1002,7 +1002,10 @@
               <button class="avatar-edit-btn" onclick="document.getElementById('c-avatar-input').click()">✎</button>
               <input type="file" id="c-avatar-input" accept="image/*" style="display:none;" onchange="handleAvatarUpload(event,'c')" />
             </div>
-            <div class="s-name" id="c-settings-name">Jean Paulo</div>
+            <div style="display:flex; align-items:center; justify-content:center; gap:8px;">
+              <div class="s-name" id="c-settings-name">Jean Paulo</div>
+              <button class="edit-field-btn" onclick="openEditField('c','name')">✎</button>
+            </div>
           </div>
           <div class="section-label" data-i18n="section_profile">Perfil</div>
           <div class="settings-row">
@@ -1958,11 +1961,12 @@ let editFieldCtx = { p:null, field:null };
 function openEditField(p, field){
   editFieldCtx = { p:p, field:field };
   const isEmail = field==='email';
+  const isName = field==='name';
   const titleEl = document.getElementById('edit-field-title');
-  if(titleEl) titleEl.textContent = isEmail ? 'Editar email' : 'Editar telemóvel';
+  if(titleEl) titleEl.textContent = isEmail ? 'Editar email' : (isName ? 'Editar nome' : 'Editar telemóvel');
   const inputEl = document.getElementById('edit-field-input');
   if(inputEl){
-    inputEl.type = isEmail ? 'email' : 'tel';
+    inputEl.type = isEmail ? 'email' : (isName ? 'text' : 'tel');
     inputEl.value = currentUser[p][field] || '';
   }
   showErr('edit-field-error', false);
@@ -1974,15 +1978,20 @@ function closeEditField(){
 function saveEditField(){
   const v = (document.getElementById('edit-field-input').value||'').trim();
   const p = editFieldCtx.p, field = editFieldCtx.field;
-  const ok = field==='email' ? validEmail(v) : v.length>=9;
+  const isName = field==='name';
+  const ok = field==='email' ? validEmail(v) : (isName ? v.length>=2 : v.length>=9);
   showErr('edit-field-error', !ok);
   if(!ok) return;
   currentUser[p][field] = v;
-  if(!fieldVerified[p]) fieldVerified[p] = {};
-  fieldVerified[p][field] = false;
+  if(!isName){
+    if(!fieldVerified[p]) fieldVerified[p] = {};
+    fieldVerified[p][field] = false;
+  }
   updateSettingsUI(p);
+  saveSession(p);
+  if(isName && p==='c' && typeof upsertClientProfile==='function') upsertClientProfile();
   closeEditField();
-  toast(p+'-settings', field==='email' ? 'Email atualizado' : 'Telemóvel atualizado');
+  toast(p+'-settings', field==='email' ? 'Email atualizado' : (isName ? 'Nome atualizado' : 'Telemóvel atualizado'));
 }
 /* Contas especiais com acesso ilimitado (saldo infinito para o motorista, sem
    pagamento para o cliente). As credenciais NUNCA ficam no frontend — são
