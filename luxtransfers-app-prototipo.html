@@ -2657,6 +2657,9 @@ function setNamePendingUI(pendingName){
    sobrescrevê-lo a partir do próprio documento desalinharia futuras escritas
    com o doc já existente. */
 let driverProfileUnsub = null;
+/* epoch ms até quando o motorista fica impedido de ficar online — penalização
+   de 3h por cancelar uma reserva já aceite (ver cancelReservationByDriver). */
+let driverBlockedUntil = null;
 function listenDriverProfile(){
   const db = initFirestore();
   if(!db || !currentUser.d.email) return;
@@ -2669,6 +2672,9 @@ function listenDriverProfile(){
       driverBalance = data.balance;
       renderBalanceUI();
     }
+    // Bloqueio temporário (penalização por cancelar uma reserva já aceite):
+    // guardado em drivers/{id}.blockedUntil (epoch ms). Ver toggleOnline().
+    driverBlockedUntil = (data.blockedUntil && typeof data.blockedUntil === 'number') ? data.blockedUntil : null;
     let nameOrPhoneChanged = false;
     if(data.name && data.name !== currentUser.d.name){ currentUser.d.name = data.name; nameOrPhoneChanged = true; }
     if(data.phone!=null && data.phone !== currentUser.d.phone){ currentUser.d.phone = data.phone; nameOrPhoneChanged = true; }
@@ -4323,11 +4329,47 @@ let clientRideId = null;
 let clientRide = null;
 let clientRideUnsub = null;
 let clientLastHandledRideStatus = null;
-/* Regra de cancelamento: grátis até 2 min após o motorista aceitar; depois
+/* Regra de cancelamento: grátis até 3 min após o motorista aceitar; depois
    disso aplica-se a taxa mínima (tarifa base da classe escolhida); deixa de
    ser possível cancelar assim que a viagem entra em curso (in_progress). */
-const FREE_CANCEL_WINDOW_MS = 2 * 60 * 1000;
+const FREE_CANCEL_WINDOW_MS = 3 * 60 * 1000;
 let clientRideAcceptedAtMs = null;
+/* ===================== REEMBOLSOS STRIPE (cancelamentos) =====================
+   Ver explicação completa em lux-cliente.html (função equivalente). */
+const LUX_COMMISSION_RATE = 0.10;
+const RESERVATION_CANCEL_PENALTY_RATE = 0.10;
+const REFUND_PAYMENT_URL = 'https://us-central1-lux-transfers-47cb2.cloudfunctions.net/refundPayment';
+function round2(n){ return Math.round((n + Number.EPSILON) * 100) / 100; }
+async function requestStripeRefund(paymentIntentId, amountEur, rideId){
+  if(!paymentIntentId || !(amountEur > 0)){
+    if(rideId){ const col = ridesCollection(); if(col) col.doc(rideId).set({ refundStatus: amountEur>0 ? 'skipped_no_payment_intent' : 'not_needed' }, { merge:true }).catch(function(){}); }
+    return;
+  }
+  try{
+    const resp = await fetch(REFUND_PAYMENT_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ paymentIntentId: paymentIntentId, amount: Math.round(amountEur * 100) })
+    });
+    const ok = resp.ok;
+    const col = ridesCollection();
+    if(col && rideId) col.doc(rideId).set({ refundStatus: ok ? 'refunded' : 'failed', refundAmount: amountEur }, { merge:true }).catch(function(){});
+  }catch(e){
+    console.warn('Falha ao pedir reembolso Stripe:', e);
+    const col = ridesCollection();
+    if(col && rideId) col.doc(rideId).set({ refundStatus: 'failed', refundAmount: amountEur }, { merge:true }).catch(function(){});
+  }
+}
+async function creditDriverBalance(driverId, amountEur){
+  if(!driverId || !(amountEur > 0)) return;
+  try{
+    const db = initFirestore();
+    if(!db) return;
+    await db.collection('drivers').doc(driverId).set({
+      balance: firebase.firestore.FieldValue.increment(amountEur)
+    }, { merge:true });
+  }catch(e){ console.warn('Falha ao creditar saldo do motorista:', e); }
+}
 /* Persistência da corrida ativa do cliente (Task #178): grava o ID da
    corrida em curso no localStorage para restaurar o estado se a app fechar
    e reabrir a meio de uma viagem. */
@@ -4576,12 +4618,12 @@ function payThenRequestRide(){
   if(!selectedVehicle) return;
   if(rideTiming === 'later'){
     if(!scheduledForDate){ toast('c-vehicles', 'Escolhe uma data/hora válida para a reserva.'); return; }
-    if(unlimitedAccount.c){ scheduleRideForLater(); return; }
-    openPayment('c', selectedVehicle.price, function(){ scheduleRideForLater(); });
+    if(unlimitedAccount.c){ scheduleRideForLater(null); return; }
+    openPayment('c', selectedVehicle.price, function(pi){ scheduleRideForLater(pi && pi.id ? pi.id : null); });
     return;
   }
-  if(unlimitedAccount.c){ startMatching(); return; }
-  openPayment('c', selectedVehicle.price, function(){ startMatching(); });
+  if(unlimitedAccount.c){ startMatching(null); return; }
+  openPayment('c', selectedVehicle.price, function(pi){ startMatching(pi && pi.id ? pi.id : null); });
 }
 /* ===================== DISTRITO (reverse geocoding) =====================
    Usado apenas para RESERVAS (viagens agendadas): em vez do raio de 20km
@@ -4753,7 +4795,7 @@ function scheduleOfferWatchdog(rideId, expiresAt){
     advanceRideOffer(rideId);
   }, delay);
 }
-async function startMatching(){
+async function startMatching(paymentIntentId){
   goTo('c-vehicles'); // ensure state
   goTo('c-matching');
   const col = ridesCollection();
@@ -4801,6 +4843,7 @@ async function startMatching(){
     declinedDriverIds: [],
     vehicleId: selectedVehicle.id, vehicleName: selectedVehicle.model || selectedVehicle.name,
     price: selectedVehicle.price,
+    paymentIntentId: paymentIntentId || null,
     createdAt: firebase.firestore.FieldValue.serverTimestamp(),
     updatedAt: firebase.firestore.FieldValue.serverTimestamp()
   }).then(function(ref){
@@ -4816,7 +4859,7 @@ async function startMatching(){
    mas com status:'scheduled' em vez de 'searching', para não ser despachada
    já aos motoristas. checkMyScheduledRides() é quem, mais tarde, perto da
    hora marcada, transforma esta reserva num pedido normal (ver mais abaixo). */
-async function scheduleRideForLater(){
+async function scheduleRideForLater(paymentIntentId){
   const col = ridesCollection();
   if(!col || !scheduledForDate){
     toast('c-vehicles', 'Não foi possível criar a reserva. Tenta novamente.');
@@ -4861,6 +4904,7 @@ async function scheduleRideForLater(){
     declinedDriverIds: [],
     vehicleId: selectedVehicle.id, vehicleName: selectedVehicle.model || selectedVehicle.name,
     price: selectedVehicle.price,
+    paymentIntentId: paymentIntentId || null,
     createdAt: firebase.firestore.FieldValue.serverTimestamp(),
     updatedAt: firebase.firestore.FieldValue.serverTimestamp()
   }).then(function(ref){
@@ -4985,12 +5029,56 @@ function clientReservationRowHtml(item){
     ? '<div style="font-size:12px; color:#5fd68a; font-weight:700; margin-top:6px;">✓ Confirmada — ' + (r.driverName || 'Motorista Lux') + '</div>' +
       '<div style="font-size:12px; color:var(--muted); margin-top:2px;">' + vFull + '</div>'
     : '<div style="font-size:12px; color:var(--gold); font-weight:700; margin-top:6px;">A aguardar motorista</div>';
+  const cancelLabel = isConfirmed ? 'Cancelar (penalização 10%)' : 'Cancelar reserva';
+  const cancelBtn = '<button class="btn btn-outline" style="margin-top:10px; padding:8px; font-size:12.5px; width:100%; border-color:var(--danger); color:var(--danger);" onclick="cancelReservationByClient(\'' + item.id + '\', this)">' + cancelLabel + '</button>';
   return '<div style="background:var(--panel2); border:1px solid var(--line); border-radius:var(--radius-md); padding:14px; margin-bottom:10px;">' +
     '<div style="font-weight:700; font-size:14px;">' + whenStr + '</div>' +
     '<div style="font-size:12.5px; color:var(--muted); margin-top:6px;">De: ' + (r.origin || '—') + '</div>' +
     '<div style="font-size:12.5px; color:var(--muted);">Para: ' + (r.destination || '—') + '</div>' +
-    statusHtml +
+    statusHtml + cancelBtn +
     '</div>';
+}
+/* Cancelamento de uma RESERVA pelo cliente — ver explicação completa em
+   lux-cliente.html (função equivalente, mesma lógica de penalização/reembolso). */
+async function cancelReservationByClient(rideId, btnEl){
+  const col = ridesCollection();
+  if(!col || !rideId) return;
+  let snap;
+  try{ snap = await col.doc(rideId).get(); }catch(e){ toast('c-reservations', 'Não foi possível cancelar. Tenta novamente.'); return; }
+  if(!snap.exists){ toast('c-reservations', 'Essa reserva já não existe.'); return; }
+  const r = snap.data();
+  const wasAccepted = r.status === 'reserved';
+  const paidAmount = typeof r.price === 'number' ? r.price : 0;
+  let penalty = 0, refundAmount = paidAmount, minFare = 0;
+  if(wasAccepted){
+    const veh = VEHICLES.find(function(v){ return v.id === r.vehicleId; });
+    minFare = veh ? veh.base : 0;
+    penalty = round2(paidAmount * RESERVATION_CANCEL_PENALTY_RATE);
+    const luxCommission = round2(paidAmount * LUX_COMMISSION_RATE);
+    refundAmount = round2(Math.max(0, paidAmount - luxCommission - penalty));
+  }
+  const msg = wasAccepted
+    ? ('Esta reserva já foi aceite por um motorista. Ao cancelar agora, é aplicada uma penalização de 10% (' + fmtEur(penalty) + ') e o resto (' + fmtEur(refundAmount) + ') é reembolsado. Cancelar mesmo assim?')
+    : 'Cancelar esta reserva? Ainda não foi aceite por nenhum motorista, sem custo — reembolso total.';
+  if(!window.confirm(msg)) return;
+  if(btnEl){ btnEl.disabled = true; btnEl.textContent = 'A cancelar…'; }
+  try{
+    await col.doc(rideId).set({
+      status: 'cancelled', cancelledBy: 'client', cancelledFromReservation: true,
+      cancelPenalty: penalty, driverCredited: wasAccepted ? minFare : 0,
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    }, { merge:true });
+  }catch(e){ console.warn('Falha ao cancelar reserva:', e); }
+  if(wasAccepted && r.driverId && minFare > 0){
+    creditDriverBalance(r.driverId, minFare);
+  }
+  if(!unlimitedAccount.c){
+    requestStripeRefund(r.paymentIntentId, refundAmount, rideId);
+  }
+  stopWatchingReservation(rideId);
+  forgetReservationConfirmation(rideId);
+  toast('c-reservations', wasAccepted ? ('Reserva cancelada — penalização de ' + fmtEur(penalty) + ' aplicada, resto reembolsado.') : 'Reserva cancelada sem custo — reembolso total a caminho.');
+  loadClientReservations();
 }
 function loadClientReservations(){
   const listEl = document.getElementById('c-reservations-list');
@@ -5102,9 +5190,12 @@ function cancelAcceptedRide(){
     cancelFee = veh ? veh.base : 0;
   }
   const msg = withinFreeWindow
-    ? 'Cancelar esta viagem agora? Ainda está dentro dos 2 minutos grátis, sem custo.'
-    : ('Já passaram mais de 2 minutos desde a aceitação. Será cobrada a taxa mínima de ' + fmtEur(cancelFee) + '. Cancelar mesmo assim?');
+    ? 'Cancelar esta viagem agora? Ainda está dentro dos 3 minutos grátis, sem custo.'
+    : ('Já passaram mais de 3 minutos desde a aceitação. Será cobrada a taxa mínima de ' + fmtEur(cancelFee) + '. Cancelar mesmo assim?');
   if(!window.confirm(msg)) return;
+  const rideIdBeingCancelled = clientRideId;
+  const paymentIntentId = clientRide ? clientRide.paymentIntentId : null;
+  const paidAmount = clientRide && typeof clientRide.price === 'number' ? clientRide.price : (selectedVehicle ? selectedVehicle.price : 0);
   const col = ridesCollection();
   if(col){
     col.doc(clientRideId).set({
@@ -5112,13 +5203,17 @@ function cancelAcceptedRide(){
       updatedAt: firebase.firestore.FieldValue.serverTimestamp()
     }, { merge:true }).catch(function(){});
   }
+  if(!unlimitedAccount.c){
+    const refundAmount = round2(Math.max(0, paidAmount - cancelFee));
+    requestStripeRefund(paymentIntentId, refundAmount, rideIdBeingCancelled);
+  }
   stopListeningToClientRide();
   stopListeningDriverLocationEta();
   clearRouteCarMarker('map-found');
   stopClientChatWatch();
   clearClientActiveRideStorage();
   clientRideId = null; clientRide = null; clientLastHandledRideStatus = null; clientRideAcceptedAtMs = null;
-  toast('c-home', cancelFee>0 ? ('Viagem cancelada — taxa de ' + fmtEur(cancelFee) + ' aplicada') : 'Viagem cancelada sem custo');
+  toast('c-home', cancelFee>0 ? ('Viagem cancelada — taxa de ' + fmtEur(cancelFee) + ' aplicada, resto reembolsado') : 'Viagem cancelada sem custo — reembolso total a caminho');
   goTo('c-home');
 }
 
@@ -5856,6 +5951,12 @@ function toggleOnline(){
     openRecharge();
     return;
   }
+  if(!isOnline && driverBlockedUntil && driverBlockedUntil > Date.now()){
+    const mins = Math.ceil((driverBlockedUntil - Date.now()) / 60000);
+    const h = Math.floor(mins / 60), m = mins % 60;
+    toast('d-home', 'Ainda estás temporariamente impedido de receber pedidos (cancelaste uma reserva já aceite). Falta ' + (h>0 ? (h + 'h ') : '') + m + 'min.');
+    return;
+  }
   isOnline = !isOnline;
   document.getElementById('online-switch').classList.toggle('on', isOnline);
   setOnlineStatusText(isOnline);
@@ -6126,7 +6227,8 @@ function reservationRowHtml(item, opts){
     '<div style="font-size:11px; color:var(--muted);">' + (r.vehicleName || 'Veículo Lux') + '</div>' +
     (opts && opts.mine
       ? '<div style="font-size:12px; color:#5fd68a; font-weight:700; margin-top:4px;">✓ Reserva aceite — recebes um lembrete 30 min antes</div>' +
-        '<button class="btn btn-gold" style="margin-top:6px; padding:8px; font-size:12.5px;" onclick="startReservedTrip(\'' + item.id + '\')"' + (driverRideId ? ' disabled' : '') + '>Iniciar viagem</button>'
+        '<button class="btn btn-gold" style="margin-top:6px; padding:8px; font-size:12.5px;" onclick="startReservedTrip(\'' + item.id + '\')"' + (driverRideId ? ' disabled' : '') + '>Iniciar viagem</button>' +
+        '<button class="btn btn-outline" style="margin-top:6px; padding:8px; font-size:12.5px; color:#e6795c; border-color:#e6795c;" onclick="cancelReservationByDriver(\'' + item.id + '\', this)"' + (driverRideId ? ' disabled' : '') + '>Cancelar reserva (bloqueio 3h)</button>'
       : '<button class="btn btn-outline" style="margin-top:4px; padding:8px; font-size:12.5px;" onclick="acceptReservation(\'' + item.id + '\', this)">Aceitar reserva</button>'
     ) +
   '</div>';
@@ -6195,6 +6297,54 @@ function acceptReservation(rideId, btnEl){
       console.warn('Falha ao aceitar reserva:', e);
       toast('d-reservations', 'Não foi possível aceitar a reserva. Tenta novamente.');
     }
+    loadDriverReservations();
+  });
+}
+/* Penalização por cancelar uma reserva já aceite: a reserva volta ao estado
+   'scheduled' (disponível para outro motorista aceitar) e este motorista
+   fica 3h impedido de ficar online / receber pedidos (drivers/{id}.blockedUntil).
+   O crédito da taxa mínima ao motorista e o reembolso Stripe ao cliente são
+   tratados do lado do cliente em cancelReservationByClient() — aqui só se
+   trata da penalização quando é o MOTORISTA a cancelar. */
+function cancelReservationByDriver(rideId, btnEl){
+  const col = ridesCollection();
+  if(!col || !rideId) return;
+  if(!window.confirm('Cancelar esta reserva já aceite? Vais ficar 3 horas sem poder receber novos pedidos.')) return;
+  if(btnEl){ btnEl.disabled = true; btnEl.textContent = 'A cancelar…'; }
+  col.doc(rideId).set({
+    status: 'scheduled', cancelledBy: 'driver', cancelledFromReservation: true,
+    driverName: firebase.firestore.FieldValue.delete(),
+    driverPhone: firebase.firestore.FieldValue.delete(),
+    driverEmail: firebase.firestore.FieldValue.delete(),
+    driverId: firebase.firestore.FieldValue.delete(),
+    vehicleBrand: firebase.firestore.FieldValue.delete(),
+    vehicleModel: firebase.firestore.FieldValue.delete(),
+    vehicleColor: firebase.firestore.FieldValue.delete(),
+    vehiclePlate: firebase.firestore.FieldValue.delete(),
+    driverPhotoUrl: firebase.firestore.FieldValue.delete(),
+    reservedAt: firebase.firestore.FieldValue.delete(),
+    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+  }, { merge:true }).then(function(){
+    const blockedUntil = Date.now() + (3 * 60 * 60 * 1000);
+    const myId = driverDocId(currentUser.d.email);
+    const db = initFirestore();
+    return db.collection('drivers').doc(myId).set({ blockedUntil: blockedUntil }, { merge:true });
+  }).then(function(){
+    if(isOnline){
+      isOnline = false;
+      const sw = document.getElementById('online-switch');
+      if(sw) sw.classList.toggle('on', false);
+      setOnlineStatusText(false);
+      updateDriverFrames();
+      stopSharingLocation();
+      stopListeningForRides();
+    }
+    toast('d-reservations', 'Reserva cancelada. Ficas 3 horas sem poder receber novos pedidos.');
+    loadDriverReservations();
+    refreshReservationsBanner();
+  }).catch(function(e){
+    console.warn('Falha ao cancelar reserva (motorista):', e);
+    toast('d-reservations', 'Não foi possível cancelar. Tenta novamente.');
     loadDriverReservations();
   });
 }

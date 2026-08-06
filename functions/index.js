@@ -58,6 +58,39 @@ exports.createPaymentIntent = onRequest({ secrets: [stripeSecretKey] }, (req, re
 });
 
 /**
+ * Reembolsa (total ou parcialmente) o PaymentIntent original de uma
+ * corrida/reserva. Chamada por lux-cliente.html e luxdriver-motorista.html
+ * nos vários cenários de cancelamento com reembolso (corrida imediata
+ * cancelada dentro/fora dos 3 min grátis, reserva cancelada pelo cliente).
+ *
+ * Espera um POST JSON: { paymentIntentId: "pi_...", amount: <cêntimos, opcional> }
+ * Sem "amount", reembolsa o valor total do PaymentIntent. Devolve: { refundId, status }
+ */
+exports.refundPayment = onRequest({ secrets: [stripeSecretKey] }, (req, res) => {
+  cors(req, res, async () => {
+    if (req.method !== 'POST') {
+      res.status(405).send('Method Not Allowed');
+      return;
+    }
+    try {
+      const stripe = Stripe(stripeSecretKey.value());
+      const { paymentIntentId, amount } = req.body || {};
+      if (!paymentIntentId) {
+        res.status(400).json({ error: 'paymentIntentId é obrigatório.' });
+        return;
+      }
+      const params = { payment_intent: paymentIntentId };
+      if (amount != null && amount > 0) params.amount = Math.round(amount);
+      const refund = await stripe.refunds.create(params);
+      res.status(200).json({ refundId: refund.id, status: refund.status });
+    } catch (err) {
+      console.error('refundPayment falhou:', err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+});
+
+/**
  * Cria um SetupIntent Stripe (sem cobrança) e um Customer associado, para
  * guardar um cartão real no registo de novos clientes/motoristas.
  * Chamada por lux-cliente.html e luxdriver-motorista.html logo após a

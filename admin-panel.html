@@ -111,11 +111,17 @@
 
   .edit-form{ display:flex; flex-direction:column; gap:10px; max-width:360px; }
   .edit-form label{ font-size:10.5px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; }
-  .edit-form input{
+  .edit-form input, .edit-form select{
     width:100%; background:var(--panel2); border:1px solid var(--line); border-radius:var(--radius-sm);
     padding:9px 12px; color:var(--text); font-size:13px; outline:none; margin-top:3px;
+    box-sizing:border-box; -webkit-appearance:none; appearance:none;
   }
-  .edit-form input:focus{ border-color:var(--gold); }
+  .edit-form select{
+    background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6'><path d='M0 0l5 6 5-6z' fill='%23999'/></svg>");
+    background-repeat:no-repeat; background-position:right 12px center; padding-right:30px;
+  }
+  .edit-form input:focus, .edit-form select:focus{ border-color:var(--gold); }
+  .edit-form input[type="file"]{ padding:7px 10px; font-size:12.5px; }
 
   .doc-row{
     display:flex; align-items:center; gap:14px;
@@ -155,21 +161,44 @@
   .live-driver-card .meta{ font-size:11px; color:var(--muted); margin-top:3px; }
   .live-driver-card .dot{ display:inline-block; width:7px; height:7px; border-radius:50%; background:var(--success); margin-right:6px; }
 
+  /* ---------- Menu hambúrguer (mobile) ---------- */
+  .admin-nav-toggle{
+    display:none; align-items:center; justify-content:center; gap:10px;
+    width:100%; background:var(--panel); border:none; color:var(--text);
+    font-size:14px; font-weight:700; padding:14px 16px; cursor:pointer;
+  }
+  .admin-nav-toggle .bars{ font-size:16px; }
+  .admin-nav-toggle .current-label{ flex:1; text-align:left; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .admin-nav-toggle .chev{ transition:transform .15s ease; flex-shrink:0; }
+  .admin-sidebar.open .admin-nav-toggle .chev{ transform:rotate(180deg); }
+
   @media (max-width: 860px){
     .admin-shell{ flex-direction:column; }
     .admin-sidebar{
       width:100%; height:auto; position:sticky; top:0; z-index:20;
-      flex-direction:row; align-items:center; padding:10px 12px;
-      border-right:none; border-bottom:4px solid var(--gold); overflow-x:auto;
+      flex-direction:column; align-items:stretch; padding:0;
+      border-right:none; border-bottom:4px solid var(--gold); overflow:visible;
     }
     .admin-sidebar .brand-block{ display:none; }
-    .admin-nav{ flex-direction:row; padding:0; gap:6px; }
-    .admin-nav button{ white-space:nowrap; width:auto; flex-shrink:0; }
-    .admin-nav-footer{ flex-direction:row; margin-top:0; margin-left:8px; padding:0; border-top:none; flex-shrink:0; }
-    .admin-nav-footer .btn{ white-space:nowrap; }
+    .admin-nav-toggle{ display:flex; }
+    .admin-nav{
+      flex-direction:column; padding:6px 10px 10px; gap:2px;
+      max-height:0; overflow:hidden;
+    }
+    .admin-sidebar.open .admin-nav{ max-height:70vh; overflow-y:auto; }
+    .admin-nav button{ width:100%; text-align:left; padding:12px 14px; }
+    .admin-nav-footer{
+      flex-direction:row; margin-top:0; padding:0 10px 10px; border-top:none;
+      max-height:0; overflow:hidden;
+    }
+    .admin-sidebar.open .admin-nav-footer{ max-height:60px; padding:0 10px 10px; }
+    .admin-nav-footer .btn{ flex:1; white-space:nowrap; }
     .layout{ flex-direction:column; }
     .col-list{ width:100%; border-right:none; border-bottom:4px solid var(--gold); min-height:auto; }
-    .col-detail{ min-height:auto; }
+    .col-detail{ min-height:auto; padding:18px 16px; }
+    header.topbar{ padding:14px 16px; }
+    .detail-header{ flex-direction:column; align-items:stretch; }
+    .detail-header-actions{ width:100%; }
   }
 
   /* ---------- Login ---------- */
@@ -338,11 +367,16 @@
 
 <div id="admin-dashboard" style="display:none;">
 <div class="admin-shell">
-  <aside class="admin-sidebar">
+  <aside class="admin-sidebar" id="admin-sidebar">
     <div class="brand-block">
       <div class="brand"><span>Lux</span> Transfers</div>
       <div class="sub">Painel de Administração</div>
     </div>
+    <button type="button" class="admin-nav-toggle" onclick="toggleAdminNav()">
+      <span class="bars">☰</span>
+      <span class="current-label" id="admin-nav-current">Candidaturas</span>
+      <span class="chev">▾</span>
+    </button>
     <nav class="admin-nav" id="view-switch">
       <button data-v="apps" class="active" onclick="switchView('apps')">📋 Candidaturas</button>
       <button data-v="users" onclick="switchView('users')">👤 Utilizadores</button>
@@ -412,6 +446,32 @@
     </div>
 
     <button class="btn btn-gold" style="margin-top:20px;" onclick="submitCreateUser()" id="user-create-btn">Criar utilizador</button>
+
+    <div style="margin-top:40px; padding-top:28px; border-top:1px solid var(--line);">
+      <h2 style="margin:0 0 6px;">Importar em massa (CSV)</h2>
+      <p class="sub" style="margin:0 0 16px;">
+        Cria vários clientes ou motoristas de uma vez a partir de um ficheiro CSV. Usa o mesmo formato dos ficheiros
+        exportados em Financeiro: colunas <code>Nome,Email,Telemovel</code> (clientes) ou
+        <code>Nome,Email,Telemovel,Marca,Modelo,Cor,Matricula</code> (motoristas — as 4 últimas colunas são opcionais).
+        Cada pessoa recebe uma password aleatória e um email para a definir.
+      </p>
+      <div class="edit-form">
+        <div>
+          <label>Tipo a importar</label>
+          <select id="import-tipo">
+            <option value="cliente">Clientes</option>
+            <option value="motorista">Motoristas</option>
+          </select>
+        </div>
+        <div>
+          <label>Ficheiro CSV</label>
+          <input type="file" accept=".csv,text/csv" id="import-file">
+        </div>
+      </div>
+      <button class="btn btn-outline" style="margin-top:16px;" onclick="importUsersCsv()" id="import-csv-btn">Importar CSV</button>
+      <div id="import-status" class="live-status" style="margin-top:14px; display:none;"></div>
+      <div id="import-log" style="margin-top:10px; max-height:220px; overflow:auto; font-size:12.5px; color:var(--sub);"></div>
+    </div>
   </div>
 </div>
 
@@ -450,6 +510,11 @@
 <div class="layout" id="view-finance" style="display:none;">
   <div class="col-list">
     <div class="live-status" id="finance-status">A ligar ao Firestore…</div>
+    <div class="export-actions" style="display:flex; flex-wrap:wrap; gap:8px; margin:10px 0;">
+      <button type="button" class="btn btn-outline" onclick="exportDriversCsv()" style="flex:1; min-width:140px;">⬇️ Exportar motoristas (CSV)</button>
+      <button type="button" class="btn btn-outline" onclick="exportClientsCsv()" style="flex:1; min-width:140px;">⬇️ Exportar clientes (CSV)</button>
+    </div>
+    <div id="export-status" class="sub" style="display:none; margin-bottom:8px;"></div>
     <div id="finance-driver-list"></div>
   </div>
   <div class="col-detail" id="finance-detail">
@@ -786,8 +851,23 @@ const VIEW_TITLES = {
   fiscal: 'Calendário fiscal — obrigações mensais',
   invoices: 'Faturas XML geradas via Stripe'
 };
+/* Menu hambúrguer da sidebar (só visível em mobile, ver @media 860px):
+   abre/fecha a lista de navegação, que por omissão fica colapsada para não
+   ocupar o ecrã inteiro com os 9 botões + atualizar/sair. */
+function toggleAdminNav(){
+  const sb = document.getElementById('admin-sidebar');
+  if(sb) sb.classList.toggle('open');
+}
+function closeAdminNav(){
+  const sb = document.getElementById('admin-sidebar');
+  if(sb) sb.classList.remove('open');
+}
 function switchView(view){
   document.querySelectorAll('#view-switch button').forEach(b=>b.classList.toggle('active', b.dataset.v===view));
+  const btn = document.querySelector('#view-switch button[data-v="' + view + '"]');
+  const curLabel = document.getElementById('admin-nav-current');
+  if(btn && curLabel) curLabel.textContent = btn.textContent.replace(/^\S+\s*/, '');
+  closeAdminNav();
   document.getElementById('view-apps').style.display = view==='apps' ? 'flex' : 'none';
   document.getElementById('view-users').style.display = view==='users' ? 'flex' : 'none';
   document.getElementById('view-live').style.display = view==='live' ? 'flex' : 'none';
@@ -1092,6 +1172,84 @@ function renderFinanceDriverList(){
       '<div class="meta">' + (d.email || '') + '</div>' +
     '</div>';
   }).join('');
+}
+
+/* ===================== EXPORTAR CSV (MARKETING) =====================
+   Gera CSV a partir dos dados já carregados/consultados no Firestore —
+   motoristas registados (drivers/{id}) e clientes únicos extraídos da
+   coleção rides (clientName/clientEmail/clientPhone), já que não existe
+   uma coleção dedicada a perfis de cliente. Usado para preparar campanhas
+   de email/SMS aos utilizadores existentes das apps. */
+function csvEscape(v){
+  const s = (v==null ? '' : String(v));
+  return '"' + s.replace(/"/g, '""') + '"';
+}
+function downloadCsv(filename, rows){
+  const content = rows.map(function(r){ return r.map(csvEscape).join(','); }).join('\r\n');
+  const blob = new Blob(['﻿' + content], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(function(){ URL.revokeObjectURL(url); }, 2000);
+}
+function setExportStatus(msg){
+  const el = document.getElementById('export-status');
+  if(!el) return;
+  if(!msg){ el.style.display='none'; return; }
+  el.style.display='block'; el.textContent = msg;
+}
+async function exportDriversCsv(){
+  const db = initFirestore();
+  if(!db){ setExportStatus('Firestore indisponível.'); return; }
+  setExportStatus('A preparar exportação de motoristas…');
+  try{
+    const snap = await db.collection('drivers').get();
+    const rows = [['Nome','Email','Telemovel','Marca','Modelo','Cor','Matricula']];
+    snap.forEach(function(doc){
+      const d = doc.data();
+      rows.push([d.name||'', d.email||'', d.phone||'', d.vehicleBrand||'', d.vehicleModel||'', d.vehicleColor||'', d.vehiclePlate||'']);
+    });
+    downloadCsv('lux_motoristas.csv', rows);
+    setExportStatus(rows.length - 1 + ' motoristas exportados.');
+  }catch(e){
+    console.warn('Falha ao exportar motoristas:', e);
+    setExportStatus('Erro ao exportar — verifica as regras de segurança do Firestore.');
+  }
+}
+async function exportClientsCsv(){
+  const db = initFirestore();
+  if(!db){ setExportStatus('Firestore indisponível.'); return; }
+  setExportStatus('A preparar exportação de clientes (a ler corridas e contas registadas)…');
+  try{
+    const byKey = {};
+    try{
+      const clientsSnap = await db.collection('clients').get();
+      clientsSnap.forEach(function(doc){
+        const d = doc.data();
+        const key = d.email || d.phone || d.name;
+        if(!key) return;
+        byKey[key] = { name: d.name||'', email: d.email||'', phone: d.phone||'' };
+      });
+    }catch(e){ console.warn('Falha ao ler coleção clients:', e); }
+    const snap = await db.collection('rides').get();
+    snap.forEach(function(doc){
+      const d = doc.data();
+      const key = d.clientEmail || d.clientPhone || d.clientName;
+      if(!key) return;
+      if(!byKey[key]) byKey[key] = { name: d.clientName||'', email: d.clientEmail||'', phone: d.clientPhone||'' };
+    });
+    const rows = [['Nome','Email','Telemovel']];
+    Object.keys(byKey).forEach(function(k){
+      const c = byKey[k];
+      rows.push([c.name, c.email, c.phone]);
+    });
+    downloadCsv('lux_clientes.csv', rows);
+    setExportStatus(rows.length - 1 + ' clientes únicos exportados (contas registadas + histórico de corridas).');
+  }catch(e){
+    console.warn('Falha ao exportar clientes:', e);
+    setExportStatus('Erro ao exportar — verifica as regras de segurança do Firestore.');
+  }
 }
 async function selectFinanceDriver(driverId){
   selectedFinanceDriverId = driverId;
@@ -1864,6 +2022,159 @@ async function submitCreateUser(){
     btn.disabled = false;
     btn.textContent = 'Criar utilizador';
   }
+}
+
+/* ===================== IMPORTAR EM MASSA (CSV) =====================
+   Lê um CSV (mesmo formato dos ficheiros exportados em Financeiro),
+   cria uma conta por linha via a mesma Cloud Function adminCreateUser
+   (com password aleatória) e de seguida envia um email de recuperação
+   de password real, para a pessoa definir a sua própria password —
+   assim não é preciso saber/expor a password gerada. Processa uma
+   linha de cada vez, com uma pequena pausa entre pedidos. */
+function parseCsvText(text){
+  // Parser simples com suporte a campos entre aspas (permite vírgulas
+  // dentro do nome, como "Silva, Lda.").
+  const rows = [];
+  let row = [], field = '', inQuotes = false;
+  const s = text.replace(/^﻿/, ''); // remove BOM se existir
+  for(let i=0; i<s.length; i++){
+    const c = s[i], next = s[i+1];
+    if(inQuotes){
+      if(c === '"' && next === '"'){ field += '"'; i++; }
+      else if(c === '"'){ inQuotes = false; }
+      else field += c;
+    } else {
+      if(c === '"'){ inQuotes = true; }
+      else if(c === ','){ row.push(field); field = ''; }
+      else if(c === '\r'){ /* ignora */ }
+      else if(c === '\n'){ row.push(field); rows.push(row); row = []; field = ''; }
+      else field += c;
+    }
+  }
+  if(field.length || row.length){ row.push(field); rows.push(row); }
+  if(!rows.length) return [];
+  const header = rows[0].map(function(h){ return h.trim().toLowerCase(); });
+  const out = [];
+  for(let r=1; r<rows.length; r++){
+    if(rows[r].length===1 && rows[r][0]==='') continue; // linha vazia
+    const obj = {};
+    header.forEach(function(h, idx){ obj[h] = (rows[r][idx]||'').trim(); });
+    out.push(obj);
+  }
+  return out;
+}
+function randomImportPassword(){
+  return 'Lux' + Math.random().toString(36).slice(2, 10) + '!' + Math.floor(Math.random()*100);
+}
+function logImportLine(msg, isError){
+  const el = document.getElementById('import-log');
+  const line = document.createElement('div');
+  line.textContent = msg;
+  if(isError) line.style.color = 'var(--danger)';
+  el.appendChild(line);
+  el.scrollTop = el.scrollHeight;
+}
+async function importUsersCsv(){
+  const tipo = document.getElementById('import-tipo').value;
+  const fileInput = document.getElementById('import-file');
+  const statusEl = document.getElementById('import-status');
+  const btn = document.getElementById('import-csv-btn');
+  const logEl = document.getElementById('import-log');
+  logEl.innerHTML = '';
+  statusEl.style.display = 'block';
+  statusEl.style.color = '';
+
+  const file = fileInput.files && fileInput.files[0];
+  if(!file){
+    statusEl.textContent = 'Escolhe primeiro um ficheiro CSV.';
+    statusEl.style.color = 'var(--danger)';
+    return;
+  }
+
+  let rows;
+  try{
+    const text = await file.text();
+    rows = parseCsvText(text);
+  }catch(e){
+    statusEl.textContent = 'Não foi possível ler o ficheiro CSV.';
+    statusEl.style.color = 'var(--danger)';
+    return;
+  }
+  rows = rows.filter(function(r){ return r.nome || r.email; });
+  if(!rows.length){
+    statusEl.textContent = 'O ficheiro não tem linhas válidas (verifica as colunas Nome/Email).';
+    statusEl.style.color = 'var(--danger)';
+    return;
+  }
+  if(rows.length > 500){
+    statusEl.textContent = 'Máximo de 500 linhas por importação — divide o ficheiro em partes mais pequenas.';
+    statusEl.style.color = 'var(--danger)';
+    return;
+  }
+
+  statusEl.textContent = 'A confirmar autorização…';
+  const authPayload = await getAdminAuthPayload();
+  if(!authPayload){
+    statusEl.textContent = 'Importação cancelada — password de administrador não confirmada.';
+    statusEl.style.color = 'var(--danger)';
+    return;
+  }
+
+  btn.disabled = true;
+  const auth = initAuth();
+  let ok = 0, fail = 0;
+  for(let i=0; i<rows.length; i++){
+    const r = rows[i];
+    const nome = r.nome || '';
+    const email = r.email || '';
+    const telefone = r.telemovel || r.telefone || '';
+    statusEl.textContent = `A importar ${i+1}/${rows.length}… (${ok} criados, ${fail} falhas)`;
+    if(!nome || !email){
+      fail++; logImportLine(`✗ Linha ${i+2}: falta nome ou email.`, true); continue;
+    }
+    const password = randomImportPassword();
+    try{
+      const resp = await fetch(ADMIN_CREATE_USER_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(Object.assign({ tipo, nome, email, password, telefone }, authPayload))
+      });
+      const data = await resp.json();
+      if(resp.ok && data.ok){
+        ok++;
+        logImportLine(`✓ ${nome} (${email}) criado.`);
+        if(tipo === 'motorista'){
+          const vehicleBrand = r.marca || '';
+          const vehicleModel = r.modelo || '';
+          const vehicleColor = r.cor || '';
+          const vehiclePlate = (r.matricula || '').toUpperCase();
+          if(vehicleBrand || vehicleModel || vehicleColor || vehiclePlate){
+            try{
+              const db = initFirestore();
+              if(db && data.uid){
+                await db.collection('drivers').doc(data.uid).set({ vehicleBrand, vehicleModel, vehicleColor, vehiclePlate }, { merge:true });
+              }
+            }catch(e){ console.warn('Falha ao gravar dados de veículo do import:', e); }
+          }
+        }
+        if(auth){
+          auth.sendPasswordResetEmail(email).catch(function(e){ console.warn('Falha ao enviar email de definição de password:', e); });
+        }
+      } else {
+        fail++;
+        logImportLine(`✗ ${nome} (${email}): ${data.error || 'erro desconhecido'}`, true);
+      }
+    }catch(e){
+      fail++;
+      logImportLine(`✗ ${nome} (${email}): erro de ligação.`, true);
+    }
+    await new Promise(function(res){ setTimeout(res, 250); }); // pausa entre pedidos
+  }
+
+  statusEl.style.color = fail ? 'var(--danger)' : 'var(--gold)';
+  statusEl.textContent = `Importação concluída: ${ok} criados, ${fail} falhas.`;
+  btn.disabled = false;
+  if(ok && tipo === 'motorista') renderAll();
 }
 
 window.addEventListener('storage', function(e){
