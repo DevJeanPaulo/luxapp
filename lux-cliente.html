@@ -602,6 +602,39 @@
     .chat-bubble{ max-width:85%; font-size:13.5px; }
     .chat-header .info .name{ font-size:13.5px; }
   }
+  /* Chamada de voz dentro da app (WebRTC) — nunca mostra o número real de
+     telefone de nenhum dos lados; a ligação é feita diretamente entre os
+     dois telemóveis via internet, com sinalização pelo Firestore. */
+  .call-overlay{
+    position:absolute; inset:0; background:var(--bg); z-index:96;
+    display:none; flex-direction:column; align-items:center; justify-content:space-between;
+    padding:calc(70px + var(--safe-top)) 24px calc(46px + var(--safe-bottom));
+    text-align:center;
+  }
+  .call-overlay.show{ display:flex; }
+  .call-body{ display:flex; flex-direction:column; align-items:center; gap:14px; margin-top:30px; }
+  .call-avatar-lg{
+    width:96px; height:96px; border-radius:50%; background:var(--panel3);
+    display:flex; align-items:center; justify-content:center; font-weight:700; font-size:30px;
+    color:var(--gold); border:2px solid var(--gold); flex-shrink:0;
+  }
+  .call-name{ font-size:20px; font-weight:700; color:var(--text); }
+  .call-status{ font-size:14px; color:var(--muted); min-height:18px; }
+  .call-privacy-note{ font-size:11.5px; color:var(--muted2); max-width:260px; line-height:1.4; }
+  .call-actions{ display:flex; align-items:center; justify-content:center; gap:26px; }
+  .call-btn{
+    width:60px; height:60px; border-radius:50%; border:none; cursor:pointer;
+    display:flex; align-items:center; justify-content:center; font-size:24px; flex-shrink:0;
+  }
+  .call-btn-end{ background:var(--danger); color:#fff; }
+  .call-btn-accept{ background:var(--success); color:#fff; }
+  .call-btn-mute{ background:var(--panel2); color:var(--text); border:1px solid var(--line); font-size:20px; }
+  .call-btn-mute.muted{ background:var(--gold); color:#1a1408; }
+  @media (max-width:380px){
+    .call-avatar-lg{ width:82px; height:82px; font-size:26px; }
+    .call-name{ font-size:18px; }
+    .call-btn{ width:54px; height:54px; font-size:21px; }
+  }
   .req-timer{
     display:flex; align-items:center; justify-content:center; gap:10px; margin-bottom:14px;
   }
@@ -1312,6 +1345,23 @@
         <div class="chat-input-row">
           <input id="chat-input" placeholder="Escreve uma mensagem..." onkeydown="if(event.key==='Enter') sendChatMessage()" />
           <button class="chat-send-btn" id="chat-send-btn" onclick="sendChatMessage()">➤</button>
+        </div>
+      </div>
+
+      <div class="call-overlay" id="call-overlay">
+        <div class="call-body">
+          <div class="call-avatar-lg" id="call-avatar">RA</div>
+          <div class="call-name" id="call-name">Motorista</div>
+          <div class="call-status" id="call-status">A chamar…</div>
+        </div>
+        <audio id="call-remote-audio" autoplay playsinline></audio>
+        <div style="display:flex; flex-direction:column; align-items:center; gap:18px;">
+          <div class="call-privacy-note">Chamada dentro da app — o motorista não vê o teu número, e tu não vês o dele.</div>
+          <div class="call-actions">
+            <button class="call-btn call-btn-mute" id="call-mute-btn" style="display:none;" onclick="toggleCallMute()">🎙️</button>
+            <button class="call-btn call-btn-accept" id="call-accept-btn" style="display:none;" onclick="acceptIncomingCall()">📞</button>
+            <button class="call-btn call-btn-end" id="call-end-btn" onclick="handleCallEndButton()">✕</button>
+          </div>
         </div>
       </div>
 
@@ -3180,23 +3230,335 @@ function selectVehicle(id, el){
   el.classList.add('selected');
   refreshConfirmButtonState();
 }
-/* ===================== COMUNICAÇÃO (chamada real + chat) =====================
-   Chamada real via tel: (abre o marcador do telemóvel) usando SEMPRE o número
-   real do motorista gravado na própria corrida (rides/{id}.driverPhone,
-   escrito por acceptRequest() no app do motorista quando aceita o pedido).
-   Nunca usa um número de reserva/demonstração — currentUser.d é só um objeto
-   de exemplo usado noutros ecrãs de demonstração da app, e ligar para ele
-   telefonaria para um número que não é o motorista real. Se o número ainda
-   não estiver disponível (ex.: corrida ainda não foi aceite), avisa em vez
-   de tentar ligar. O chat está na secção "CHAT AO VIVO" mais abaixo. */
-function callDriver(){
-  const phone = currentRide && currentRide.driverPhone;
-  if(!phone){
+/* ===================== COMUNICAÇÃO (chamada de voz VoIP + chat) =====================
+   A chamada NUNCA usa tel: nem expõe o número de telefone real de nenhum
+   dos lados — nem ao cliente, nem ao motorista. É uma chamada de voz feita
+   dentro da própria app via WebRTC (ligação direta entre os dois
+   telemóveis pela internet), com a sinalização (troca de "endereços" da
+   ligação) feita em tempo real pelo Firestore, na subcoleção
+   rides/{rideId}/calls. O chat está na secção "CHAT AO VIVO" mais abaixo. */
+const RTC_ICE_SERVERS = [
+  { urls: 'stun:stun.l.google.com:19302' },
+  { urls: 'stun:stun1.l.google.com:19302' },
+  { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
+  { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
+  { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' }
+];
+let callPc = null;
+let callLocalStream = null;
+let callDocRef = null;
+let callAnswerUnsub = null;
+let callCandidatesUnsub = null;
+let callIncomingUnsub = null;
+let callWatchRideId = null;
+let callTimerInt = null;
+let callStartedAt = null;
+let callRole = null; // 'caller' | 'callee'
+let callMuted = false;
+let incomingCallDocRef = null;
+let incomingCallOfferData = null;
+function callsCollection(){
+  if(!currentRideId) return null;
+  const col = ridesCollection();
+  return col ? col.doc(currentRideId).collection('calls') : null;
+}
+/* --- Toques sintetizados (sem ficheiros de áudio externos): tocam em loop
+   até a chamada ligar, ser recusada/terminada, ou expirar. */
+let _ringCtx = null;
+let _ringInterval = null;
+function _ringTone(freqs, gainPeak, durSec){
+  try{
+    if(!_ringCtx) _ringCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if(_ringCtx.state === 'suspended') _ringCtx.resume().catch(function(){});
+    const now = _ringCtx.currentTime;
+    freqs.forEach(function(freq){
+      const osc = _ringCtx.createOscillator();
+      const gain = _ringCtx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(freq, now);
+      gain.gain.setValueAtTime(0.0001, now);
+      gain.gain.exponentialRampToValueAtTime(gainPeak, now + 0.03);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + durSec);
+      osc.connect(gain).connect(_ringCtx.destination);
+      osc.start(now);
+      osc.stop(now + durSec + 0.05);
+    });
+  }catch(e){}
+}
+function startRingback(){ // som de "a chamar..." (quem inicia a chamada)
+  stopRingback();
+  _ringTone([440,480], 0.08, 1.0);
+  _ringInterval = setInterval(function(){ _ringTone([440,480], 0.08, 1.0); }, 3000);
+}
+function startRingtone(){ // som de "chamada a entrar" (quem recebe)
+  stopRingback();
+  _ringTone([660,880], 0.12, 0.4);
+  _ringInterval = setInterval(function(){ _ringTone([660,880], 0.12, 0.4); }, 1500);
+}
+function stopRingback(){
+  if(_ringInterval){ clearInterval(_ringInterval); _ringInterval = null; }
+}
+function callOtherPartyName(){
+  return (currentRide && currentRide.driverName) ? currentRide.driverName : 'Motorista';
+}
+function callInitials(name){
+  return (name || '').split(' ').filter(Boolean).slice(0,2).map(function(w){ return w[0].toUpperCase(); }).join('') || '?';
+}
+function setCallStatusText(text){
+  const el = document.getElementById('call-status');
+  if(el) el.textContent = text;
+}
+function showCallOverlay(status){
+  const ov = document.getElementById('call-overlay');
+  if(!ov) return;
+  const name = callOtherPartyName();
+  const nameEl = document.getElementById('call-name');
+  const avatarEl = document.getElementById('call-avatar');
+  if(nameEl) nameEl.textContent = name;
+  if(avatarEl) avatarEl.textContent = callInitials(name);
+  setCallStatusText(status);
+  ov.classList.add('show');
+  document.getElementById('call-accept-btn').style.display = 'none';
+  document.getElementById('call-mute-btn').style.display = 'none';
+}
+function hideCallOverlay(){
+  const ov = document.getElementById('call-overlay');
+  if(ov) ov.classList.remove('show');
+}
+function createCallPeerConnection(){
+  const pc = new RTCPeerConnection({ iceServers: RTC_ICE_SERVERS });
+  pc.ontrack = function(ev){
+    const remoteAudio = document.getElementById('call-remote-audio');
+    if(remoteAudio && ev.streams && ev.streams[0]) remoteAudio.srcObject = ev.streams[0];
+  };
+  pc.onconnectionstatechange = function(){
+    if(pc === callPc && (pc.connectionState === 'failed' || pc.connectionState === 'closed')){
+      endCallLocal(false);
+    }
+  };
+  return pc;
+}
+function cleanupCallResources(){
+  stopRingback();
+  if(callTimerInt){ clearInterval(callTimerInt); callTimerInt = null; }
+  if(callAnswerUnsub){ callAnswerUnsub(); callAnswerUnsub = null; }
+  if(callCandidatesUnsub){ callCandidatesUnsub(); callCandidatesUnsub = null; }
+  if(callPc){ try{ callPc.close(); }catch(e){} callPc = null; }
+  if(callLocalStream){ callLocalStream.getTracks().forEach(function(t){ t.stop(); }); callLocalStream = null; }
+  const remoteAudio = document.getElementById('call-remote-audio');
+  if(remoteAudio) remoteAudio.srcObject = null;
+  callDocRef = null;
+  callStartedAt = null;
+  callRole = null;
+  callMuted = false;
+  incomingCallDocRef = null;
+  incomingCallOfferData = null;
+}
+function endCallLocal(writeEnded){
+  if(writeEnded && callDocRef){
+    callDocRef.set({ status:'ended', endedAt: firebase.firestore.FieldValue.serverTimestamp() }, { merge:true }).catch(function(){});
+  }
+  cleanupCallResources();
+  hideCallOverlay();
+}
+function hangUpCall(){
+  endCallLocal(true);
+}
+function handleCallEndButton(){
+  if(incomingCallDocRef && !callPc){
+    declineIncomingCall();
+  } else {
+    hangUpCall();
+  }
+}
+function startCallTimer(){
+  callStartedAt = Date.now();
+  setCallStatusText('00:00');
+  if(callTimerInt) clearInterval(callTimerInt);
+  callTimerInt = setInterval(function(){
+    const secs = Math.floor((Date.now() - callStartedAt) / 1000);
+    const m = Math.floor(secs/60), s = secs%60;
+    setCallStatusText((m<10?'0':'')+m + ':' + (s<10?'0':'')+s);
+  }, 500);
+  document.getElementById('call-mute-btn').style.display = '';
+}
+function toggleCallMute(){
+  if(!callLocalStream) return;
+  callMuted = !callMuted;
+  callLocalStream.getAudioTracks().forEach(function(t){ t.enabled = !callMuted; });
+  const btn = document.getElementById('call-mute-btn');
+  if(btn) btn.classList.toggle('muted', callMuted);
+}
+/* Chamada de saída: o cliente liga ao motorista da corrida ativa. */
+async function startOutgoingCall(){
+  if(!currentRideId || !currentRide || !currentRide.driverId){
     const activeScreen = document.querySelector('.screen.active');
-    if(activeScreen) toast(activeScreen.id, 'Número do motorista ainda não disponível — aguarda a aceitação da corrida.');
+    if(activeScreen) toast(activeScreen.id, 'Só é possível ligar depois de teres um motorista atribuído à viagem.');
     return;
   }
-  window.location.href = 'tel:' + phone.replace(/[^\d+]/g,'');
+  if(callDocRef || incomingCallDocRef) return; // já há uma chamada em curso
+  const col = callsCollection();
+  if(!col) return;
+  let stream;
+  try{
+    stream = await navigator.mediaDevices.getUserMedia({ audio:true });
+  }catch(e){
+    const activeScreen = document.querySelector('.screen.active');
+    if(activeScreen) toast(activeScreen.id, 'Não foi possível aceder ao microfone. Verifica as permissões da app.');
+    return;
+  }
+  callLocalStream = stream;
+  callRole = 'caller';
+  showCallOverlay('A chamar…');
+  startRingback();
+  const pc = createCallPeerConnection();
+  callPc = pc;
+  stream.getTracks().forEach(function(t){ pc.addTrack(t, stream); });
+  const docRef = col.doc();
+  callDocRef = docRef;
+  pc.onicecandidate = function(ev){
+    if(ev.candidate) docRef.collection('callerCandidates').add(ev.candidate.toJSON()).catch(function(){});
+  };
+  try{
+    const offer = await pc.createOffer();
+    await pc.setLocalDescription(offer);
+    await docRef.set({
+      caller: 'client', status: 'ringing',
+      offer: { type: offer.type, sdp: offer.sdp },
+      createdAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+  }catch(e){
+    console.warn('Falha ao iniciar chamada:', e);
+    endCallLocal(false);
+    return;
+  }
+  callAnswerUnsub = docRef.onSnapshot(function(snap){
+    const data = snap.data();
+    if(!data || callDocRef !== docRef) return;
+    if(data.status === 'accepted' && data.answer && callPc && !callPc.currentRemoteDescription){
+      stopRingback();
+      callPc.setRemoteDescription(new RTCSessionDescription(data.answer)).then(function(){
+        startCallTimer();
+      }).catch(function(){});
+    } else if(data.status === 'declined'){
+      setCallStatusText('Motorista recusou a chamada.');
+      setTimeout(function(){ endCallLocal(false); }, 1500);
+    } else if(data.status === 'ended'){
+      endCallLocal(false);
+    }
+  });
+  callCandidatesUnsub = docRef.collection('calleeCandidates').onSnapshot(function(snap){
+    snap.docChanges().forEach(function(change){
+      if(change.type === 'added' && callPc){
+        callPc.addIceCandidate(new RTCIceCandidate(change.doc.data())).catch(function(){});
+      }
+    });
+  });
+  setTimeout(function(){
+    if(callDocRef === docRef && !callStartedAt){
+      setCallStatusText('Motorista não atendeu.');
+      docRef.set({ status:'ended' }, { merge:true }).catch(function(){});
+      setTimeout(function(){ endCallLocal(false); }, 1500);
+    }
+  }, 30000);
+}
+function callDriver(){ startOutgoingCall(); }
+/* Chamada de entrada: o motorista está a ligar ao cliente. Fica sempre a
+   vigiar enquanto a viagem estiver ativa (ver startChatWatch/stopChatWatch,
+   que arrancam e param este vigilante junto com o do chat). */
+function startCallWatch(){
+  if(callIncomingUnsub && callWatchRideId === currentRideId) return;
+  stopCallWatch();
+  const col = callsCollection();
+  if(!col) return;
+  callWatchRideId = currentRideId;
+  callIncomingUnsub = col.where('status','==','ringing').orderBy('createdAt','desc').limit(1)
+    .onSnapshot(function(snap){
+      if(callDocRef || incomingCallDocRef) return; // já estamos numa chamada
+      snap.forEach(function(doc){
+        const data = doc.data();
+        if(data && data.caller && data.caller !== 'client'){
+          handleIncomingCall(doc.ref, data);
+        }
+      });
+    }, function(e){ console.warn('Falha ao vigiar chamadas a entrar:', e); });
+}
+function stopCallWatch(){
+  if(callIncomingUnsub){ callIncomingUnsub(); callIncomingUnsub = null; }
+  callWatchRideId = null;
+}
+function handleIncomingCall(docRef, data){
+  if(incomingCallDocRef && incomingCallDocRef.id === docRef.id) return;
+  incomingCallDocRef = docRef;
+  incomingCallOfferData = data;
+  callRole = 'callee';
+  showCallOverlay('Chamada a entrar…');
+  document.getElementById('call-accept-btn').style.display = '';
+  startRingtone();
+  if(typeof playStatusBeep === 'function'){ try{ playStatusBeep(); }catch(e){} }
+  if(callAnswerUnsub) callAnswerUnsub();
+  callAnswerUnsub = docRef.onSnapshot(function(snap){
+    const d = snap.data();
+    if(d && (d.status === 'ended' || d.status === 'cancelled') && !callPc){
+      endCallLocal(false);
+    }
+  });
+}
+async function acceptIncomingCall(){
+  if(!incomingCallDocRef || !incomingCallOfferData) return;
+  stopRingback();
+  const docRef = incomingCallDocRef;
+  const offerData = incomingCallOfferData;
+  let stream;
+  try{
+    stream = await navigator.mediaDevices.getUserMedia({ audio:true });
+  }catch(e){
+    const activeScreen = document.querySelector('.screen.active');
+    if(activeScreen) toast(activeScreen.id, 'Não foi possível aceder ao microfone.');
+    declineIncomingCall();
+    return;
+  }
+  callDocRef = docRef;
+  callLocalStream = stream;
+  setCallStatusText('A ligar…');
+  document.getElementById('call-accept-btn').style.display = 'none';
+  const pc = createCallPeerConnection();
+  callPc = pc;
+  stream.getTracks().forEach(function(t){ pc.addTrack(t, stream); });
+  pc.onicecandidate = function(ev){
+    if(ev.candidate) docRef.collection('calleeCandidates').add(ev.candidate.toJSON()).catch(function(){});
+  };
+  try{
+    await pc.setRemoteDescription(new RTCSessionDescription(offerData.offer));
+    const answer = await pc.createAnswer();
+    await pc.setLocalDescription(answer);
+    await docRef.set({ status:'accepted', answer:{ type: answer.type, sdp: answer.sdp } }, { merge:true });
+  }catch(e){
+    console.warn('Falha ao atender chamada:', e);
+    endCallLocal(true);
+    return;
+  }
+  if(callAnswerUnsub) callAnswerUnsub();
+  callAnswerUnsub = docRef.onSnapshot(function(snap){
+    const d = snap.data();
+    if(d && d.status === 'ended') endCallLocal(false);
+  });
+  callCandidatesUnsub = docRef.collection('callerCandidates').onSnapshot(function(snap){
+    snap.docChanges().forEach(function(change){
+      if(change.type === 'added' && callPc){
+        callPc.addIceCandidate(new RTCIceCandidate(change.doc.data())).catch(function(){});
+      }
+    });
+  });
+  startCallTimer();
+  incomingCallDocRef = null;
+  incomingCallOfferData = null;
+}
+function declineIncomingCall(){
+  stopRingback();
+  if(incomingCallDocRef) incomingCallDocRef.set({ status:'declined' }, { merge:true }).catch(function(){});
+  cleanupCallResources();
+  hideCallOverlay();
 }
 
 /* ===================== VIAGENS AO VIVO (Firestore) =====================
@@ -4181,11 +4543,16 @@ function startChatWatch(){
       }
     });
   }, function(e){ console.warn('Falha ao vigiar novas mensagens do chat:', e); });
+  if(typeof startCallWatch === 'function') startCallWatch();
 }
 function stopChatWatch(){
   if(chatWatchUnsub){ chatWatchUnsub(); chatWatchUnsub = null; }
   chatWatchRideId = null;
   hideChatNotifyDot();
+  if(typeof stopCallWatch === 'function') stopCallWatch();
+  if((typeof callDocRef !== 'undefined' && callDocRef) || (typeof incomingCallDocRef !== 'undefined' && incomingCallDocRef)){
+    if(typeof endCallLocal === 'function') endCallLocal(true);
+  }
 }
 function chatInitials(name){
   return (name || '').split(' ').filter(Boolean).slice(0,2).map(w=>w[0].toUpperCase()).join('') || '?';

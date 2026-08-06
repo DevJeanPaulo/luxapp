@@ -646,6 +646,39 @@
     .chat-bubble{ max-width:85%; font-size:13.5px; }
     .chat-header .info .name{ font-size:13.5px; }
   }
+  /* Chamada de voz dentro da app (WebRTC) — nunca mostra o número real de
+     telefone de nenhum dos lados; a ligação é feita diretamente entre os
+     dois telemóveis via internet, com sinalização pelo Firestore. */
+  .call-overlay{
+    position:absolute; inset:0; background:var(--bg); z-index:96;
+    display:none; flex-direction:column; align-items:center; justify-content:space-between;
+    padding:calc(70px + var(--safe-top)) 24px calc(46px + var(--safe-bottom));
+    text-align:center;
+  }
+  .call-overlay.show{ display:flex; }
+  .call-body{ display:flex; flex-direction:column; align-items:center; gap:14px; margin-top:30px; }
+  .call-avatar-lg{
+    width:96px; height:96px; border-radius:50%; background:var(--panel3);
+    display:flex; align-items:center; justify-content:center; font-weight:700; font-size:30px;
+    color:var(--gold); border:2px solid var(--gold); flex-shrink:0;
+  }
+  .call-name{ font-size:20px; font-weight:700; color:var(--text); }
+  .call-status{ font-size:14px; color:var(--muted); min-height:18px; }
+  .call-privacy-note{ font-size:11.5px; color:var(--muted2); max-width:260px; line-height:1.4; }
+  .call-actions{ display:flex; align-items:center; justify-content:center; gap:26px; }
+  .call-btn{
+    width:60px; height:60px; border-radius:50%; border:none; cursor:pointer;
+    display:flex; align-items:center; justify-content:center; font-size:24px; flex-shrink:0;
+  }
+  .call-btn-end{ background:var(--danger); color:#fff; }
+  .call-btn-accept{ background:var(--success); color:#fff; }
+  .call-btn-mute{ background:var(--panel2); color:var(--text); border:1px solid var(--line); font-size:20px; }
+  .call-btn-mute.muted{ background:var(--gold); color:#1a1408; }
+  @media (max-width:380px){
+    .call-avatar-lg{ width:82px; height:82px; font-size:26px; }
+    .call-name{ font-size:18px; }
+    .call-btn{ width:54px; height:54px; font-size:21px; }
+  }
   .req-countdown-bar{
     width:100%; height:5px; border-radius:99px; background:var(--panel3);
     overflow:hidden; margin-bottom:14px;
@@ -1387,6 +1420,23 @@
         </div>
       </div>
 
+      <div class="call-overlay" id="c-call-overlay">
+        <div class="call-body">
+          <div class="call-avatar-lg" id="c-call-avatar">RA</div>
+          <div class="call-name" id="c-call-name">Motorista</div>
+          <div class="call-status" id="c-call-status">A chamar…</div>
+        </div>
+        <audio id="c-call-remote-audio" autoplay playsinline></audio>
+        <div style="display:flex; flex-direction:column; align-items:center; gap:18px;">
+          <div class="call-privacy-note">Chamada dentro da app — o motorista não vê o teu número, e tu não vês o dele.</div>
+          <div class="call-actions">
+            <button class="call-btn call-btn-mute" id="c-call-mute-btn" style="display:none;" onclick="toggleClientCallMute()">🎙️</button>
+            <button class="call-btn call-btn-accept" id="c-call-accept-btn" style="display:none;" onclick="acceptClientIncomingCall()">📞</button>
+            <button class="call-btn call-btn-end" id="c-call-end-btn" onclick="handleClientCallEndButton()">✕</button>
+          </div>
+        </div>
+      </div>
+
     </div>
 
     <!-- ============ DRIVER APP ============ -->
@@ -1906,6 +1956,23 @@
         <div class="chat-input-row">
           <input id="d-chat-input" placeholder="Escreve uma mensagem..." onkeydown="if(event.key==='Enter') sendDriverChatMessage()" />
           <button class="chat-send-btn" id="d-chat-send-btn" onclick="sendDriverChatMessage()">➤</button>
+        </div>
+      </div>
+
+      <div class="call-overlay" id="d-call-overlay">
+        <div class="call-body">
+          <div class="call-avatar-lg" id="d-call-avatar">JP</div>
+          <div class="call-name" id="d-call-name">Cliente</div>
+          <div class="call-status" id="d-call-status">A chamar…</div>
+        </div>
+        <audio id="d-call-remote-audio" autoplay playsinline></audio>
+        <div style="display:flex; flex-direction:column; align-items:center; gap:18px;">
+          <div class="call-privacy-note">Chamada dentro da app — o cliente não vê o teu número, e tu não vês o dele.</div>
+          <div class="call-actions">
+            <button class="call-btn call-btn-mute" id="d-call-mute-btn" style="display:none;" onclick="toggleDriverCallMute()">🎙️</button>
+            <button class="call-btn call-btn-accept" id="d-call-accept-btn" style="display:none;" onclick="acceptDriverIncomingCall()">📞</button>
+            <button class="call-btn call-btn-end" id="d-call-end-btn" onclick="handleDriverCallEndButton()">✕</button>
+          </div>
         </div>
       </div>
 
@@ -5217,14 +5284,318 @@ function cancelAcceptedRide(){
   goTo('c-home');
 }
 
-/* ===================== COMUNICAÇÃO — CLIENTE (chamada real + chat) =====================
-   Chamada real via tel: e chat em tempo real (Firestore) com o motorista da
-   viagem real. Nomes prefixados "Client"/"c-" para não colidir com o
-   equivalente do motorista, já que este ficheiro partilha um único scope. */
-function callDriverReal(){
-  const phone = (clientRide && clientRide.driverPhone) ? clientRide.driverPhone : (currentUser.d && currentUser.d.phone);
-  if(!phone) return;
-  window.location.href = 'tel:' + phone.replace(/[^\d+]/g,'');
+/* ===================== COMUNICAÇÃO — CLIENTE (chamada de voz VoIP + chat) =====================
+   A chamada NUNCA usa tel: nem expõe o número de telefone real de nenhum
+   dos lados. É uma chamada de voz feita dentro da própria app via WebRTC,
+   com sinalização em tempo real pelo Firestore (rides/{rideId}/calls).
+   Nomes prefixados "Client"/"c-" para não colidir com o equivalente do
+   motorista, já que este ficheiro partilha um único scope. */
+const RTC_ICE_SERVERS = [
+  { urls: 'stun:stun.l.google.com:19302' },
+  { urls: 'stun:stun1.l.google.com:19302' },
+  { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
+  { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
+  { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' }
+];
+let clientCallPc = null;
+let clientCallLocalStream = null;
+let clientCallDocRef = null;
+let clientCallAnswerUnsub = null;
+let clientCallCandidatesUnsub = null;
+let clientCallIncomingUnsub = null;
+let clientCallWatchRideId = null;
+let clientCallTimerInt = null;
+let clientCallStartedAt = null;
+let clientIncomingCallDocRef = null;
+let clientIncomingCallOfferData = null;
+function clientCallsCollection(){
+  if(!clientRideId) return null;
+  const col = ridesCollection();
+  return col ? col.doc(clientRideId).collection('calls') : null;
+}
+let _ringCtx = null;
+let _clientRingInterval = null;
+function _ringTone(freqs, gainPeak, durSec){
+  try{
+    if(!_ringCtx) _ringCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if(_ringCtx.state === 'suspended') _ringCtx.resume().catch(function(){});
+    const now = _ringCtx.currentTime;
+    freqs.forEach(function(freq){
+      const osc = _ringCtx.createOscillator();
+      const gain = _ringCtx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(freq, now);
+      gain.gain.setValueAtTime(0.0001, now);
+      gain.gain.exponentialRampToValueAtTime(gainPeak, now + 0.03);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + durSec);
+      osc.connect(gain).connect(_ringCtx.destination);
+      osc.start(now);
+      osc.stop(now + durSec + 0.05);
+    });
+  }catch(e){}
+}
+function startClientRingback(){
+  stopClientRingback();
+  _ringTone([440,480], 0.08, 1.0);
+  _clientRingInterval = setInterval(function(){ _ringTone([440,480], 0.08, 1.0); }, 3000);
+}
+function startClientRingtone(){
+  stopClientRingback();
+  _ringTone([660,880], 0.12, 0.4);
+  _clientRingInterval = setInterval(function(){ _ringTone([660,880], 0.12, 0.4); }, 1500);
+}
+function stopClientRingback(){
+  if(_clientRingInterval){ clearInterval(_clientRingInterval); _clientRingInterval = null; }
+}
+function clientCallOtherPartyName(){
+  return (clientRide && clientRide.driverName) ? clientRide.driverName : 'Motorista';
+}
+function clientCallInitials(name){
+  return (name || '').split(' ').filter(Boolean).slice(0,2).map(function(w){ return w[0].toUpperCase(); }).join('') || '?';
+}
+function setClientCallStatusText(text){
+  const el = document.getElementById('c-call-status');
+  if(el) el.textContent = text;
+}
+function showClientCallOverlay(status){
+  const ov = document.getElementById('c-call-overlay');
+  if(!ov) return;
+  const name = clientCallOtherPartyName();
+  const nameEl = document.getElementById('c-call-name');
+  const avatarEl = document.getElementById('c-call-avatar');
+  if(nameEl) nameEl.textContent = name;
+  if(avatarEl) avatarEl.textContent = clientCallInitials(name);
+  setClientCallStatusText(status);
+  ov.classList.add('show');
+  document.getElementById('c-call-accept-btn').style.display = 'none';
+  document.getElementById('c-call-mute-btn').style.display = 'none';
+}
+function hideClientCallOverlay(){
+  const ov = document.getElementById('c-call-overlay');
+  if(ov) ov.classList.remove('show');
+}
+function createClientCallPeerConnection(){
+  const pc = new RTCPeerConnection({ iceServers: RTC_ICE_SERVERS });
+  pc.ontrack = function(ev){
+    const remoteAudio = document.getElementById('c-call-remote-audio');
+    if(remoteAudio && ev.streams && ev.streams[0]) remoteAudio.srcObject = ev.streams[0];
+  };
+  pc.onconnectionstatechange = function(){
+    if(pc === clientCallPc && (pc.connectionState === 'failed' || pc.connectionState === 'closed')){
+      endClientCallLocal(false);
+    }
+  };
+  return pc;
+}
+function cleanupClientCallResources(){
+  stopClientRingback();
+  if(clientCallTimerInt){ clearInterval(clientCallTimerInt); clientCallTimerInt = null; }
+  if(clientCallAnswerUnsub){ clientCallAnswerUnsub(); clientCallAnswerUnsub = null; }
+  if(clientCallCandidatesUnsub){ clientCallCandidatesUnsub(); clientCallCandidatesUnsub = null; }
+  if(clientCallPc){ try{ clientCallPc.close(); }catch(e){} clientCallPc = null; }
+  if(clientCallLocalStream){ clientCallLocalStream.getTracks().forEach(function(t){ t.stop(); }); clientCallLocalStream = null; }
+  const remoteAudio = document.getElementById('c-call-remote-audio');
+  if(remoteAudio) remoteAudio.srcObject = null;
+  clientCallDocRef = null;
+  clientCallStartedAt = null;
+  clientIncomingCallDocRef = null;
+  clientIncomingCallOfferData = null;
+}
+function endClientCallLocal(writeEnded){
+  if(writeEnded && clientCallDocRef){
+    clientCallDocRef.set({ status:'ended', endedAt: firebase.firestore.FieldValue.serverTimestamp() }, { merge:true }).catch(function(){});
+  }
+  cleanupClientCallResources();
+  hideClientCallOverlay();
+}
+function handleClientCallEndButton(){
+  if(clientIncomingCallDocRef && !clientCallPc){
+    declineClientIncomingCall();
+  } else {
+    endClientCallLocal(true);
+  }
+}
+function startClientCallTimer(){
+  clientCallStartedAt = Date.now();
+  setClientCallStatusText('00:00');
+  if(clientCallTimerInt) clearInterval(clientCallTimerInt);
+  clientCallTimerInt = setInterval(function(){
+    const secs = Math.floor((Date.now() - clientCallStartedAt) / 1000);
+    const m = Math.floor(secs/60), s = secs%60;
+    setClientCallStatusText((m<10?'0':'')+m + ':' + (s<10?'0':'')+s);
+  }, 500);
+  document.getElementById('c-call-mute-btn').style.display = '';
+}
+function toggleClientCallMute(){
+  if(!clientCallLocalStream) return;
+  const muted = clientCallLocalStream.getAudioTracks().some(function(t){ return !t.enabled; });
+  clientCallLocalStream.getAudioTracks().forEach(function(t){ t.enabled = muted; });
+  const btn = document.getElementById('c-call-mute-btn');
+  if(btn) btn.classList.toggle('muted', !muted);
+}
+async function callDriverReal(){
+  if(!clientRideId || !clientRide || !clientRide.driverId){
+    const activeScreen = document.querySelector('.screen.active');
+    if(activeScreen) toast(activeScreen.id, 'Só é possível ligar depois de teres um motorista atribuído à viagem.');
+    return;
+  }
+  if(clientCallDocRef || clientIncomingCallDocRef) return;
+  const col = clientCallsCollection();
+  if(!col) return;
+  let stream;
+  try{
+    stream = await navigator.mediaDevices.getUserMedia({ audio:true });
+  }catch(e){
+    const activeScreen = document.querySelector('.screen.active');
+    if(activeScreen) toast(activeScreen.id, 'Não foi possível aceder ao microfone. Verifica as permissões da app.');
+    return;
+  }
+  clientCallLocalStream = stream;
+  showClientCallOverlay('A chamar…');
+  startClientRingback();
+  const pc = createClientCallPeerConnection();
+  clientCallPc = pc;
+  stream.getTracks().forEach(function(t){ pc.addTrack(t, stream); });
+  const docRef = col.doc();
+  clientCallDocRef = docRef;
+  pc.onicecandidate = function(ev){
+    if(ev.candidate) docRef.collection('callerCandidates').add(ev.candidate.toJSON()).catch(function(){});
+  };
+  try{
+    const offer = await pc.createOffer();
+    await pc.setLocalDescription(offer);
+    await docRef.set({
+      caller: 'client', status: 'ringing',
+      offer: { type: offer.type, sdp: offer.sdp },
+      createdAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+  }catch(e){
+    console.warn('Falha ao iniciar chamada:', e);
+    endClientCallLocal(false);
+    return;
+  }
+  clientCallAnswerUnsub = docRef.onSnapshot(function(snap){
+    const data = snap.data();
+    if(!data || clientCallDocRef !== docRef) return;
+    if(data.status === 'accepted' && data.answer && clientCallPc && !clientCallPc.currentRemoteDescription){
+      stopClientRingback();
+      clientCallPc.setRemoteDescription(new RTCSessionDescription(data.answer)).then(function(){
+        startClientCallTimer();
+      }).catch(function(){});
+    } else if(data.status === 'declined'){
+      setClientCallStatusText('Motorista recusou a chamada.');
+      setTimeout(function(){ endClientCallLocal(false); }, 1500);
+    } else if(data.status === 'ended'){
+      endClientCallLocal(false);
+    }
+  });
+  clientCallCandidatesUnsub = docRef.collection('calleeCandidates').onSnapshot(function(snap){
+    snap.docChanges().forEach(function(change){
+      if(change.type === 'added' && clientCallPc){
+        clientCallPc.addIceCandidate(new RTCIceCandidate(change.doc.data())).catch(function(){});
+      }
+    });
+  });
+  setTimeout(function(){
+    if(clientCallDocRef === docRef && !clientCallStartedAt){
+      setClientCallStatusText('Motorista não atendeu.');
+      docRef.set({ status:'ended' }, { merge:true }).catch(function(){});
+      setTimeout(function(){ endClientCallLocal(false); }, 1500);
+    }
+  }, 30000);
+}
+function startClientCallWatch(){
+  if(clientCallIncomingUnsub && clientCallWatchRideId === clientRideId) return;
+  stopClientCallWatch();
+  const col = clientCallsCollection();
+  if(!col) return;
+  clientCallWatchRideId = clientRideId;
+  clientCallIncomingUnsub = col.where('status','==','ringing').orderBy('createdAt','desc').limit(1)
+    .onSnapshot(function(snap){
+      if(clientCallDocRef || clientIncomingCallDocRef) return;
+      snap.forEach(function(doc){
+        const data = doc.data();
+        if(data && data.caller && data.caller !== 'client'){
+          handleClientIncomingCall(doc.ref, data);
+        }
+      });
+    }, function(e){ console.warn('Falha ao vigiar chamadas a entrar:', e); });
+}
+function stopClientCallWatch(){
+  if(clientCallIncomingUnsub){ clientCallIncomingUnsub(); clientCallIncomingUnsub = null; }
+  clientCallWatchRideId = null;
+}
+function handleClientIncomingCall(docRef, data){
+  if(clientIncomingCallDocRef && clientIncomingCallDocRef.id === docRef.id) return;
+  clientIncomingCallDocRef = docRef;
+  clientIncomingCallOfferData = data;
+  showClientCallOverlay('Chamada a entrar…');
+  document.getElementById('c-call-accept-btn').style.display = '';
+  startClientRingtone();
+  if(typeof playStatusBeep === 'function'){ try{ playStatusBeep(); }catch(e){} }
+  if(clientCallAnswerUnsub) clientCallAnswerUnsub();
+  clientCallAnswerUnsub = docRef.onSnapshot(function(snap){
+    const d = snap.data();
+    if(d && (d.status === 'ended' || d.status === 'cancelled') && !clientCallPc){
+      endClientCallLocal(false);
+    }
+  });
+}
+async function acceptClientIncomingCall(){
+  if(!clientIncomingCallDocRef || !clientIncomingCallOfferData) return;
+  stopClientRingback();
+  const docRef = clientIncomingCallDocRef;
+  const offerData = clientIncomingCallOfferData;
+  let stream;
+  try{
+    stream = await navigator.mediaDevices.getUserMedia({ audio:true });
+  }catch(e){
+    const activeScreen = document.querySelector('.screen.active');
+    if(activeScreen) toast(activeScreen.id, 'Não foi possível aceder ao microfone.');
+    declineClientIncomingCall();
+    return;
+  }
+  clientCallDocRef = docRef;
+  clientCallLocalStream = stream;
+  setClientCallStatusText('A ligar…');
+  document.getElementById('c-call-accept-btn').style.display = 'none';
+  const pc = createClientCallPeerConnection();
+  clientCallPc = pc;
+  stream.getTracks().forEach(function(t){ pc.addTrack(t, stream); });
+  pc.onicecandidate = function(ev){
+    if(ev.candidate) docRef.collection('calleeCandidates').add(ev.candidate.toJSON()).catch(function(){});
+  };
+  try{
+    await pc.setRemoteDescription(new RTCSessionDescription(offerData.offer));
+    const answer = await pc.createAnswer();
+    await pc.setLocalDescription(answer);
+    await docRef.set({ status:'accepted', answer:{ type: answer.type, sdp: answer.sdp } }, { merge:true });
+  }catch(e){
+    console.warn('Falha ao atender chamada:', e);
+    endClientCallLocal(true);
+    return;
+  }
+  if(clientCallAnswerUnsub) clientCallAnswerUnsub();
+  clientCallAnswerUnsub = docRef.onSnapshot(function(snap){
+    const d = snap.data();
+    if(d && d.status === 'ended') endClientCallLocal(false);
+  });
+  clientCallCandidatesUnsub = docRef.collection('callerCandidates').onSnapshot(function(snap){
+    snap.docChanges().forEach(function(change){
+      if(change.type === 'added' && clientCallPc){
+        clientCallPc.addIceCandidate(new RTCIceCandidate(change.doc.data())).catch(function(){});
+      }
+    });
+  });
+  startClientCallTimer();
+  clientIncomingCallDocRef = null;
+  clientIncomingCallOfferData = null;
+}
+function declineClientIncomingCall(){
+  stopClientRingback();
+  if(clientIncomingCallDocRef) clientIncomingCallDocRef.set({ status:'declined' }, { merge:true }).catch(function(){});
+  cleanupClientCallResources();
+  hideClientCallOverlay();
 }
 let clientChatUnsub = null;
 function clientChatCollection(){
@@ -5274,11 +5645,16 @@ function startClientChatWatch(){
       }
     });
   }, function(e){ console.warn('Falha ao vigiar novas mensagens do chat (cliente):', e); });
+  if(typeof startClientCallWatch === 'function') startClientCallWatch();
 }
 function stopClientChatWatch(){
   if(clientChatWatchUnsub){ clientChatWatchUnsub(); clientChatWatchUnsub = null; }
   clientChatWatchRideId = null;
   hideClientChatNotifyDot();
+  if(typeof stopClientCallWatch === 'function') stopClientCallWatch();
+  if((typeof clientCallDocRef !== 'undefined' && clientCallDocRef) || (typeof clientIncomingCallDocRef !== 'undefined' && clientIncomingCallDocRef)){
+    if(typeof endClientCallLocal === 'function') endClientCallLocal(true);
+  }
 }
 function chatInitials(name){
   return (name || '').split(' ').filter(Boolean).slice(0,2).map(w=>w[0].toUpperCase()).join('') || '?';
@@ -5510,14 +5886,293 @@ function persistDriverBalance(){
   }catch(e){ console.warn('Falha ao gravar saldo:', e); }
 }
 
-/* ===================== COMUNICAÇÃO — MOTORISTA (chamada real + chat) =====================
-   Chamada real via tel: e chat em tempo real (Firestore) com o cliente da
-   viagem real. Nomes prefixados "Driver"/"d-" para não colidir com o
-   equivalente do cliente, já que este ficheiro partilha um único scope. */
-function callClientReal(){
-  const phone = (driverRideData && driverRideData.clientPhone) ? driverRideData.clientPhone : (currentUser.c && currentUser.c.phone);
-  if(!phone) return;
-  window.location.href = 'tel:' + phone.replace(/[^\d+]/g,'');
+/* ===================== COMUNICAÇÃO — MOTORISTA (chamada de voz VoIP + chat) =====================
+   A chamada NUNCA usa tel: nem expõe o número de telefone real de nenhum
+   dos lados. É uma chamada de voz feita dentro da própria app via WebRTC,
+   com sinalização em tempo real pelo Firestore (rides/{rideId}/calls).
+   Nomes prefixados "Driver"/"d-" para não colidir com o equivalente do
+   cliente, já que este ficheiro partilha um único scope. (RTC_ICE_SERVERS
+   e as funções _ringTone/showClientCallOverlay etc. do lado cliente já
+   declaram o servidor STUN/TURN partilhado, acima.) */
+let driverCallPc = null;
+let driverCallLocalStream = null;
+let driverCallDocRef = null;
+let driverCallAnswerUnsub = null;
+let driverCallCandidatesUnsub = null;
+let driverCallIncomingUnsub = null;
+let driverCallWatchRideId = null;
+let driverCallTimerInt = null;
+let driverCallStartedAt = null;
+let driverIncomingCallDocRef = null;
+let driverIncomingCallOfferData = null;
+let _driverRingInterval = null;
+function driverCallsCollection(){
+  if(!driverRideId) return null;
+  const col = ridesCollection();
+  return col ? col.doc(driverRideId).collection('calls') : null;
+}
+function startDriverRingback(){
+  stopDriverRingback();
+  _ringTone([440,480], 0.08, 1.0);
+  _driverRingInterval = setInterval(function(){ _ringTone([440,480], 0.08, 1.0); }, 3000);
+}
+function startDriverRingtone(){
+  stopDriverRingback();
+  _ringTone([660,880], 0.12, 0.4);
+  _driverRingInterval = setInterval(function(){ _ringTone([660,880], 0.12, 0.4); }, 1500);
+}
+function stopDriverRingback(){
+  if(_driverRingInterval){ clearInterval(_driverRingInterval); _driverRingInterval = null; }
+}
+function driverCallOtherPartyName(){
+  return (driverRideData && driverRideData.clientName) ? driverRideData.clientName : 'Cliente';
+}
+function driverCallInitials(name){
+  return (name || '').split(' ').filter(Boolean).slice(0,2).map(function(w){ return w[0].toUpperCase(); }).join('') || '?';
+}
+function setDriverCallStatusText(text){
+  const el = document.getElementById('d-call-status');
+  if(el) el.textContent = text;
+}
+function showDriverCallOverlay(status){
+  const ov = document.getElementById('d-call-overlay');
+  if(!ov) return;
+  const name = driverCallOtherPartyName();
+  const nameEl = document.getElementById('d-call-name');
+  const avatarEl = document.getElementById('d-call-avatar');
+  if(nameEl) nameEl.textContent = name;
+  if(avatarEl) avatarEl.textContent = driverCallInitials(name);
+  setDriverCallStatusText(status);
+  ov.classList.add('show');
+  document.getElementById('d-call-accept-btn').style.display = 'none';
+  document.getElementById('d-call-mute-btn').style.display = 'none';
+}
+function hideDriverCallOverlay(){
+  const ov = document.getElementById('d-call-overlay');
+  if(ov) ov.classList.remove('show');
+}
+function createDriverCallPeerConnection(){
+  const pc = new RTCPeerConnection({ iceServers: RTC_ICE_SERVERS });
+  pc.ontrack = function(ev){
+    const remoteAudio = document.getElementById('d-call-remote-audio');
+    if(remoteAudio && ev.streams && ev.streams[0]) remoteAudio.srcObject = ev.streams[0];
+  };
+  pc.onconnectionstatechange = function(){
+    if(pc === driverCallPc && (pc.connectionState === 'failed' || pc.connectionState === 'closed')){
+      endDriverCallLocal(false);
+    }
+  };
+  return pc;
+}
+function cleanupDriverCallResources(){
+  stopDriverRingback();
+  if(driverCallTimerInt){ clearInterval(driverCallTimerInt); driverCallTimerInt = null; }
+  if(driverCallAnswerUnsub){ driverCallAnswerUnsub(); driverCallAnswerUnsub = null; }
+  if(driverCallCandidatesUnsub){ driverCallCandidatesUnsub(); driverCallCandidatesUnsub = null; }
+  if(driverCallPc){ try{ driverCallPc.close(); }catch(e){} driverCallPc = null; }
+  if(driverCallLocalStream){ driverCallLocalStream.getTracks().forEach(function(t){ t.stop(); }); driverCallLocalStream = null; }
+  const remoteAudio = document.getElementById('d-call-remote-audio');
+  if(remoteAudio) remoteAudio.srcObject = null;
+  driverCallDocRef = null;
+  driverCallStartedAt = null;
+  driverIncomingCallDocRef = null;
+  driverIncomingCallOfferData = null;
+}
+function endDriverCallLocal(writeEnded){
+  if(writeEnded && driverCallDocRef){
+    driverCallDocRef.set({ status:'ended', endedAt: firebase.firestore.FieldValue.serverTimestamp() }, { merge:true }).catch(function(){});
+  }
+  cleanupDriverCallResources();
+  hideDriverCallOverlay();
+}
+function handleDriverCallEndButton(){
+  if(driverIncomingCallDocRef && !driverCallPc){
+    declineDriverIncomingCall();
+  } else {
+    endDriverCallLocal(true);
+  }
+}
+function startDriverCallTimer(){
+  driverCallStartedAt = Date.now();
+  setDriverCallStatusText('00:00');
+  if(driverCallTimerInt) clearInterval(driverCallTimerInt);
+  driverCallTimerInt = setInterval(function(){
+    const secs = Math.floor((Date.now() - driverCallStartedAt) / 1000);
+    const m = Math.floor(secs/60), s = secs%60;
+    setDriverCallStatusText((m<10?'0':'')+m + ':' + (s<10?'0':'')+s);
+  }, 500);
+  document.getElementById('d-call-mute-btn').style.display = '';
+}
+function toggleDriverCallMute(){
+  if(!driverCallLocalStream) return;
+  const muted = driverCallLocalStream.getAudioTracks().some(function(t){ return !t.enabled; });
+  driverCallLocalStream.getAudioTracks().forEach(function(t){ t.enabled = muted; });
+  const btn = document.getElementById('d-call-mute-btn');
+  if(btn) btn.classList.toggle('muted', !muted);
+}
+async function callClientReal(){
+  if(!driverRideId || !driverRideData){
+    const activeScreen = document.querySelector('.screen.active');
+    if(activeScreen) toast(activeScreen.id, 'Só é possível ligar durante uma viagem ativa.');
+    return;
+  }
+  if(driverCallDocRef || driverIncomingCallDocRef) return;
+  const col = driverCallsCollection();
+  if(!col) return;
+  let stream;
+  try{
+    stream = await navigator.mediaDevices.getUserMedia({ audio:true });
+  }catch(e){
+    const activeScreen = document.querySelector('.screen.active');
+    if(activeScreen) toast(activeScreen.id, 'Não foi possível aceder ao microfone. Verifica as permissões da app.');
+    return;
+  }
+  driverCallLocalStream = stream;
+  showDriverCallOverlay('A chamar…');
+  startDriverRingback();
+  const pc = createDriverCallPeerConnection();
+  driverCallPc = pc;
+  stream.getTracks().forEach(function(t){ pc.addTrack(t, stream); });
+  const docRef = col.doc();
+  driverCallDocRef = docRef;
+  pc.onicecandidate = function(ev){
+    if(ev.candidate) docRef.collection('callerCandidates').add(ev.candidate.toJSON()).catch(function(){});
+  };
+  try{
+    const offer = await pc.createOffer();
+    await pc.setLocalDescription(offer);
+    await docRef.set({
+      caller: 'driver', status: 'ringing',
+      offer: { type: offer.type, sdp: offer.sdp },
+      createdAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+  }catch(e){
+    console.warn('Falha ao iniciar chamada:', e);
+    endDriverCallLocal(false);
+    return;
+  }
+  driverCallAnswerUnsub = docRef.onSnapshot(function(snap){
+    const data = snap.data();
+    if(!data || driverCallDocRef !== docRef) return;
+    if(data.status === 'accepted' && data.answer && driverCallPc && !driverCallPc.currentRemoteDescription){
+      stopDriverRingback();
+      driverCallPc.setRemoteDescription(new RTCSessionDescription(data.answer)).then(function(){
+        startDriverCallTimer();
+      }).catch(function(){});
+    } else if(data.status === 'declined'){
+      setDriverCallStatusText('Cliente recusou a chamada.');
+      setTimeout(function(){ endDriverCallLocal(false); }, 1500);
+    } else if(data.status === 'ended'){
+      endDriverCallLocal(false);
+    }
+  });
+  driverCallCandidatesUnsub = docRef.collection('calleeCandidates').onSnapshot(function(snap){
+    snap.docChanges().forEach(function(change){
+      if(change.type === 'added' && driverCallPc){
+        driverCallPc.addIceCandidate(new RTCIceCandidate(change.doc.data())).catch(function(){});
+      }
+    });
+  });
+  setTimeout(function(){
+    if(driverCallDocRef === docRef && !driverCallStartedAt){
+      setDriverCallStatusText('Cliente não atendeu.');
+      docRef.set({ status:'ended' }, { merge:true }).catch(function(){});
+      setTimeout(function(){ endDriverCallLocal(false); }, 1500);
+    }
+  }, 30000);
+}
+function startDriverCallWatch(){
+  if(driverCallIncomingUnsub && driverCallWatchRideId === driverRideId) return;
+  stopDriverCallWatch();
+  const col = driverCallsCollection();
+  if(!col) return;
+  driverCallWatchRideId = driverRideId;
+  driverCallIncomingUnsub = col.where('status','==','ringing').orderBy('createdAt','desc').limit(1)
+    .onSnapshot(function(snap){
+      if(driverCallDocRef || driverIncomingCallDocRef) return;
+      snap.forEach(function(doc){
+        const data = doc.data();
+        if(data && data.caller && data.caller !== 'driver'){
+          handleDriverIncomingCall(doc.ref, data);
+        }
+      });
+    }, function(e){ console.warn('Falha ao vigiar chamadas a entrar:', e); });
+}
+function stopDriverCallWatch(){
+  if(driverCallIncomingUnsub){ driverCallIncomingUnsub(); driverCallIncomingUnsub = null; }
+  driverCallWatchRideId = null;
+}
+function handleDriverIncomingCall(docRef, data){
+  if(driverIncomingCallDocRef && driverIncomingCallDocRef.id === docRef.id) return;
+  driverIncomingCallDocRef = docRef;
+  driverIncomingCallOfferData = data;
+  showDriverCallOverlay('Chamada a entrar…');
+  document.getElementById('d-call-accept-btn').style.display = '';
+  startDriverRingtone();
+  if(typeof playStatusBeep === 'function'){ try{ playStatusBeep(); }catch(e){} }
+  if(driverCallAnswerUnsub) driverCallAnswerUnsub();
+  driverCallAnswerUnsub = docRef.onSnapshot(function(snap){
+    const d = snap.data();
+    if(d && (d.status === 'ended' || d.status === 'cancelled') && !driverCallPc){
+      endDriverCallLocal(false);
+    }
+  });
+}
+async function acceptDriverIncomingCall(){
+  if(!driverIncomingCallDocRef || !driverIncomingCallOfferData) return;
+  stopDriverRingback();
+  const docRef = driverIncomingCallDocRef;
+  const offerData = driverIncomingCallOfferData;
+  let stream;
+  try{
+    stream = await navigator.mediaDevices.getUserMedia({ audio:true });
+  }catch(e){
+    const activeScreen = document.querySelector('.screen.active');
+    if(activeScreen) toast(activeScreen.id, 'Não foi possível aceder ao microfone.');
+    declineDriverIncomingCall();
+    return;
+  }
+  driverCallDocRef = docRef;
+  driverCallLocalStream = stream;
+  setDriverCallStatusText('A ligar…');
+  document.getElementById('d-call-accept-btn').style.display = 'none';
+  const pc = createDriverCallPeerConnection();
+  driverCallPc = pc;
+  stream.getTracks().forEach(function(t){ pc.addTrack(t, stream); });
+  pc.onicecandidate = function(ev){
+    if(ev.candidate) docRef.collection('calleeCandidates').add(ev.candidate.toJSON()).catch(function(){});
+  };
+  try{
+    await pc.setRemoteDescription(new RTCSessionDescription(offerData.offer));
+    const answer = await pc.createAnswer();
+    await pc.setLocalDescription(answer);
+    await docRef.set({ status:'accepted', answer:{ type: answer.type, sdp: answer.sdp } }, { merge:true });
+  }catch(e){
+    console.warn('Falha ao atender chamada:', e);
+    endDriverCallLocal(true);
+    return;
+  }
+  if(driverCallAnswerUnsub) driverCallAnswerUnsub();
+  driverCallAnswerUnsub = docRef.onSnapshot(function(snap){
+    const d = snap.data();
+    if(d && d.status === 'ended') endDriverCallLocal(false);
+  });
+  driverCallCandidatesUnsub = docRef.collection('callerCandidates').onSnapshot(function(snap){
+    snap.docChanges().forEach(function(change){
+      if(change.type === 'added' && driverCallPc){
+        driverCallPc.addIceCandidate(new RTCIceCandidate(change.doc.data())).catch(function(){});
+      }
+    });
+  });
+  startDriverCallTimer();
+  driverIncomingCallDocRef = null;
+  driverIncomingCallOfferData = null;
+}
+function declineDriverIncomingCall(){
+  stopDriverRingback();
+  if(driverIncomingCallDocRef) driverIncomingCallDocRef.set({ status:'declined' }, { merge:true }).catch(function(){});
+  cleanupDriverCallResources();
+  hideDriverCallOverlay();
 }
 let driverChatUnsub = null;
 function driverChatCollection(){
@@ -5571,11 +6226,16 @@ function startDriverChatWatch(){
       }
     });
   }, function(e){ console.warn('Falha ao vigiar novas mensagens do chat (motorista):', e); });
+  if(typeof startDriverCallWatch === 'function') startDriverCallWatch();
 }
 function stopDriverChatWatch(){
   if(driverChatWatchUnsub){ driverChatWatchUnsub(); driverChatWatchUnsub = null; }
   driverChatWatchRideId = null;
   hideDriverChatNotifyDot();
+  if(typeof stopDriverCallWatch === 'function') stopDriverCallWatch();
+  if((typeof driverCallDocRef !== 'undefined' && driverCallDocRef) || (typeof driverIncomingCallDocRef !== 'undefined' && driverIncomingCallDocRef)){
+    if(typeof endDriverCallLocal === 'function') endDriverCallLocal(true);
+  }
 }
 function openDriverChat(){
   const clientName = (driverRideData && driverRideData.clientName) ? driverRideData.clientName : ((currentUser.c && currentUser.c.name) || 'Cliente');
