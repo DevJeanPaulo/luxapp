@@ -7195,6 +7195,7 @@ function stopListeningForReservations(){
    índice composto) e filtra no telemóvel só as transições para
    'cancelled' vindas do cliente que ainda não foram notificadas. */
 let myReservationCancelWatchUnsub = null;
+let myReservationCancelFirstLoad = true;
 const notifiedClientCancelledReservations = new Set();
 function startWatchingMyReservationCancellations(){
   const col = ridesCollection();
@@ -7202,17 +7203,30 @@ function startWatchingMyReservationCancellations(){
   if(!col || !myId) return false;
   if(myReservationCancelWatchUnsub) return true; // já a vigiar
   myReservationCancelWatchUnsub = col.where('driverId', '==', myId).onSnapshot(function(snapshot){
+    // CORRIGIDO: o Firestore reporta docChanges() tipo 'added' para TODOS os
+    // documentos que já correspondem à query no momento em que o listener
+    // liga — incluindo reservas antigas já canceladas pelo cliente há dias.
+    // Sem este guard de "primeira leitura", o banner de cancelamento
+    // reaparecia sempre que o motorista reabria a app ou fazia login de
+    // novo, mesmo para cancelamentos já vistos e resolvidos há muito tempo.
+    const isFirstLoad = myReservationCancelFirstLoad;
+    myReservationCancelFirstLoad = false;
     snapshot.docChanges().forEach(function(change){
       const r = change.doc.data();
-      if(r.status === 'cancelled' && r.cancelledFromReservation && r.cancelledBy === 'client' && !notifiedClientCancelledReservations.has(change.doc.id)){
+      const isClientCancel = r.status === 'cancelled' && r.cancelledFromReservation && r.cancelledBy === 'client';
+      if(!isClientCancel) return;
+      if(isFirstLoad){
         notifiedClientCancelledReservations.add(change.doc.id);
-        const sf = r.scheduledFor && r.scheduledFor.toDate ? r.scheduledFor.toDate() : null;
-        const when = sf ? (' de ' + sf.toLocaleDateString('pt-PT') + ' às ' + sf.toLocaleTimeString('pt-PT',{hour:'2-digit',minute:'2-digit'})) : '';
-        showDriverCancelAlertOverlay('⚠️ O cliente cancelou', 'O cliente cancelou a reserva' + when + '.');
-        if(typeof playStatusBeep === 'function'){ try{ playStatusBeep(); }catch(e){} }
-        if(navigator.vibrate) try{ navigator.vibrate([120,60,120]); }catch(e){}
-        if(currentDriverScreenId() === 'd-reservations' && typeof loadDriverReservations==='function') loadDriverReservations();
+        return;
       }
+      if(notifiedClientCancelledReservations.has(change.doc.id)) return;
+      notifiedClientCancelledReservations.add(change.doc.id);
+      const sf = r.scheduledFor && r.scheduledFor.toDate ? r.scheduledFor.toDate() : null;
+      const when = sf ? (' de ' + sf.toLocaleDateString('pt-PT') + ' às ' + sf.toLocaleTimeString('pt-PT',{hour:'2-digit',minute:'2-digit'})) : '';
+      showDriverCancelAlertOverlay('⚠️ O cliente cancelou', 'O cliente cancelou a reserva' + when + '.');
+      if(typeof playStatusBeep === 'function'){ try{ playStatusBeep(); }catch(e){} }
+      if(navigator.vibrate) try{ navigator.vibrate([120,60,120]); }catch(e){}
+      if(currentDriverScreenId() === 'd-reservations' && typeof loadDriverReservations==='function') loadDriverReservations();
     });
   }, function(err){ console.warn('Falha ao vigiar cancelamentos de reservas:', err); });
   return true;
@@ -7220,6 +7234,7 @@ function startWatchingMyReservationCancellations(){
 function stopWatchingMyReservationCancellations(){
   if(myReservationCancelWatchUnsub){ myReservationCancelWatchUnsub(); myReservationCancelWatchUnsub = null; }
   notifiedClientCancelledReservations.clear();
+  myReservationCancelFirstLoad = true;
 }
 function showRealIncomingRequest(rideId, data){
   driverRideId = rideId;
