@@ -201,7 +201,19 @@
       repeating-linear-gradient(90deg, #0b0d11 0 38px, #0e1116 38px 39px),
       #0b0d11;
     overflow:hidden;
+    border-radius:var(--radius-md);
   }
+  /* Wrapper à volta do .map só para a moldura dourada — o .glow-frame usa
+     um ::before com inset negativo que fica cortado se estiver no próprio
+     .map (que tem overflow:hidden), por isso a moldura vive aqui em vez
+     de estar diretamente no .map. */
+  .map-wrap{ position:relative; flex:1; min-height:0; border-radius:var(--radius-md); }
+  .map-wrap .map{ position:absolute; inset:0; flex:none; }
+  .map-wrap.glow-frame::before{ border-radius:calc(var(--radius-md) + 2px); }
+  /* Esconde o rodapé de créditos do Google Maps (atalhos de teclado, dados
+     do mapa, termos) para não quebrar o visual dentro da moldura dourada. */
+  .map .gm-style-cc, .map .gmnoprint, .map-wrap .gm-style-cc, .map-wrap .gmnoprint{ display:none !important; }
+  .map a[href^="https://maps.google.com/maps"]{ display:none !important; }
   .map svg{ position:absolute; inset:0; width:100%; height:100%; }
   .pin{
     position:absolute; width:14px; height:14px; border-radius:50% 50% 50% 0;
@@ -1094,13 +1106,15 @@
           </div>
         </div>
         <div class="add-stop-btn" onclick="addTripStop()">+ Adicionar parada</div>
-        <div class="map" id="map-home">
-          <svg><line x1="0" y1="0" x2="0" y2="0"/></svg>
-          <div class="me-dot" style="left:50%; top:46%;"></div>
+        <div class="map-wrap glow-frame">
+          <div class="map" id="map-home">
+            <svg><line x1="0" y1="0" x2="0" y2="0"/></svg>
+            <div class="me-dot" style="left:50%; top:46%;"></div>
+          </div>
         </div>
         <div class="sheet">
           <div class="sheet-handle"></div>
-          <h1 class="title" data-i18n="home_greeting">Boa noite, Jean Paulo</h1>
+          <h1 class="title" data-i18n="home_greeting">Boa noite</h1>
           <p class="subtitle" data-i18n="home_subtitle">Para onde vai hoje?</p>
           <div class="chips-wrap">
             <div class="chips">
@@ -2490,7 +2504,7 @@ const LANG_DICT = {
   theme_light: { pt:'Claro', en:'Light', es:'Claro' },
   lbl_push: { pt:'Notificações push', en:'Push notifications', es:'Notificaciones push' },
   btn_logout: { pt:'Terminar sessão', en:'Log out', es:'Cerrar sesión' },
-  home_greeting: { pt:'Boa noite, Jean Paulo', en:'Good evening, Jean Paulo', es:'Buenas noches, Jean Paulo' },
+  home_greeting: { pt:'Boa noite', en:'Good evening', es:'Buenas noches' },
   home_subtitle: { pt:'Para onde vai hoje?', en:'Where are you headed today?', es:'¿A dónde vas hoy?' },
   chip_airport_lisbon: { pt:'Aeroporto Lisboa', en:'Lisbon Airport', es:'Aeropuerto Lisboa' },
   chip_airport_porto: { pt:'Aeroporto Porto', en:'Porto Airport', es:'Aeropuerto Oporto' },
@@ -3148,15 +3162,25 @@ function initHomeMap(){
     setTimeout(initPlacesAutocomplete, 1500);
   }
   bindAllStopAutocompletes();
+  /* Mostra já o mapa centrado num ponto por omissão para os tiles do Google
+     começarem a carregar de imediato — antes disto o mapa só era criado
+     depois de esperar pelo GPS (até 4s, ou mais em telemóveis lentos), e
+     nesse tempo todo o ecrã ficava com o fundo quase preto do próprio
+     google.maps.Map, dando a sensação de "mapa sempre preto"/avariado.
+     Quando a localização real chega, o mapa é apenas recentrado. */
+  const homeMap = initRealMap('map-home', LUX_PLACES.pickup, 15);
+  let homeMarker = null;
+  if(homeMap) homeMarker = new google.maps.Marker({ position:LUX_PLACES.pickup, map:homeMap, icon:gDotIcon('#FFC94D',8) });
   if(navigator.geolocation){
     navigator.geolocation.getCurrentPosition(function(pos){
       myCurrentLatLng = { lat:pos.coords.latitude, lng:pos.coords.longitude };
-      showRealSingleLocation('map-home', myCurrentLatLng);
-    }, function(){
-      showRealSingleLocation('map-home', LUX_PLACES.pickup);
-    }, { timeout:4000 });
-  } else {
-    showRealSingleLocation('map-home', LUX_PLACES.pickup);
+      if(homeMap && homeMarker){
+        homeMap.panTo(myCurrentLatLng);
+        homeMarker.setPosition(myCurrentLatLng);
+      } else {
+        showRealSingleLocation('map-home', myCurrentLatLng);
+      }
+    }, function(){ /* sem permissão/erro: mantém o ponto por omissão já visível */ }, { timeout:4000 });
   }
 }
 function resetClientFlow(){

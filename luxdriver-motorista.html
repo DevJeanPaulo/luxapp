@@ -201,10 +201,16 @@
       repeating-linear-gradient(90deg, #0b0d11 0 38px, #0e1116 38px 39px),
       #0b0d11;
     overflow:hidden;
+    border-radius:var(--radius-md);
   }
   .map svg{ position:absolute; inset:0; width:100%; height:100%; }
-  .map-wrap{ position:relative; flex:1; min-height:0; }
+  .map-wrap{ position:relative; flex:1; min-height:0; border-radius:var(--radius-md); }
   .map-wrap .map{ position:absolute; inset:0; flex:none; }
+  .map-wrap.glow-frame::before{ border-radius:calc(var(--radius-md) + 2px); }
+  /* Esconde o rodapé de créditos do Google Maps (atalhos de teclado, dados
+     do mapa, termos) para não quebrar o visual dentro da moldura dourada. */
+  .map .gm-style-cc, .map .gmnoprint, .map-wrap .gm-style-cc, .map-wrap .gmnoprint{ display:none !important; }
+  .map a[href^="https://maps.google.com/maps"]{ display:none !important; }
   .map-radar-overlay{
     position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
     pointer-events:none; z-index:6; opacity:0; transition:opacity .3s ease;
@@ -1231,7 +1237,7 @@
         <div class="stops-banner" id="d-reservations-banner" style="cursor:pointer;" onclick="openDriverReservations()">
           <span>📅</span><span id="d-reservations-banner-text">Tens reservas futuras</span>
         </div>
-        <div class="map-wrap">
+        <div class="map-wrap glow-frame">
           <div class="map" id="map-driver-home">
             <svg></svg>
             <div class="me-dot" style="left:50%; top:50%;"></div>
@@ -1939,6 +1945,13 @@ function listenDriverProfile(){
     if(typeof data.balance === 'number' && !unlimitedAccount.d && data.balance !== driverBalance){
       driverBalance = data.balance;
       renderBalanceUI();
+    }
+    // Restaura "Ganhos hoje" gravado em drivers/{id} — só se a data gravada
+    // for a de hoje (senão é um valor de um dia anterior e deve ficar 0).
+    if(typeof data.earningsToday === 'number' && data.earningsDate === todayDateKey() && data.earningsToday !== driverEarnings){
+      driverEarnings = data.earningsToday;
+      const earnEl = document.getElementById('stat-earn');
+      if(earnEl) earnEl.textContent = maskedOrValue(driverEarnings);
     }
     // Bloqueio temporário (penalização por cancelar uma reserva já aceite):
     // guardado em drivers/{id}.blockedUntil (epoch ms). Ver toggleOnline().
@@ -3598,6 +3611,27 @@ function persistDriverBalance(){
       .catch(function(e){ console.warn('Falha ao gravar saldo:', e); });
   }catch(e){ console.warn('Falha ao gravar saldo:', e); }
 }
+/* Chave do dia local (AAAA-MM-DD) usada para saber se "Ganhos hoje" ainda é
+   válido — evita usar UTC (toISOString) para não desalinhar com a meia-noite
+   local do motorista. */
+function todayDateKey(){
+  const d = new Date();
+  return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+}
+/* Grava os ganhos de hoje em drivers/{id} (earningsToday + earningsDate),
+   para sobreviverem a logout/login e a reabrir a app — antes disto
+   driverEarnings era só uma variável em memória, reiniciada em 0 a cada
+   carregamento, mesmo que o motorista já tivesse feito corridas nesse
+   mesmo dia. Ver listenDriverProfile() para a restauração deste valor. */
+function persistDriverEarnings(){
+  try{
+    const db = initFirestore();
+    if(!db || !currentUser.d || !currentUser.d.email) return;
+    const id = driverDocId(currentUser.d.email);
+    db.collection('drivers').doc(id).set({ earningsToday: driverEarnings, earningsDate: todayDateKey() }, { merge:true })
+      .catch(function(e){ console.warn('Falha ao gravar ganhos de hoje:', e); });
+  }catch(e){ console.warn('Falha ao gravar ganhos de hoje:', e); }
+}
 
 /* ===================== COMUNICAÇÃO (chamada de voz VoIP + chat) =====================
    A chamada NUNCA usa tel: nem expõe o número de telefone real de nenhum
@@ -4769,6 +4803,7 @@ function markTripComplete(el){
     const commission = totalFare * COMMISSION_RATE;
     driverEarnings += totalFare;
     driverTrips += 1;
+    persistDriverEarnings();
     // O saldo pode ficar negativo aqui de propósito: a corrida já foi feita
     // e o cliente já pagou, por isso não faz sentido travar o motorista a
     // meio da viagem por a comissão (10%) ultrapassar o saldo que tinha
@@ -5193,6 +5228,7 @@ function creditDriverTip(rideId, tip, clientName){
   driverBalance += tip;
   driverEarnings += tip;
   persistDriverBalance();
+  persistDriverEarnings();
   const earnEl = document.getElementById('stat-earn');
   if(earnEl) earnEl.textContent = maskedOrValue(driverEarnings);
   renderBalanceUI();
