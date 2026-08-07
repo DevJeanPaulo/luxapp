@@ -1177,6 +1177,7 @@
 
       <!-- 1. HOME -->
       <div class="screen" id="c-home">
+        <div class="toast" id="toast-home"></div>
         <div class="topbar">
           <div class="brand" style="color:var(--gold);">Lux</div>
           <div style="display:flex; align-items:center; gap:8px;">
@@ -1210,7 +1211,7 @@
         </div>
         <div class="sheet" id="c-home-sheet">
           <div class="sheet-handle" id="c-home-sheet-handle"></div>
-          <h1 class="title" data-i18n="home_greeting">Boa noite</h1>
+          <h1 class="title" id="c-home-greeting" data-i18n="home_greeting">Olá</h1>
           <p class="subtitle" data-i18n="home_subtitle">Para onde vai hoje?</p>
           <div class="chips-wrap">
             <div class="chips">
@@ -1257,6 +1258,7 @@
 
       <!-- RESERVAS DO CLIENTE -->
       <div class="screen" id="c-reservations">
+        <div class="toast" id="toast-reservations"></div>
         <div class="topbar">
           <div class="icon-btn" onclick="goTo('c-home')">←</div>
           <div class="brand" style="font-size:13px;">AS TUAS RESERVAS</div>
@@ -1271,6 +1273,7 @@
 
       <!-- 2. VEHICLE SELECT -->
       <div class="screen" id="c-vehicles">
+        <div class="toast" id="toast-vehicles"></div>
         <div class="topbar">
           <div class="icon-btn" onclick="goTo('c-home')">←</div>
           <div class="brand" style="font-size:13px;">ESCOLHER VEÍCULO</div>
@@ -1305,6 +1308,7 @@
 
       <!-- 3. MATCHING -->
       <div class="screen" id="c-matching">
+        <div class="toast" id="toast-matching"></div>
         <div class="topbar">
           <div style="width:38px;"></div>
           <div class="brand" style="font-size:13px;">A PROCURAR MOTORISTA</div>
@@ -1520,6 +1524,21 @@ function goTo(screenId){
     if(s.closest('.app').contains(document.getElementById(screenId))) s.classList.remove('active');
   });
   document.getElementById(screenId).classList.add('active');
+  if(screenId === 'c-home') updateHomeGreeting();
+}
+/* Saudação do ecrã inicial: "Olá {primeiro nome}" em vez do antigo texto
+   fixo por hora do dia ("Boa noite" sempre, independente da hora real —
+   ver task #372/relato do utilizador). O dicionário i18n só fornece a
+   palavra "Olá"/"Hi"/"Hola" (via data-i18n="home_greeting"); aqui juntamos
+   o nome real do cliente autenticado (currentUser.c.name), se disponível. */
+function updateHomeGreeting(){
+  const el = document.getElementById('c-home-greeting');
+  if(!el) return;
+  const entry = (typeof LANG_DICT !== 'undefined' && LANG_DICT.home_greeting) ? LANG_DICT.home_greeting : null;
+  const hi = (entry && (entry[currentLang] || entry.pt)) || 'Olá';
+  const fullName = currentUser.c && currentUser.c.name ? String(currentUser.c.name).trim() : '';
+  const firstName = fullName ? fullName.split(/\s+/)[0] : '';
+  el.textContent = firstName ? (hi + ', ' + firstName) : hi;
 }
 function toast(scopeId, msg){
   const scope = document.getElementById(scopeId);
@@ -2636,7 +2655,7 @@ const LANG_DICT = {
   theme_light: { pt:'Claro', en:'Light', es:'Claro' },
   lbl_push: { pt:'Notificações push', en:'Push notifications', es:'Notificaciones push' },
   btn_logout: { pt:'Terminar sessão', en:'Log out', es:'Cerrar sesión' },
-  home_greeting: { pt:'Boa noite', en:'Good evening', es:'Buenas noches' },
+  home_greeting: { pt:'Olá', en:'Hi', es:'Hola' },
   home_subtitle: { pt:'Para onde vai hoje?', en:'Where are you headed today?', es:'¿A dónde vas hoy?' },
   chip_airport_lisbon: { pt:'Aeroporto Lisboa', en:'Lisbon Airport', es:'Aeropuerto Lisboa' },
   chip_airport_porto: { pt:'Aeroporto Porto', en:'Porto Airport', es:'Aeropuerto Oporto' },
@@ -2663,6 +2682,7 @@ function setLanguage(lang){
   document.querySelectorAll('#c-lang-switcher, #lang-switcher-welcome').forEach(sw=>{
     sw.querySelectorAll('button').forEach(b=>b.classList.toggle('active', b.dataset.lang===lang));
   });
+  if(typeof updateHomeGreeting === 'function') updateHomeGreeting();
 }
 function openNav(provider, which){
   const address = which==='pickup' ? 'Av. da Liberdade, Lisboa' : 'Aeroporto de Lisboa (LIS)';
