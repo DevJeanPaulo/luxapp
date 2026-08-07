@@ -2158,6 +2158,15 @@
         </div>
       </div>
 
+      <div class="cancel-alert-overlay" id="driver-cancel-alert-overlay">
+        <div class="cancel-alert-card">
+          <div class="cancel-alert-icon">⚠️</div>
+          <h1 class="cancel-alert-title" id="driver-cancel-alert-title">O cliente cancelou</h1>
+          <p class="cancel-alert-msg" id="driver-cancel-alert-msg">A viagem foi cancelada.</p>
+          <button class="btn btn-gold" onclick="closeDriverCancelAlertOverlay()">Entendi</button>
+        </div>
+      </div>
+
     </div>
 
   </div>
@@ -2206,6 +2215,21 @@ function showCancelAlertOverlay(title, msg){
 }
 function closeCancelAlertOverlay(){
   const el = document.getElementById('cancel-alert-overlay');
+  if(el) el.classList.remove('show');
+}
+/* Mesmo modal, mas para o lado do motorista (id diferente, já que os dois
+   apps partilham esta página): usado quando é o CLIENTE que cancela. */
+function showDriverCancelAlertOverlay(title, msg){
+  const el = document.getElementById('driver-cancel-alert-overlay');
+  if(!el) return;
+  const t = document.getElementById('driver-cancel-alert-title');
+  const m = document.getElementById('driver-cancel-alert-msg');
+  if(t) t.textContent = title;
+  if(m) m.textContent = msg;
+  el.classList.add('show');
+}
+function closeDriverCancelAlertOverlay(){
+  const el = document.getElementById('driver-cancel-alert-overlay');
   if(el) el.classList.remove('show');
 }
 function toast(scopeId, msg){
@@ -6929,7 +6953,7 @@ function handleClientCancelledRide(){
   setDriverRidePhase(null);
   updateDriverFrames();
   goTo('d-home');
-  toast('d-home', 'O cliente cancelou a viagem. Já podes receber novos pedidos.');
+  showDriverCancelAlertOverlay('⚠️ O cliente cancelou', 'O cliente cancelou a viagem. Já podes receber novos pedidos.');
   if(navigator.vibrate) try{ navigator.vibrate([120,60,120]); }catch(e){}
   if(typeof refreshReservationsBanner==='function') refreshReservationsBanner();
 }
@@ -7128,7 +7152,7 @@ function startWatchingMyReservationCancellations(){
         notifiedClientCancelledReservations.add(change.doc.id);
         const sf = r.scheduledFor && r.scheduledFor.toDate ? r.scheduledFor.toDate() : null;
         const when = sf ? (' de ' + sf.toLocaleDateString('pt-PT') + ' às ' + sf.toLocaleTimeString('pt-PT',{hour:'2-digit',minute:'2-digit'})) : '';
-        toast(currentDriverScreenId() || 'd-home', '⚠️ O cliente cancelou a reserva' + when + '.');
+        showDriverCancelAlertOverlay('⚠️ O cliente cancelou', 'O cliente cancelou a reserva' + when + '.');
         if(typeof playStatusBeep === 'function'){ try{ playStatusBeep(); }catch(e){} }
         if(navigator.vibrate) try{ navigator.vibrate([120,60,120]); }catch(e){}
         if(currentDriverScreenId() === 'd-reservations' && typeof loadDriverReservations==='function') loadDriverReservations();
