@@ -677,6 +677,30 @@
     width:100%; background:var(--panel); border-radius:24px 24px 0 0;
     padding:20px 20px calc(20px + var(--safe-bottom)); border-top:1px solid var(--gold);
   }
+
+  /* Alerta de cancelamento (motorista cancelou a reserva) — modal centrado
+     e a vermelho, ver explicação completa em lux-cliente.html. */
+  .cancel-alert-overlay{
+    position:absolute; inset:0; background:rgba(0,0,0,.65); z-index:95;
+    display:none; align-items:center; justify-content:center; padding:24px;
+  }
+  .cancel-alert-overlay.show{ display:flex; }
+  .cancel-alert-card{
+    width:100%; max-width:340px; background:var(--panel); border:2px solid #e53935;
+    border-radius:20px; padding:30px 22px 24px; text-align:center;
+    box-shadow:0 0 0 6px rgba(229,57,53,.18), 0 16px 44px rgba(0,0,0,.55);
+    animation:cancelAlertPulse 1.4s ease-in-out infinite, cancelAlertPop .25s ease-out;
+  }
+  @keyframes cancelAlertPop{ from{ transform:scale(.9); opacity:0; } to{ transform:scale(1); opacity:1; } }
+  @keyframes cancelAlertPulse{
+    0%,100%{ box-shadow:0 0 0 6px rgba(229,57,53,.18), 0 16px 44px rgba(0,0,0,.55); }
+    50%{ box-shadow:0 0 0 11px rgba(229,57,53,.32), 0 16px 44px rgba(0,0,0,.55); }
+  }
+  .cancel-alert-icon{ font-size:46px; line-height:1; margin-bottom:12px; }
+  .cancel-alert-title{ color:#e53935; font-size:18.5px; font-weight:800; margin:0 0 8px; }
+  .cancel-alert-msg{ color:var(--text); font-size:13.5px; line-height:1.55; margin:0 0 22px; }
+  .cancel-alert-card .btn{ background:#e53935; color:#fff; }
+  .cancel-alert-card .btn:active{ background:#c62828; }
   .chat-overlay{
     position:absolute; inset:0; background:var(--bg); z-index:90;
     display:none; flex-direction:column;
@@ -1573,6 +1597,15 @@
         </div>
       </div>
 
+      <div class="cancel-alert-overlay" id="cancel-alert-overlay">
+        <div class="cancel-alert-card">
+          <div class="cancel-alert-icon">⚠️</div>
+          <h1 class="cancel-alert-title" id="cancel-alert-title">O motorista cancelou</h1>
+          <p class="cancel-alert-msg" id="cancel-alert-msg">A reserva foi cancelada.</p>
+          <button class="btn btn-gold" onclick="closeCancelAlertOverlay()">Entendi</button>
+        </div>
+      </div>
+
     </div>
 
     <!-- ============ DRIVER APP ============ -->
@@ -2159,6 +2192,21 @@ function updateHomeGreeting(){
   const fullName = currentUser.c && currentUser.c.name ? String(currentUser.c.name).trim() : '';
   const firstName = fullName ? fullName.split(/\s+/)[0] : '';
   el.textContent = firstName ? (hi + ', ' + firstName) : hi;
+}
+/* Modal centrado e a vermelho para o alerta de cancelamento (motorista
+   cancelou a reserva) — ver explicação completa em lux-cliente.html. */
+function showCancelAlertOverlay(title, msg){
+  const el = document.getElementById('cancel-alert-overlay');
+  if(!el) return;
+  const t = document.getElementById('cancel-alert-title');
+  const m = document.getElementById('cancel-alert-msg');
+  if(t) t.textContent = title;
+  if(m) m.textContent = msg;
+  el.classList.add('show');
+}
+function closeCancelAlertOverlay(){
+  const el = document.getElementById('cancel-alert-overlay');
+  if(el) el.classList.remove('show');
 }
 function toast(scopeId, msg){
   const scope = document.getElementById(scopeId);
@@ -5468,7 +5516,7 @@ function watchReservation(rideId){
         notifiedDriverCancelledReservations.add(rideId);
         persistNotifiedDriverCancelledReservations();
         forgetReservationConfirmation(rideId);
-        toast(currentScreenId() || 'c-home', 'O teu motorista cancelou a reserva. Estamos a procurar outro motorista para te atender.');
+        showCancelAlertOverlay('⚠️ O motorista cancelou', 'O teu motorista cancelou a reserva. Estamos a procurar outro motorista para te atender.');
         if(typeof playStatusBeep === 'function'){ try{ playStatusBeep(); }catch(e){} }
         if(currentScreenId() === 'c-reservations' && typeof loadClientReservations === 'function') loadClientReservations();
       }
