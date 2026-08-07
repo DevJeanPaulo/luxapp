@@ -4669,8 +4669,14 @@ function watchReservation(rideId){
         notifiedDriverCancelledReservations.add(rideId);
         persistNotifiedDriverCancelledReservations();
         forgetReservationConfirmation(rideId);
-        toast('c-home', 'O teu motorista cancelou a reserva. Estamos a procurar outro motorista para te atender.');
+        // currentScreenId() em vez de 'c-home' fixo — o toast só é visível
+        // dentro do ecrã atualmente ativo (a div .toast de um ecrã
+        // escondido nunca aparece), e é bem provável que o cliente esteja
+        // no ecrã de Reservas (c-reservations) precisamente quando isto
+        // acontece, não no ecrã inicial.
+        toast(currentScreenId() || 'c-home', 'O teu motorista cancelou a reserva. Estamos a procurar outro motorista para te atender.');
         if(typeof playStatusBeep === 'function'){ try{ playStatusBeep(); }catch(e){} }
+        if(currentScreenId() === 'c-reservations' && typeof loadClientReservations === 'function') loadClientReservations();
       }
     } else if(ride.status === 'accepted'){
       stopWatchingReservation(rideId);
@@ -4684,7 +4690,7 @@ function watchReservation(rideId){
     } else if(ride.status === 'cancelled'){
       stopWatchingReservation(rideId);
       forgetReservationConfirmation(rideId);
-      toast('c-home', 'A reserva foi cancelada.');
+      toast(currentScreenId() || 'c-home', 'A reserva foi cancelada.');
     } else if(ride.status === 'completed'){
       stopWatchingReservation(rideId);
       forgetReservationConfirmation(rideId);

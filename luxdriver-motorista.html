@@ -3461,6 +3461,22 @@ function stopRequestSound(){
     }
   }catch(e){}
 }
+/* Som único (não repetitivo) para avisos que não têm um ecrã de
+   aceitar/recusar a fechar o ciclo (ex.: nova reserva disponível,
+   cliente cancelou uma reserva). Usa uma instância de Audio própria,
+   separada de _requestSoundAudio, para nunca ficar preso em loop
+   infinito como aconteceria reaproveitando playRequestSound()/
+   stopRequestSound() (que só param quando o pedido imediato é
+   aceite/recusado/expira — não existe esse momento aqui). */
+let _reservationAlertAudio = null;
+function playReservationAlertSound(){
+  try{
+    if(!_reservationAlertAudio) _reservationAlertAudio = new Audio('sounds/driver-request.mp3');
+    _reservationAlertAudio.loop = false;
+    _reservationAlertAudio.currentTime = 0;
+    _reservationAlertAudio.play().catch(()=>{});
+  }catch(e){}
+}
 
 /* ===== Widget flutuante de viagem ativa (visível em qualquer ecrã da app) ===== */
 let driverRidePhase = null; // null | 'pickup' | 'waiting' | 'trip'
@@ -4320,7 +4336,7 @@ function startListeningForReservations(){
     // motorista fica online, mesmo para reservas já existentes há dias).
     if(!isFirstLoad && newCount > 0 && isOnline){
       toast(currentDriverScreenId() || 'd-home', newCount === 1 ? '📅 Nova reserva disponível — toca em Reservas para aceitar.' : ('📅 ' + newCount + ' novas reservas disponíveis.'));
-      if(typeof playRequestSound === 'function'){ try{ playRequestSound(); }catch(e){} }
+      if(typeof playReservationAlertSound === 'function'){ try{ playReservationAlertSound(); }catch(e){} }
       if(navigator.vibrate) try{ navigator.vibrate([100,60,100]); }catch(e){}
     }
   }, function(err){ console.warn('Falha ao ouvir reservas abertas em tempo real:', err); });
@@ -4354,7 +4370,7 @@ function startWatchingMyReservationCancellations(){
         const sf = r.scheduledFor && r.scheduledFor.toDate ? r.scheduledFor.toDate() : null;
         const when = sf ? (' de ' + sf.toLocaleDateString('pt-PT') + ' às ' + sf.toLocaleTimeString('pt-PT',{hour:'2-digit',minute:'2-digit'})) : '';
         toast(currentDriverScreenId() || 'd-home', '⚠️ O cliente cancelou a reserva' + when + '.');
-        if(typeof playStatusBeep === 'function'){ try{ playStatusBeep(); }catch(e){} }
+        if(typeof playReservationAlertSound === 'function'){ try{ playReservationAlertSound(); }catch(e){} }
         if(navigator.vibrate) try{ navigator.vibrate([120,60,120]); }catch(e){}
         if(currentDriverScreenId() === 'd-reservations' && typeof loadDriverReservations==='function') loadDriverReservations();
       }
@@ -5234,6 +5250,12 @@ function cancelReservationByDriver(rideId, btnEl){
     const minFare = (typeof rideData.vehicleBase === 'number') ? rideData.vehicleBase : DEFAULT_MIN_FARE;
     if(!window.confirm('Cancelar esta reserva já aceite? Vai ser debitada a taxa mínima de ' + fmtEur(minFare) + ' do teu saldo.')) return;
     if(btnEl){ btnEl.disabled = true; btnEl.textContent = 'A cancelar…'; }
+    // Marca já como "visto" ANTES de escrever no Firestore. onSnapshot
+    // dispara com o eco local do próprio escrito antes da promise resolver,
+    // por isso adicionar isto só dentro do .then() seria tarde demais — o
+    // próprio motorista veria a reserva "reaparecer" como nova e o alerta
+    // dispararia para ele mesmo, imediatamente após cancelar.
+    seenOpenReservationIds.add(rideId);
     col.doc(rideId).set({
       status: 'scheduled', cancelledBy: 'driver', cancelledFromReservation: true,
       driverName: firebase.firestore.FieldValue.delete(),
@@ -5285,7 +5307,7 @@ function checkReservationReminders(){
       const when = new Date(item.ms);
       const hhmm = when.toLocaleTimeString('pt-PT', { hour:'2-digit', minute:'2-digit' });
       toast(currentDriverScreenId() || 'd-home', '⏰ Reserva às ' + hhmm + ' — prepara-te, é já a seguir!');
-      if(typeof playRequestSound === 'function'){ try{ playRequestSound(); }catch(e){} }
+      if(typeof playReservationAlertSound === 'function'){ try{ playReservationAlertSound(); }catch(e){} }
     });
   });
 }

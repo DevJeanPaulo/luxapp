@@ -2132,6 +2132,14 @@ function goTo(screenId){
   document.getElementById(screenId).classList.add('active');
   if(typeof updateFloatingWidget==='function') updateFloatingWidget();
 }
+/* Ecrã do cliente atualmente visível — necessário porque toast(scopeId,..)
+   só é visível se scopeId for o ecrã ATIVO (um toast dentro de um ecrã
+   escondido, display:none, nunca aparece). Ver currentDriverScreenId()
+   mais abaixo, equivalente do lado do motorista. */
+function currentScreenId(){
+  const activeEl = document.querySelector('.screen.active');
+  return activeEl ? activeEl.id : null;
+}
 function toast(scopeId, msg){
   const scope = document.getElementById(scopeId);
   let t = scope ? scope.querySelector('.toast') : null;
@@ -2205,6 +2213,19 @@ function stopRequestSound(){
       _requestSoundAudio.pause();
       _requestSoundAudio.currentTime = 0;
     }
+  }catch(e){}
+}
+/* Som único (não repetitivo) para avisos sem ecrã de aceitar/recusar a
+   fechar o ciclo (nova reserva disponível, cliente cancelou reserva,
+   lembrete 30min antes). Ver luxdriver-motorista.html para explicação
+   completa do porquê de não reaproveitar playRequestSound() aqui. */
+let _reservationAlertAudio = null;
+function playReservationAlertSound(){
+  try{
+    if(!_reservationAlertAudio) _reservationAlertAudio = new Audio('sounds/driver-request.mp3');
+    _reservationAlertAudio.loop = false;
+    _reservationAlertAudio.currentTime = 0;
+    _reservationAlertAudio.play().catch(()=>{});
   }catch(e){}
 }
 
@@ -5426,8 +5447,9 @@ function watchReservation(rideId){
         notifiedDriverCancelledReservations.add(rideId);
         persistNotifiedDriverCancelledReservations();
         forgetReservationConfirmation(rideId);
-        toast('c-home', 'O teu motorista cancelou a reserva. Estamos a procurar outro motorista para te atender.');
+        toast(currentScreenId() || 'c-home', 'O teu motorista cancelou a reserva. Estamos a procurar outro motorista para te atender.');
         if(typeof playStatusBeep === 'function'){ try{ playStatusBeep(); }catch(e){} }
+        if(currentScreenId() === 'c-reservations' && typeof loadClientReservations === 'function') loadClientReservations();
       }
     } else if(ride.status === 'accepted'){
       stopWatchingReservation(rideId);
@@ -5441,7 +5463,7 @@ function watchReservation(rideId){
     } else if(ride.status === 'cancelled'){
       stopWatchingReservation(rideId);
       forgetReservationConfirmation(rideId);
-      toast('c-home', 'A reserva foi cancelada.');
+      toast(currentScreenId() || 'c-home', 'A reserva foi cancelada.');
     } else if(ride.status === 'completed'){
       stopWatchingReservation(rideId);
       forgetReservationConfirmation(rideId);
@@ -7004,7 +7026,7 @@ function startListeningForReservations(){
     // motorista fica online, mesmo para reservas já existentes há dias).
     if(!isFirstLoad && newCount > 0 && isOnline){
       toast(currentDriverScreenId() || 'd-home', newCount === 1 ? '📅 Nova reserva disponível — toca em Reservas para aceitar.' : ('📅 ' + newCount + ' novas reservas disponíveis.'));
-      if(typeof playRequestSound === 'function'){ try{ playRequestSound(); }catch(e){} }
+      if(typeof playReservationAlertSound === 'function'){ try{ playReservationAlertSound(); }catch(e){} }
       if(navigator.vibrate) try{ navigator.vibrate([100,60,100]); }catch(e){}
     }
   }, function(err){ console.warn('Falha ao ouvir reservas abertas em tempo real:', err); });
@@ -7500,6 +7522,10 @@ function cancelReservationByDriver(rideId, btnEl){
     const minFare = (typeof rideData.vehicleBase === 'number') ? rideData.vehicleBase : DEFAULT_MIN_FARE;
     if(!window.confirm('Cancelar esta reserva já aceite? Vai ser debitada a taxa mínima de ' + fmtEur(minFare) + ' do teu saldo.')) return;
     if(btnEl){ btnEl.disabled = true; btnEl.textContent = 'A cancelar…'; }
+    // Marca já como "visto" ANTES de escrever no Firestore — ver
+    // explicação completa em luxdriver-motorista.html (o eco local do
+    // onSnapshot dispara antes da promise resolver).
+    seenOpenReservationIds.add(rideId);
     col.doc(rideId).set({
       status: 'scheduled', cancelledBy: 'driver', cancelledFromReservation: true,
       driverName: firebase.firestore.FieldValue.delete(),
@@ -7599,7 +7625,7 @@ function checkReservationReminders(){
       const when = new Date(item.ms);
       const hhmm = when.toLocaleTimeString('pt-PT', { hour:'2-digit', minute:'2-digit' });
       toast(currentDriverScreenId() || 'd-home', '⏰ Reserva às ' + hhmm + ' — prepara-te, é já a seguir!');
-      if(typeof playRequestSound === 'function'){ try{ playRequestSound(); }catch(e){} }
+      if(typeof playReservationAlertSound === 'function'){ try{ playReservationAlertSound(); }catch(e){} }
     });
   });
 }
