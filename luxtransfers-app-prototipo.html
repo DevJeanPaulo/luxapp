@@ -201,6 +201,21 @@
   /* Esconde o rodapé de créditos do Google Maps (atalhos de teclado, dados
      do mapa, termos) para não quebrar o visual dentro da moldura dourada. */
   .map .gm-style-cc, .map .gmnoprint, .map-wrap .gm-style-cc, .map-wrap .gmnoprint{ display:none !important; }
+  /* Botão flutuante de recentrar: fica escondido até o cliente arrastar o
+     mapa manualmente (ver dragstart em initHomeMap), porque nesse momento
+     o Google Maps já não segue a localização GPS sozinho — sem isto não
+     havia forma de voltar à posição atual a não ser recarregar a app. */
+  .map-recenter-btn{
+    position:absolute; right:12px; bottom:12px; z-index:6;
+    width:40px; height:40px; border-radius:50%;
+    background:var(--panel); border:1px solid var(--line); color:var(--gold);
+    display:flex; align-items:center; justify-content:center;
+    box-shadow:0 4px 14px rgba(0,0,0,.4);
+    opacity:0; transform:scale(.8); pointer-events:none;
+    transition:opacity .18s ease, transform .18s ease;
+    -webkit-tap-highlight-color:transparent;
+  }
+  .map-recenter-btn.show{ opacity:1; transform:scale(1); pointer-events:auto; }
   .map a[href^="https://maps.google.com/maps"]{ display:none !important; }
   .map-radar-overlay{
     position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
@@ -294,6 +309,20 @@
   .sheet-handle{
     width:36px; height:4px; border-radius:99px; background:var(--line);
     margin:0 auto 14px; cursor:grab; touch-action:none;
+  }
+  /* A pega do sheet inicial (cliente) precisa de uma área de toque bem maior
+     do que a barrinha visual de 36x4px — nesse tamanho é quase impossível
+     acertar com o dedo num telemóvel real. Mantém o mesmo visual (linha fina
+     centrada) mas expande a zona clicável/arrastável para toda a largura e
+     28px de altura. */
+  #c-home-sheet-handle{
+    width:100%; height:28px; background:none;
+    margin:-6px 0 6px; position:relative;
+  }
+  #c-home-sheet-handle::after{
+    content:''; position:absolute; left:50%; top:50%;
+    transform:translate(-50%,-50%);
+    width:36px; height:4px; border-radius:99px; background:var(--line);
   }
   #c-home-sheet{ transition:transform .1s linear; }
   #c-home-sheet.no-transition{ transition:none; }
@@ -1229,6 +1258,9 @@
             <svg><line x1="0" y1="0" x2="0" y2="0"/></svg>
             <div class="me-dot" style="left:50%; top:46%;"></div>
           </div>
+          <button type="button" class="map-recenter-btn" id="c-home-recenter-btn" onclick="recenterHomeMap()" aria-label="Recentrar mapa na minha localização">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg>
+          </button>
         </div>
         <div class="sheet" id="c-home-sheet">
           <div class="sheet-handle" id="c-home-sheet-handle"></div>
@@ -2449,6 +2481,8 @@ const FALLBACK_ROUTE_MINUTES = 25;
 let routeKm = null;
 let routeMinutes = null;
 let myCurrentLatLng = null;
+let homeMapInstance = null;
+let homeMarkerInstance = null;
 let selectedOriginLatLng = null;
 let selectedDestLatLng = null;
 let selectedVehicle = null;
@@ -4561,6 +4595,19 @@ function initHomeMap(){
   const homeMap = initRealMap('map-home', LUX_PLACES.pickup, 15);
   let homeMarker = null;
   if(homeMap) homeMarker = new google.maps.Marker({ position:LUX_PLACES.pickup, map:homeMap, icon:gDotIcon('#FFC94D',8) });
+  homeMapInstance = homeMap;
+  homeMarkerInstance = homeMarker;
+  /* Botão "recentrar": como o mapa tem gestureHandling:'greedy' (arrasto
+     livre), o cliente pode facilmente afastar o mapa da sua localização e
+     ficar sem saber como voltar — o Google Maps nunca recentra sozinho
+     depois de um arrasto manual. Mostra um pequeno botão flutuante assim
+     que o utilizador arrasta o mapa; toca nele para voltar à posição atual. */
+  if(homeMap){
+    const recenterBtn = document.getElementById('c-home-recenter-btn');
+    if(recenterBtn){
+      homeMap.addListener('dragstart', function(){ recenterBtn.classList.add('show'); });
+    }
+  }
   if(navigator.geolocation){
     navigator.geolocation.getCurrentPosition(function(pos){
       myCurrentLatLng = { lat:pos.coords.latitude, lng:pos.coords.longitude };
@@ -4571,6 +4618,28 @@ function initHomeMap(){
         showRealSingleLocation('map-home', myCurrentLatLng);
       }
     }, function(){ /* sem permissão/erro: mantém o ponto por omissão já visível */ }, { timeout:4000 });
+  }
+}
+/* Chamado pelo botão flutuante de recentrar (ver HTML do ecrã c-home). Volta
+   a colocar o mapa na localização GPS mais recente do cliente; se ainda não
+   houver nenhuma (GPS lento/negado), tenta pedir de novo na hora. */
+function recenterHomeMap(){
+  const recenterBtn = document.getElementById('c-home-recenter-btn');
+  if(recenterBtn) recenterBtn.classList.remove('show');
+  if(!homeMapInstance) return;
+  if(myCurrentLatLng){
+    homeMapInstance.panTo(myCurrentLatLng);
+    homeMapInstance.setZoom(15);
+    if(homeMarkerInstance) homeMarkerInstance.setPosition(myCurrentLatLng);
+    return;
+  }
+  if(navigator.geolocation){
+    navigator.geolocation.getCurrentPosition(function(pos){
+      myCurrentLatLng = { lat:pos.coords.latitude, lng:pos.coords.longitude };
+      homeMapInstance.panTo(myCurrentLatLng);
+      homeMapInstance.setZoom(15);
+      if(homeMarkerInstance) homeMarkerInstance.setPosition(myCurrentLatLng);
+    }, function(){}, { timeout:4000 });
   }
 }
 function resetClientFlow(){
