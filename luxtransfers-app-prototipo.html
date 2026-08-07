@@ -197,7 +197,7 @@
   .map svg{ position:absolute; inset:0; width:100%; height:100%; }
   .map-wrap{ position:relative; flex:1; min-height:0; border-radius:var(--radius-md); }
   .map-wrap .map{ position:absolute; inset:0; flex:none; }
-  .map-wrap.glow-frame::before{ border-radius:calc(var(--radius-md) + 2px); }
+  .map-wrap.glow-frame::before{ border-radius:calc(var(--radius-md) + 2px); inset:0; }
   /* Esconde o rodapé de créditos do Google Maps (atalhos de teclado, dados
      do mapa, termos) para não quebrar o visual dentro da moldura dourada. */
   .map .gm-style-cc, .map .gmnoprint, .map-wrap .gm-style-cc, .map-wrap .gmnoprint{ display:none !important; }
@@ -348,9 +348,18 @@
   .social-row{ display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:14px; }
   .social-btn{
     display:flex; align-items:center; gap:10px;
-    background:var(--panel); border:1px solid var(--line); border-radius:var(--radius-md);
+    background:linear-gradient(180deg, var(--panel2), var(--panel));
+    border:1.5px solid var(--gold); border-radius:var(--radius-md);
     padding:12px 12px; text-decoration:none; color:var(--text); font-size:12.5px; font-weight:600;
     -webkit-tap-highlight-color:transparent;
+    box-shadow:0 3px 0 rgba(0,0,0,.4), 0 5px 12px rgba(0,0,0,.35),
+      inset 0 1px 0 rgba(255,255,255,.12), inset 0 -2px 3px rgba(0,0,0,.3);
+    transition:transform .12s ease, box-shadow .12s ease;
+  }
+  .social-btn:active{
+    transform:translateY(2px);
+    box-shadow:0 1px 0 rgba(0,0,0,.4), 0 2px 5px rgba(0,0,0,.3),
+      inset 0 1px 0 rgba(255,255,255,.1), inset 0 -1px 2px rgba(0,0,0,.25);
   }
   .social-btn svg{ width:20px; height:20px; flex-shrink:0; }
   .invite-card{
@@ -363,8 +372,17 @@
   .invite-dot{ flex:1; height:5px; border-radius:99px; background:var(--line); }
   .invite-dot.filled{ background:var(--gold); }
   .invite-share-btn{
-    width:100%; background:var(--gold); color:#1a1305; border:none; border-radius:999px;
+    width:100%; background:linear-gradient(180deg, #FFE08A, var(--gold));
+    color:#1a1305; border:1.5px solid #FFE9AD; border-radius:999px;
     padding:12px; font-weight:700; font-size:13px; cursor:pointer; -webkit-tap-highlight-color:transparent;
+    box-shadow:0 4px 0 #b8862a, 0 6px 14px rgba(0,0,0,.4),
+      inset 0 1px 0 rgba(255,255,255,.5), inset 0 -2px 3px rgba(0,0,0,.15);
+    transition:transform .12s ease, box-shadow .12s ease;
+  }
+  .invite-share-btn:active{
+    transform:translateY(3px);
+    box-shadow:0 1px 0 #b8862a, 0 2px 6px rgba(0,0,0,.35),
+      inset 0 1px 0 rgba(255,255,255,.4), inset 0 -1px 2px rgba(0,0,0,.15);
   }
   .invite-credits-line{ margin-top:10px; font-size:11.5px; color:var(--muted); text-align:center; }
   .sheet-footer-link{
@@ -644,6 +662,7 @@
     mask-composite:exclude;
     pointer-events:none;
     transition:opacity .3s ease;
+    animation:rotate-current 3.6s linear infinite;
     z-index:1;
   }
   .balance-card.glow-frame::before,
@@ -1276,11 +1295,11 @@
           <div class="sheet-expand-content" id="c-home-sheet-extra">
             <div class="sheet-expand-inner glow-frame">
               <div class="social-row">
-                <a class="social-btn" href="https://instagram.com/luxtransfers.pt" target="_blank" rel="noopener">
+                <a class="social-btn" href="https://www.instagram.com/luxtranfers/" target="_blank" rel="noopener">
                   <svg viewBox="0 0 24 24" fill="none" stroke="#E1306C" stroke-width="1.8"><rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.2" cy="6.8" r="1" fill="#E1306C" stroke="none"/></svg>
                   <span data-i18n="social_instagram">Instagram</span>
                 </a>
-                <a class="social-btn" href="https://facebook.com/luxtransfers.pt" target="_blank" rel="noopener">
+                <a class="social-btn" href="https://www.facebook.com/profile.php?id=61589556429698" target="_blank" rel="noopener">
                   <svg viewBox="0 0 24 24" fill="#1877F2"><path d="M22 12a10 10 0 1 0-11.6 9.9v-7H7.9V12h2.5V9.8c0-2.5 1.5-3.9 3.8-3.9 1.1 0 2.2.2 2.2.2v2.5h-1.3c-1.2 0-1.6.8-1.6 1.6V12h2.8l-.4 2.9h-2.4v7A10 10 0 0 0 22 12z"/></svg>
                   <span data-i18n="social_facebook">Facebook</span>
                 </a>
@@ -1288,9 +1307,9 @@
                   <svg viewBox="0 0 24 24" fill="#1DB954"><circle cx="12" cy="12" r="10"/><path d="M7 9.8c3-1 6.7-.7 9.2.9M7.6 13c2.4-.7 5.3-.5 7.4.8M8.2 16c2-.6 4.2-.4 5.9.7" stroke="#07080a" stroke-width="1.3" fill="none" stroke-linecap="round"/></svg>
                   <span data-i18n="social_spotify">Spotify</span>
                 </a>
-                <a class="social-btn" href="https://wa.me/351900000000" target="_blank" rel="noopener">
-                  <svg viewBox="0 0 24 24" fill="#25D366"><path d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5.1-1.3A10 10 0 1 0 12 2zm0 18.2a8.1 8.1 0 0 1-4.1-1.1l-.3-.2-3 .8.8-2.9-.2-.3A8.2 8.2 0 1 1 12 20.2zm4.5-6.1c-.2-.1-1.5-.7-1.7-.8-.2-.1-.4-.1-.6.1-.2.2-.7.8-.8 1-.1.2-.3.2-.5.1-.2-.1-1-.4-1.9-1.2-.7-.6-1.2-1.4-1.3-1.6-.1-.2 0-.4.1-.5.1-.1.2-.3.4-.4.1-.1.2-.2.2-.4.1-.1 0-.3 0-.4C10.3 9.6 10 8.9 9.8 8.5c-.1-.4-.3-.3-.4-.3h-.4c-.2 0-.4.1-.6.3-.2.2-.8.8-.8 1.9s.8 2.2 1 2.4c.1.1 1.6 2.5 3.9 3.4.5.2.9.4 1.3.5.5.2 1 .1 1.4.1.4-.1 1.3-.5 1.5-1 .2-.5.2-.9.1-1z"/></svg>
-                  <span data-i18n="social_whatsapp">WhatsApp</span>
+                <a class="social-btn" href="https://app.luxtransfers.pt" target="_blank" rel="noopener">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="var(--gold)" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.7 3.8 6 3.8 9s-1.3 6.3-3.8 9c-2.5-2.7-3.8-6-3.8-9S9.5 5.7 12 3z"/></svg>
+                  <span data-i18n="social_website">Site</span>
                 </a>
               </div>
               <div class="invite-card">
@@ -3420,7 +3439,7 @@ const LANG_DICT = {
   social_instagram: { pt:'Instagram', en:'Instagram', es:'Instagram' },
   social_facebook: { pt:'Facebook', en:'Facebook', es:'Facebook' },
   social_spotify: { pt:'Spotify', en:'Spotify', es:'Spotify' },
-  social_whatsapp: { pt:'WhatsApp', en:'WhatsApp', es:'WhatsApp' },
+  social_website: { pt:'Site', en:'Website', es:'Sitio web' },
   invite_title: { pt:'Convida amigos, ganha 5€', en:'Invite friends, earn €5', es:'Invita amigos, gana 5€' },
   invite_sub: { pt:'Cada amigo que se registar e fizer a 1ª viagem dá-te 5€ de crédito (até 2 amigos).', en:'Each friend who signs up and completes their 1st ride gives you €5 credit (up to 2 friends).', es:'Cada amigo que se registre y complete su 1ª viaje te da 5€ de crédito (hasta 2 amigos).' },
   invite_share_btn: { pt:'Partilhar convite', en:'Share invite', es:'Compartir invitación' },
@@ -3824,7 +3843,9 @@ async function shareReferralLink(){
   const text = 'Experimenta a Lux Transfers comigo — regista-te com o meu link e ganhamos os dois 5€ de crédito na tua primeira viagem: ' + url;
   try{
     if(navigator.share){ await navigator.share({ title:'Lux Transfers', text, url }); return; }
-  }catch(e){ return; }
+  }catch(e){
+    if(e && e.name === 'AbortError'){ return; }
+  }
   try{
     await navigator.clipboard.writeText(url);
     if(typeof toast==='function') toast('c-home', 'Link de convite copiado!');
