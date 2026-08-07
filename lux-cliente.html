@@ -207,7 +207,12 @@
      um ::before com inset negativo que fica cortado se estiver no próprio
      .map (que tem overflow:hidden), por isso a moldura vive aqui em vez
      de estar diretamente no .map. */
-  .map-wrap{ position:relative; flex:1; min-height:0; border-radius:var(--radius-md); }
+  /* margin:0 16px iguala o mapa à barra de morada acima (.address-bar-top,
+     que já usa margin:0 16px) — antes o mapa não tinha margem lateral
+     nenhuma e ficava encostado às bordas do ecrã enquanto a barra "De/Para"
+     acima ficava recuada, dando a mesma sensação de bordas "desencontradas"
+     identificada e corrigida no ecrã inicial do app do motorista. */
+  .map-wrap{ position:relative; flex:1; min-height:0; border-radius:var(--radius-md); margin:0 16px; }
   .map-wrap .map{ position:absolute; inset:0; flex:none; }
   .map-wrap.glow-frame::before{ border-radius:calc(var(--radius-md) + 2px); inset:0; }
   /* Esconde o rodapé de créditos do Google Maps (atalhos de teclado, dados
@@ -311,7 +316,6 @@
   .sheet-expand-inner.glow-frame{ animation:sheet-glow-pulse 2.4s ease-in-out infinite; }
   .sheet-expand-inner.glow-frame::before{
     border-radius:calc(var(--radius-md) + 2px);
-    animation:rotate-current 3.6s linear infinite;
   }
   @keyframes sheet-glow-pulse{
     0%, 100%{ box-shadow:0 0 10px rgba(255,201,77,.18), inset 0 0 0 1px rgba(255,201,77,.10); }
@@ -593,52 +597,37 @@
   .recharge-amounts .chip{ flex:1; text-align:center; }
   .recharge-amounts .chip.selected{ background:var(--gold); color:#1a1408; border-color:var(--gold); font-weight:700; }
 
-  /* Bright gold shimmering frame with a moving current around the box */
+  /* Moldura dourada com luz a expandir de dentro para fora (como um "ping"
+     suave), em vez da antiga luz a girar à volta da caixa. */
   .glow-frame{
     position:relative;
-    box-shadow:0 0 14px rgba(255,201,77,.22), inset 0 0 0 1px rgba(255,201,77,.12);
     transition:box-shadow .3s ease;
   }
   .glow-frame.frame-off{
     box-shadow:none;
   }
   .glow-frame.frame-off::before{
-    opacity:0;
+    opacity:.3;
     animation-play-state:paused;
+    box-shadow:none;
   }
   .glow-frame::before{
     content:'';
     position:absolute;
-    inset:-2px;
-    border-radius:calc(var(--radius-md) + 2px);
-    padding:2px;
-    background:conic-gradient(from var(--angle),
-      transparent 0deg,
-      rgba(255,201,77,0) 10deg,
-      var(--gold) 35deg,
-      #FFFFFF 45deg,
-      var(--gold) 55deg,
-      rgba(255,201,77,0) 80deg,
-      transparent 180deg,
-      rgba(255,201,77,0) 280deg,
-      var(--gold) 305deg,
-      #FFFFFF 315deg,
-      var(--gold) 325deg,
-      rgba(255,201,77,0) 350deg,
-      transparent 360deg);
-    -webkit-mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-    -webkit-mask-composite:xor;
-    mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-    mask-composite:exclude;
+    inset:0;
+    border-radius:inherit;
+    border:1.5px solid rgba(255,201,77,.6);
     pointer-events:none;
     transition:opacity .3s ease;
-    animation:rotate-current 3.6s linear infinite;
+    animation:glow-pulse-out 2.6s ease-out infinite;
     z-index:1;
   }
-  .balance-card.glow-frame::before,
-  .stat-card.glow-frame::before{ border-radius:calc(var(--radius-md) + 2px); }
-  .online-toggle-wrap.glow-frame::before{ border-radius:calc(var(--radius-md) + 2px); }
   @keyframes rotate-current{ to{ --angle:360deg; } }
+  @keyframes glow-pulse-out{
+    0%{ box-shadow:0 0 0 0 rgba(255,201,77,.55), inset 0 0 8px 0 rgba(255,201,77,.45); border-color:rgba(255,201,77,.75); }
+    70%{ box-shadow:0 0 0 9px rgba(255,201,77,0), inset 0 0 18px 2px rgba(255,201,77,.06); border-color:rgba(255,201,77,.3); }
+    100%{ box-shadow:0 0 0 0 rgba(255,201,77,0), inset 0 0 8px 0 rgba(255,201,77,.45); border-color:rgba(255,201,77,.75); }
+  }
 
   .center-msg{
     flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center;
@@ -1246,8 +1235,8 @@
                   <span data-i18n="social_spotify">Spotify</span>
                 </a>
                 <a class="social-btn" href="https://app.luxtransfers.pt" target="_blank" rel="noopener">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="var(--gold)" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.7 3.8 6 3.8 9s-1.3 6.3-3.8 9c-2.5-2.7-3.8-6-3.8-9S9.5 5.7 12 3z"/></svg>
-                  <span data-i18n="social_website">Site</span>
+                  <svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10.5" fill="#0c0c0c" stroke="var(--gold)" stroke-width="1.4"/><rect x="9.6" y="6" width="4.8" height="7.6" rx="2.4" fill="var(--gold)"/><path d="M7.2 11v1a4.8 4.8 0 0 0 9.6 0v-1" stroke="var(--gold)" stroke-width="1.3" fill="none" stroke-linecap="round"/><line x1="12" y1="16.6" x2="12" y2="18.6" stroke="var(--gold)" stroke-width="1.3" stroke-linecap="round"/></svg>
+                  <span data-i18n="social_luxtranslator">LuxTranslator</span>
                 </a>
               </div>
               <div class="invite-card">
@@ -2655,7 +2644,7 @@ const LANG_DICT = {
   social_instagram: { pt:'Instagram', en:'Instagram', es:'Instagram' },
   social_facebook: { pt:'Facebook', en:'Facebook', es:'Facebook' },
   social_spotify: { pt:'Spotify', en:'Spotify', es:'Spotify' },
-  social_website: { pt:'Site', en:'Website', es:'Sitio web' },
+  social_luxtranslator: { pt:'LuxTranslator', en:'LuxTranslator', es:'LuxTranslator' },
   invite_title: { pt:'Convida amigos, ganha 5€', en:'Invite friends, earn €5', es:'Invita amigos, gana 5€' },
   invite_sub: { pt:'Cada amigo que se registar e fizer a 1ª viagem dá-te 5€ de crédito (até 2 amigos).', en:'Each friend who signs up and completes their 1st ride gives you €5 credit (up to 2 friends).', es:'Cada amigo que se registre y complete su 1ª viaje te da 5€ de crédito (hasta 2 amigos).' },
   invite_share_btn: { pt:'Partilhar convite', en:'Share invite', es:'Compartir invitación' }
@@ -3005,6 +2994,7 @@ async function upsertClientProfile(){
     const ref = db.collection('clients').doc(id);
     const snap = await ref.get();
     const isNew = !snap.exists;
+    const existingData = snap.exists ? snap.data() : null;
     const payload = {
       name: currentUser.c.name || '',
       email: currentUser.c.email,
@@ -3022,6 +3012,11 @@ async function upsertClientProfile(){
         payload.referredBy = pendingRef;
         payload.referralRewarded = false;
       }
+    } else if(!existingData || !existingData.referralCode){
+      /* Conta criada antes de existir o sistema de convites — gera o
+         código agora, para o botão "Partilhar convite" passar a
+         funcionar em vez de ficar preso para sempre sem código. */
+      payload.referralCode = generateReferralCode(currentUser.c.email);
     }
     await ref.set(payload, { merge:true });
     try{ localStorage.removeItem(REFERRAL_PENDING_KEY); }catch(e){}
@@ -3029,6 +3024,8 @@ async function upsertClientProfile(){
       currentUser.c.referralCode = payload.referralCode;
       currentUser.c.credits = 0;
       currentUser.c.referralCount = 0;
+    } else if(payload.referralCode){
+      currentUser.c.referralCode = payload.referralCode;
     }
   }catch(e){ console.warn('Falha ao gravar perfil do cliente:', e); }
 }
@@ -3426,6 +3423,14 @@ function estimateRouteMetrics(origin, dest, cb){
 }
 
 function initHomeMap(){
+  if(!gmapsAvailable()){
+    /* O script do Google Maps carrega com async/defer e pode ainda não
+       estar pronto na primeira vez que o ecrã inicial aparece — sem esta
+       nova tentativa o mapa ficava preto (placeholder) para sempre, porque
+       initRealMap() desistia em silêncio e nada voltava a chamar isto. */
+    setTimeout(initHomeMap, 300);
+    return;
+  }
   if(!initPlacesAutocomplete()){
     // livraria "places" ainda não carregou — tenta outra vez daqui a pouco
     setTimeout(initPlacesAutocomplete, 1500);
@@ -4628,6 +4633,22 @@ function forgetReservationConfirmation(rideId){
     try{ localStorage.setItem(SHOWN_RESERVATION_CONFIRMATIONS_KEY, JSON.stringify(Array.from(shownReservationConfirmations))); }catch(e){}
   }
 }
+/* Mesma ideia (persistido em localStorage) para não repetir o aviso de
+   "o motorista cancelou" a cada onSnapshot enquanto a reserva continua
+   'scheduled' à espera de outro motorista — só avisa uma vez por
+   cancelamento. É esvaziado quando um motorista (o mesmo ou outro) volta a
+   aceitar (status volta a 'reserved'), para poder avisar de novo se
+   acontecer outra vez. */
+var NOTIFIED_DRIVER_CANCELLED_RESERVATIONS_KEY = 'lux_notified_driver_cancelled_reservations';
+var notifiedDriverCancelledReservations = (function(){
+  try{
+    const raw = localStorage.getItem(NOTIFIED_DRIVER_CANCELLED_RESERVATIONS_KEY);
+    return new Set(raw ? JSON.parse(raw) : []);
+  }catch(e){ return new Set(); }
+})();
+function persistNotifiedDriverCancelledReservations(){
+  try{ localStorage.setItem(NOTIFIED_DRIVER_CANCELLED_RESERVATIONS_KEY, JSON.stringify(Array.from(notifiedDriverCancelledReservations))); }catch(e){}
+}
 function watchReservation(rideId){
   if(!rideId || reservationWatchers[rideId]) return;
   const col = ridesCollection();
@@ -4637,7 +4658,20 @@ function watchReservation(rideId){
     const ride = doc.data();
     if(ride.status === 'reserved' && !shownReservationConfirmations.has(rideId)){
       markReservationConfirmationShown(rideId);
+      if(notifiedDriverCancelledReservations.delete(rideId)) persistNotifiedDriverCancelledReservations();
       showReservationConfirmedOverlay(ride);
+    } else if(ride.status === 'scheduled' && ride.cancelledBy === 'driver' && ride.cancelledFromReservation){
+      // O motorista atribuído cancelou depois de já ter aceite — a reserva
+      // volta a ficar disponível para outro motorista (ver
+      // cancelReservationByDriver em luxdriver-motorista.html), mas o
+      // cliente precisa de saber que já não tem motorista confirmado.
+      if(!notifiedDriverCancelledReservations.has(rideId)){
+        notifiedDriverCancelledReservations.add(rideId);
+        persistNotifiedDriverCancelledReservations();
+        forgetReservationConfirmation(rideId);
+        toast('c-home', 'O teu motorista cancelou a reserva. Estamos a procurar outro motorista para te atender.');
+        if(typeof playStatusBeep === 'function'){ try{ playStatusBeep(); }catch(e){} }
+      }
     } else if(ride.status === 'accepted'){
       stopWatchingReservation(rideId);
       forgetReservationConfirmation(rideId);
@@ -4806,6 +4840,16 @@ function checkMyScheduledRides(){
   col.where('clientEmail', '==', u.email).where('status', '==', 'reserved').get().then(function(snap){
     snap.forEach(function(doc){ watchReservation(doc.id); });
   }).catch(function(e){ console.warn('Falha ao verificar reservas aceites:', e); });
+  // Reatacha também às ainda 'scheduled' (por aceitar, ou reabertas depois
+  // de um motorista cancelar — ver cancelReservationByDriver) — sem isto,
+  // se a app fosse fechada exatamente nessa janela, o cliente nunca mais
+  // seria avisado do cancelamento (ver branch 'scheduled' em
+  // watchReservation acima). Consulta separada em vez de where('status',
+  // 'in', [...]) para manter o mesmo padrão de condições de igualdade
+  // simples usado no resto do projeto.
+  col.where('clientEmail', '==', u.email).where('status', '==', 'scheduled').get().then(function(snap){
+    snap.forEach(function(doc){ watchReservation(doc.id); });
+  }).catch(function(e){ console.warn('Falha ao verificar reservas por aceitar:', e); });
   if(currentRideId) return; // não interrompe uma viagem já em curso
   const limitTs = firebase.firestore.Timestamp.fromDate(new Date(Date.now() + SCHEDULE_ACTIVATION_WINDOW_MINUTES * 60000));
   col.where('clientEmail', '==', u.email).where('status', '==', 'scheduled').get().then(function(snap){

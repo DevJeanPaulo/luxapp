@@ -204,7 +204,12 @@
     border-radius:var(--radius-md);
   }
   .map svg{ position:absolute; inset:0; width:100%; height:100%; }
-  .map-wrap{ position:relative; flex:1; min-height:0; border-radius:var(--radius-md); }
+  /* margin:0 20px iguala o mapa aos outros cartões do ecrã inicial
+     (online-toggle-wrap, balance-card, stat-row) — antes não tinha margem
+     lateral nenhuma, ficando encostado às bordas do ecrã enquanto os
+     cartões acima ficavam recuados 20px, dando a sensação de bordas
+     "desencontradas" entre o mapa e o resto do ecrã. */
+  .map-wrap{ position:relative; flex:1; min-height:0; border-radius:var(--radius-md); margin:0 20px; }
   .map-wrap .map{ position:absolute; inset:0; flex:none; }
   .map-wrap.glow-frame::before{ border-radius:calc(var(--radius-md) + 2px); inset:0; }
   /* Esconde o rodapé de créditos do Google Maps (atalhos de teclado, dados
@@ -510,52 +515,37 @@
   .recharge-amounts .chip{ flex:1; text-align:center; }
   .recharge-amounts .chip.selected{ background:var(--gold); color:#1a1408; border-color:var(--gold); font-weight:700; }
 
-  /* Bright gold shimmering frame with a moving current around the box */
+  /* Moldura dourada com luz a expandir de dentro para fora (como um "ping"
+     suave), em vez da antiga luz a girar à volta da caixa. */
   .glow-frame{
     position:relative;
-    box-shadow:0 0 14px rgba(255,201,77,.22), inset 0 0 0 1px rgba(255,201,77,.12);
     transition:box-shadow .3s ease;
   }
   .glow-frame.frame-off{
     box-shadow:none;
   }
   .glow-frame.frame-off::before{
-    opacity:0;
+    opacity:.3;
     animation-play-state:paused;
+    box-shadow:none;
   }
   .glow-frame::before{
     content:'';
     position:absolute;
-    inset:-2px;
-    border-radius:calc(var(--radius-md) + 2px);
-    padding:2px;
-    background:conic-gradient(from var(--angle),
-      transparent 0deg,
-      rgba(255,201,77,0) 10deg,
-      var(--gold) 35deg,
-      #FFFFFF 45deg,
-      var(--gold) 55deg,
-      rgba(255,201,77,0) 80deg,
-      transparent 180deg,
-      rgba(255,201,77,0) 280deg,
-      var(--gold) 305deg,
-      #FFFFFF 315deg,
-      var(--gold) 325deg,
-      rgba(255,201,77,0) 350deg,
-      transparent 360deg);
-    -webkit-mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-    -webkit-mask-composite:xor;
-    mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-    mask-composite:exclude;
+    inset:0;
+    border-radius:inherit;
+    border:1.5px solid rgba(255,201,77,.6);
     pointer-events:none;
     transition:opacity .3s ease;
-    animation:rotate-current 3.6s linear infinite;
+    animation:glow-pulse-out 2.6s ease-out infinite;
     z-index:1;
   }
-  .balance-card.glow-frame::before,
-  .stat-card.glow-frame::before{ border-radius:calc(var(--radius-md) + 2px); }
-  .online-toggle-wrap.glow-frame::before{ border-radius:calc(var(--radius-md) + 2px); }
   @keyframes rotate-current{ to{ --angle:360deg; } }
+  @keyframes glow-pulse-out{
+    0%{ box-shadow:0 0 0 0 rgba(255,201,77,.55), inset 0 0 8px 0 rgba(255,201,77,.45); border-color:rgba(255,201,77,.75); }
+    70%{ box-shadow:0 0 0 9px rgba(255,201,77,0), inset 0 0 18px 2px rgba(255,201,77,.06); border-color:rgba(255,201,77,.3); }
+    100%{ box-shadow:0 0 0 0 rgba(255,201,77,0), inset 0 0 8px 0 rgba(255,201,77,.45); border-color:rgba(255,201,77,.75); }
+  }
 
   .center-msg{
     flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center;
@@ -898,7 +888,7 @@
   .wait-warning.show{ display:block; }
   .stops-banner{
     display:none; align-items:center; gap:8px; background:rgba(255,201,77,.12); border:1px solid var(--gold);
-    border-radius:var(--radius-md); padding:10px 14px; margin:-6px 0 10px; font-size:12.5px; font-weight:600; color:var(--gold);
+    border-radius:var(--radius-md); padding:10px 14px; margin:-6px 20px 10px; font-size:12.5px; font-weight:600; color:var(--gold);
   }
   .stops-banner.show{ display:flex; }
   /* Bloqueio de ações com o veículo em movimento (terminar viagem, iniciar
@@ -2350,6 +2340,8 @@ function doLogout(p){
     if(typeof waitInterval!=='undefined' && waitInterval) clearInterval(waitInterval);
     if(typeof stopSharingLocation==='function') stopSharingLocation();
     if(typeof stopListeningForRides==='function') stopListeningForRides();
+    if(typeof stopListeningForReservations==='function') stopListeningForReservations();
+    if(typeof stopWatchingMyReservationCancellations==='function') stopWatchingMyReservationCancellations();
     if(typeof stopChatWatch==='function') stopChatWatch();
     if(typeof stopRideStatusWatch==='function') stopRideStatusWatch();
     if(driverProfileUnsub){ driverProfileUnsub(); driverProfileUnsub = null; }
@@ -2388,6 +2380,8 @@ async function confirmDeleteAccount(){
     if(typeof waitInterval!=='undefined' && waitInterval) clearInterval(waitInterval);
     if(typeof stopSharingLocation==='function') stopSharingLocation();
     if(typeof stopListeningForRides==='function') stopListeningForRides();
+    if(typeof stopListeningForReservations==='function') stopListeningForReservations();
+    if(typeof stopWatchingMyReservationCancellations==='function') stopWatchingMyReservationCancellations();
     if(typeof stopChatWatch==='function') stopChatWatch();
     if(typeof stopRideStatusWatch==='function') stopRideStatusWatch();
     currentRideId = null; currentRideData = null;
@@ -3563,13 +3557,23 @@ function applyBalanceVisibility(){
   const statEarnEl = document.getElementById('stat-earn');
   if(statEarnEl) statEarnEl.textContent = maskedOrValue(driverEarnings);
 }
+function initDriverHomeMapWhenReady(){
+  if(!gmapsAvailable()){
+    /* O script do Google Maps carrega com async/defer; se ainda não estiver
+       pronto, showRealSingleLocation() desiste em silêncio e o mapa fica
+       preto para sempre. Tenta novamente até estar disponível. */
+    setTimeout(initDriverHomeMapWhenReady, 300);
+    return;
+  }
+  showRealSingleLocation('map-driver-home', LUX_PLACES.near);
+}
 function resetDriverFlow(){
   goTo('d-home');
   document.getElementById('req-overlay').classList.remove('show');
   document.getElementById('recharge-overlay').classList.remove('show');
   applyBalanceVisibility();
   updateDriverFrames();
-  showRealSingleLocation('map-driver-home', LUX_PLACES.near);
+  initDriverHomeMapWhenReady();
   if(typeof listenDriverNameRequest==='function') listenDriverNameRequest();
   if(typeof listenDriverProfile==='function') listenDriverProfile();
   if(typeof refreshReservationsBanner==='function') refreshReservationsBanner();
@@ -4265,6 +4269,103 @@ function startListeningForRides(){
 function stopListeningForRides(){
   if(ridesListUnsub){ ridesListUnsub(); ridesListUnsub = null; }
 }
+/* ===================== ALERTA EM TEMPO REAL DE NOVAS RESERVAS =====================
+   Antes disto, a lista de reservas abertas (fetchOpenReservations) só era
+   consultada quando o motorista abria manualmente o ecrã "Reservas" —
+   nenhum alerta em ecrã avisava de uma reserva nova enquanto ele estava
+   noutro sítio da app (ex.: no ecrã inicial), ao contrário dos pedidos
+   imediatos (startListeningForRides, que mostra logo o req-overlay + som).
+   Este listener em tempo real (onSnapshot, mesma condição de igualdade
+   única já usada em fetchOpenReservations, sem precisar de índice
+   composto) mantém o banner do ecrã inicial sempre atualizado e dispara um
+   toast + som sempre que aparecer pelo menos uma reserva nova desde a
+   última vez — inclui as que voltam a ficar abertas depois de um motorista
+   cancelar (ver cancelReservationByDriver: status volta a 'scheduled'),
+   completando o redespacho automático para outro motorista. */
+let reservationsListUnsub = null;
+let reservationsListenerFirstLoad = true;
+const seenOpenReservationIds = new Set();
+function startListeningForReservations(){
+  const col = ridesCollection();
+  if(!col) return false;
+  if(reservationsListUnsub) return true; // já a ouvir
+  reservationsListUnsub = col.where('status', '==', 'scheduled').onSnapshot(function(snapshot){
+    const nowMs = Date.now();
+    const currentIds = new Set();
+    let newCount = 0;
+    snapshot.forEach(function(doc){
+      const r = doc.data();
+      const ms = r.scheduledFor && r.scheduledFor.toMillis ? r.scheduledFor.toMillis() : null;
+      if(ms == null || ms <= nowMs) return;
+      if(lastKnownDriverDistrict && r.district && normalizeDistrictName(r.district) !== lastKnownDriverDistrict) return;
+      currentIds.add(doc.id);
+      if(!seenOpenReservationIds.has(doc.id)) newCount++;
+    });
+    const isFirstLoad = reservationsListenerFirstLoad;
+    reservationsListenerFirstLoad = false;
+    seenOpenReservationIds.clear();
+    currentIds.forEach(function(id){ seenOpenReservationIds.add(id); });
+    const banner = document.getElementById('d-reservations-banner');
+    if(banner){
+      const textEl = document.getElementById('d-reservations-banner-text');
+      if(currentIds.size){
+        banner.classList.add('show');
+        if(textEl) textEl.textContent = currentIds.size === 1 ? 'Tens 1 reserva por aceitar' : ('Tens ' + currentIds.size + ' reservas por aceitar');
+      } else {
+        banner.classList.remove('show');
+      }
+    }
+    if(currentDriverScreenId() === 'd-reservations' && typeof loadDriverReservations==='function') loadDriverReservations();
+    // Não alerta na primeira leitura (senão dispararia sempre que o
+    // motorista fica online, mesmo para reservas já existentes há dias).
+    if(!isFirstLoad && newCount > 0 && isOnline){
+      toast(currentDriverScreenId() || 'd-home', newCount === 1 ? '📅 Nova reserva disponível — toca em Reservas para aceitar.' : ('📅 ' + newCount + ' novas reservas disponíveis.'));
+      if(typeof playRequestSound === 'function'){ try{ playRequestSound(); }catch(e){} }
+      if(navigator.vibrate) try{ navigator.vibrate([100,60,100]); }catch(e){}
+    }
+  }, function(err){ console.warn('Falha ao ouvir reservas abertas em tempo real:', err); });
+  return true;
+}
+function stopListeningForReservations(){
+  if(reservationsListUnsub){ reservationsListUnsub(); reservationsListUnsub = null; }
+  reservationsListenerFirstLoad = true;
+  seenOpenReservationIds.clear();
+}
+/* ===================== ALERTA: CLIENTE CANCELOU UMA RESERVA MINHA =====================
+   Sem isto, se o cliente cancelasse uma reserva já aceite por este
+   motorista (cancelReservationByClient, em lux-cliente.html), o motorista
+   só notava que desaparecera da próxima vez que abrisse o ecrã Reservas —
+   sem nenhum aviso. Usa a mesma condição de igualdade única já usada em
+   fetchMyReservations (driverId==myId, sem precisar de índice composto) e
+   filtra no telemóvel só as transições para 'cancelled' vindas do cliente
+   que ainda não foram notificadas. */
+let myReservationCancelWatchUnsub = null;
+const notifiedClientCancelledReservations = new Set();
+function startWatchingMyReservationCancellations(){
+  const col = ridesCollection();
+  const myId = (currentUser.d && currentUser.d.email) ? driverDocId(currentUser.d.email) : null;
+  if(!col || !myId) return false;
+  if(myReservationCancelWatchUnsub) return true; // já a vigiar
+  myReservationCancelWatchUnsub = col.where('driverId', '==', myId).onSnapshot(function(snapshot){
+    snapshot.docChanges().forEach(function(change){
+      const r = change.doc.data();
+      if(r.status === 'cancelled' && r.cancelledFromReservation && r.cancelledBy === 'client' && !notifiedClientCancelledReservations.has(change.doc.id)){
+        notifiedClientCancelledReservations.add(change.doc.id);
+        const sf = r.scheduledFor && r.scheduledFor.toDate ? r.scheduledFor.toDate() : null;
+        const when = sf ? (' de ' + sf.toLocaleDateString('pt-PT') + ' às ' + sf.toLocaleTimeString('pt-PT',{hour:'2-digit',minute:'2-digit'})) : '';
+        toast(currentDriverScreenId() || 'd-home', '⚠️ O cliente cancelou a reserva' + when + '.');
+        if(typeof playStatusBeep === 'function'){ try{ playStatusBeep(); }catch(e){} }
+        if(navigator.vibrate) try{ navigator.vibrate([120,60,120]); }catch(e){}
+        if(currentDriverScreenId() === 'd-reservations' && typeof loadDriverReservations==='function') loadDriverReservations();
+      }
+    });
+  }, function(err){ console.warn('Falha ao vigiar cancelamentos de reservas:', err); });
+  return true;
+}
+function stopWatchingMyReservationCancellations(){
+  if(myReservationCancelWatchUnsub){ myReservationCancelWatchUnsub(); myReservationCancelWatchUnsub = null; }
+  notifiedClientCancelledReservations.clear();
+}
 function showRealIncomingRequest(rideId, data){
   currentRideId = rideId;
   currentRideData = data;
@@ -4364,9 +4465,13 @@ function toggleOnline(){
       const t = setTimeout(()=>triggerIncomingRequest(), 2600);
       activeTimers.push(t);
     }
+    startListeningForReservations();
+    startWatchingMyReservationCancellations();
   } else {
     stopSharingLocation();
     stopListeningForRides();
+    stopListeningForReservations();
+    stopWatchingMyReservationCancellations();
   }
 }
 function openRecharge(){
@@ -4401,6 +4506,8 @@ function confirmRecharge(){
         const t = setTimeout(()=>triggerIncomingRequest(), 2200);
         activeTimers.push(t);
       }
+      startListeningForReservations();
+      startWatchingMyReservationCancellations();
     } else {
       updateDriverFrames();
     }
@@ -5259,6 +5366,8 @@ function backToDriverHome(){
     document.getElementById('online-switch').classList.remove('on');
     setOnlineStatusText(false);
     updateDriverFrames();
+    stopListeningForReservations();
+    stopWatchingMyReservationCancellations();
     const t = setTimeout(()=>openRecharge(), 700);
     activeTimers.push(t);
   } else if(isOnline){
@@ -5269,6 +5378,8 @@ function backToDriverHome(){
       const t = setTimeout(()=>triggerIncomingRequest(), 4000);
       activeTimers.push(t);
     }
+    startListeningForReservations();
+    startWatchingMyReservationCancellations();
   }
 }
 
