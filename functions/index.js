@@ -838,6 +838,54 @@ exports.translateChatMessage = onDocumentCreated('rides/{rideId}/messages/{messa
   }
 });
 
+/* ---- Página pública de tracking (acompanhar.html) ------------------------
+ * O documento rides/{rideId} contém dados sensíveis do cliente e do
+ * motorista (telefone, email, preço, paymentIntentId), por isso NÃO pode
+ * ter leitura pública direta. Em vez disso, esta função espelha apenas os
+ * campos necessários para a página pública de acompanhamento (sem login)
+ * num documento separado, public_tracking/{rideId}, que tem regra de
+ * leitura pública (apenas "get" pelo ID da própria corrida — nunca "list").
+ * O ID da corrida funciona como o "token" de acesso ao link partilhado,
+ * exatamente como no botão "Partilhar" do Uber/Bolt.
+ */
+function mirrorPublicTracking(rideId, ride) {
+  if (!rideId || !ride) return Promise.resolve();
+  const db = admin.firestore();
+  const safe = {
+    status: ride.status || null,
+    driverName: ride.driverName || null,
+    driverPhotoUrl: ride.driverPhotoUrl || null,
+    driverId: ride.driverId || null,
+    vehicleBrand: ride.vehicleBrand || null,
+    vehicleModel: ride.vehicleModel || null,
+    vehicleColor: ride.vehicleColor || null,
+    vehiclePlate: ride.vehiclePlate || null,
+    vehicleName: ride.vehicleName || null,
+    origin: ride.origin || null,
+    destination: ride.destination || null,
+    pickupLat: (typeof ride.pickupLat === 'number') ? ride.pickupLat : null,
+    pickupLng: (typeof ride.pickupLng === 'number') ? ride.pickupLng : null,
+    dropoffLat: (typeof ride.dropoffLat === 'number') ? ride.dropoffLat : null,
+    dropoffLng: (typeof ride.dropoffLng === 'number') ? ride.dropoffLng : null,
+    stops: Array.isArray(ride.stops) ? ride.stops.map(function (s) {
+      return { address: s.address || '', lat: s.lat || null, lng: s.lng || null };
+    }) : [],
+    updatedAt: admin.firestore.FieldValue.serverTimestamp()
+  };
+  return db.collection('public_tracking').doc(rideId).set(safe, { merge: true })
+    .catch(function (e) { console.warn('mirrorPublicTracking: falha ao gravar', rideId, e); });
+}
+exports.mirrorPublicTrackingOnCreate = onDocumentCreated('rides/{rideId}', async (event) => {
+  const snap = event.data;
+  if (!snap) return;
+  await mirrorPublicTracking(event.params.rideId, snap.data());
+});
+exports.mirrorPublicTrackingOnUpdate = onDocumentUpdated('rides/{rideId}', async (event) => {
+  const after = event.data && event.data.after;
+  if (!after) return;
+  await mirrorPublicTracking(event.params.rideId, after.data());
+});
+
 exports.dispatchScheduledRides = onSchedule('every 1 minutes', async () => {
   const db = admin.firestore();
   const now = Date.now();

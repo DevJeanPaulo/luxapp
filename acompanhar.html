@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Acompanhar viagem — Lux Transfers</title>
+<meta name="robots" content="noindex, nofollow">
+<link rel="icon" href="data:,">
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyBpV5Plv5j6RnpOokgqVm6MJ55321Vul08&libraries=geometry&loading=async" async defer></script>
+<style>
+  :root{
+    --bg:#07080a; --panel:#0d0f13; --panel2:#12141a; --gold:#FFC94D;
+    --text:#e7ebf1; --muted:#9aa2b1; --line:#232732; --green:#5fd68a; --red:#ff6b6b;
+  }
+  *{ box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html,body{ margin:0; padding:0; height:100%; background:var(--bg); color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif; overflow:hidden; }
+  #app{ position:fixed; inset:0; display:flex; flex-direction:column; }
+  #map{ flex:1; min-height:0; background:#0a0b0d; }
+  header{
+    position:absolute; top:0; left:0; right:0; z-index:5; display:flex; align-items:center; gap:10px;
+    padding:calc(env(safe-area-inset-top,0px) + 12px) 16px 12px; background:linear-gradient(180deg, rgba(7,8,10,.92), rgba(7,8,10,0));
+    pointer-events:none;
+  }
+  header .logo{ font-weight:800; font-size:16px; letter-spacing:.3px; }
+  header .logo b{ color:var(--gold); }
+  .sheet{
+    position:relative; z-index:5; background:var(--panel); border-top:1px solid var(--line);
+    border-radius:18px 18px 0 0; padding:16px 18px calc(env(safe-area-inset-bottom,0px) + 18px);
+    box-shadow:0 -8px 24px rgba(0,0,0,.35);
+  }
+  .status-row{ display:flex; align-items:center; gap:10px; margin-bottom:10px; }
+  .status-dot{ width:10px; height:10px; border-radius:50%; background:var(--green); flex:none;
+    box-shadow:0 0 0 4px rgba(95,214,138,.18); }
+  .status-dot.wait{ background:var(--gold); box-shadow:0 0 0 4px rgba(255,201,77,.18); }
+  .status-dot.done{ background:var(--muted); box-shadow:none; }
+  .status-dot.cancel{ background:var(--red); box-shadow:0 0 0 4px rgba(255,107,107,.18); }
+  .status-text{ font-size:15px; font-weight:700; }
+  .driver-row{ display:flex; align-items:center; gap:12px; padding:10px 0; border-top:1px solid var(--line); margin-top:6px; }
+  .avatar{ width:46px; height:46px; border-radius:50%; background:var(--panel2); display:flex; align-items:center;
+    justify-content:center; font-weight:800; color:var(--gold); border:1px solid var(--line); flex:none; overflow:hidden; }
+  .avatar img{ width:100%; height:100%; object-fit:cover; }
+  .driver-info .name{ font-size:14.5px; font-weight:700; }
+  .driver-info .veh{ font-size:12.5px; color:var(--muted); margin-top:2px; }
+  .addr-row{ display:flex; gap:10px; font-size:13px; color:var(--muted); padding:6px 0; }
+  .addr-row .dot{ width:7px; height:7px; border-radius:50%; margin-top:5px; flex:none; }
+  .addr-row.o .dot{ background:var(--gold); }
+  .addr-row.d .dot{ background:var(--muted); }
+  .footer-note{ text-align:center; font-size:11px; color:var(--muted); margin-top:12px; opacity:.8; }
+  .footer-note b{ color:var(--gold); }
+  #loading, #error{
+    position:absolute; inset:0; z-index:10; background:var(--bg); display:flex; flex-direction:column;
+    align-items:center; justify-content:center; gap:14px; text-align:center; padding:24px;
+  }
+  #error{ display:none; }
+  .spinner{ width:34px; height:34px; border-radius:50%; border:3px solid var(--line); border-top-color:var(--gold);
+    animation:spin 1s linear infinite; }
+  @keyframes spin{ to{ transform:rotate(360deg); } }
+  #loading .lg, #error .lg{ font-weight:800; font-size:18px; }
+  #loading .lg b, #error .lg b{ color:var(--gold); }
+  #error p{ color:var(--muted); font-size:13.5px; max-width:280px; margin:0; }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <div class="logo">Lux <b>Transfers</b></div>
+  </header>
+  <div id="map"></div>
+  <div class="sheet" id="sheet" style="display:none;">
+    <div class="status-row">
+      <div class="status-dot wait" id="status-dot"></div>
+      <div class="status-text" id="status-text">A localizar a tua viagem…</div>
+    </div>
+    <div class="driver-row" id="driver-row" style="display:none;">
+      <div class="avatar" id="driver-avatar">🚗</div>
+      <div class="driver-info">
+        <div class="name" id="driver-name">—</div>
+        <div class="veh" id="driver-veh">—</div>
+      </div>
+    </div>
+    <div class="addr-row o"><div class="dot"></div><div id="addr-origin">—</div></div>
+    <div class="addr-row d"><div class="dot"></div><div id="addr-dest">—</div></div>
+    <div class="footer-note">Acompanhamento ao vivo por <b>Lux Transfers</b></div>
+  </div>
+  <div id="loading">
+    <div class="spinner"></div>
+    <div class="lg">Lux <b>Transfers</b></div>
+    <p>A carregar o acompanhamento da viagem…</p>
+  </div>
+  <div id="error">
+    <div class="lg">Lux <b>Transfers</b></div>
+    <p id="error-msg">Não foi possível encontrar esta viagem. O link pode ter expirado ou a viagem já terminou.</p>
+  </div>
+</div>
+<script>
+/* Página pública de acompanhamento ao vivo (sem login). O ID da viagem na
+   URL (?id=) funciona como o "token" de acesso — o mesmo padrão usado pelo
+   Uber/Bolt nos links de "partilhar viagem". Lê apenas o documento
+   public_tracking/{id} (espelho seguro, sem dados pessoais do cliente/
+   motorista) gerado pela Cloud Function mirrorPublicTrackingOnCreate/
+   OnUpdate — nunca o documento rides/{id} original. */
+const FIREBASE_CONFIG = {
+  apiKey: 'AIzaSyCZdkmtYcjzGu93l0miV1iKfIcc55IC7Tc',
+  authDomain: 'lux-transfers-47cb2.firebaseapp.com',
+  projectId: 'lux-transfers-47cb2',
+  storageBucket: 'lux-transfers-47cb2.firebasestorage.app',
+  messagingSenderId: '11041025655',
+  appId: '1:11041025655:web:6777d9bcf46e2c79d16072'
+};
+let db = null;
+try{
+  firebase.initializeApp(FIREBASE_CONFIG);
+  db = firebase.firestore();
+}catch(e){ console.warn('Falha ao iniciar Firestore:', e); }
+
+const params = new URLSearchParams(location.search);
+const rideId = params.get('id');
+
+let map = null, driverMarker = null, pickupMarker = null, destMarker = null;
+let mapsReady = false;
+let lastDriverPos = null;
+let trackingUnsub = null, locationUnsub = null;
+
+function initMapIfNeeded(centerLat, centerLng){
+  if(mapsReady || typeof google === 'undefined' || !google.maps) return false;
+  map = new google.maps.Map(document.getElementById('map'), {
+    center: { lat: centerLat || 38.7223, lng: centerLng || -9.1393 },
+    zoom: 13, disableDefaultUI: true, zoomControl: true, gestureHandling: 'greedy',
+    styles: [
+      { elementType: 'geometry', stylers: [{ color: '#12141a' }] },
+      { elementType: 'labels.text.stroke', stylers: [{ color: '#0d0f13' }] },
+      { elementType: 'labels.text.fill', stylers: [{ color: '#8a93a3' }] },
+      { featureType: 'road', elementType: 'geometry', stylers: [{ color: '#1c1f28' }] },
+      { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#07080a' }] },
+      { featureType: 'poi', stylers: [{ visibility: 'off' }] },
+      { featureType: 'transit', stylers: [{ visibility: 'off' }] }
+    ]
+  });
+  mapsReady = true;
+  return true;
+}
+
+function statusLabel(status){
+  switch(status){
+    case 'searching': return { text:'À procura de motorista…', cls:'wait' };
+    case 'accepted': return { text:'Motorista a caminho da recolha', cls:'wait' };
+    case 'arrived': return { text:'Motorista chegou ao local de recolha', cls:'wait' };
+    case 'in_progress': return { text:'Em viagem', cls:'ok' };
+    case 'completed': return { text:'Viagem concluída', cls:'done' };
+    case 'cancelled': return { text:'Viagem cancelada', cls:'cancel' };
+    case 'scheduled': case 'reserved': return { text:'Reserva agendada', cls:'wait' };
+    default: return { text:'A acompanhar viagem…', cls:'wait' };
+  }
+}
+
+function showError(msg){
+  document.getElementById('loading').style.display = 'none';
+  document.getElementById('sheet').style.display = 'none';
+  const err = document.getElementById('error');
+  if(msg) document.getElementById('error-msg').textContent = msg;
+  err.style.display = 'flex';
+}
+
+function renderTracking(data){
+  document.getElementById('loading').style.display = 'none';
+  document.getElementById('error').style.display = 'none';
+  document.getElementById('sheet').style.display = 'block';
+
+  const st = statusLabel(data.status);
+  const dot = document.getElementById('status-dot');
+  dot.className = 'status-dot ' + (st.cls === 'ok' ? '' : st.cls);
+  document.getElementById('status-text').textContent = st.text;
+
+  document.getElementById('addr-origin').textContent = data.origin || 'Local de recolha';
+  document.getElementById('addr-dest').textContent = data.destination || 'Destino';
+
+  const driverRow = document.getElementById('driver-row');
+  if(data.driverName){
+    driverRow.style.display = 'flex';
+    document.getElementById('driver-name').textContent = data.driverName;
+    const vehParts = [data.vehicleBrand, data.vehicleModel, data.vehicleColor].filter(Boolean);
+    const vehLabel = data.vehicleName || vehParts.join(' ') || 'Viatura Lux Transfers';
+    document.getElementById('driver-veh').textContent = vehLabel + (data.vehiclePlate ? ' · ' + data.vehiclePlate : '');
+    const avatarEl = document.getElementById('driver-avatar');
+    if(data.driverPhotoUrl){
+      avatarEl.innerHTML = '<img src="' + data.driverPhotoUrl + '" alt="">';
+    }else{
+      const initials = (data.driverName || '').trim().split(/\s+/).slice(0,2).map(function(s){ return s[0]; }).join('').toUpperCase();
+      avatarEl.textContent = initials || '🚗';
+    }
+  }else{
+    driverRow.style.display = 'none';
+  }
+
+  const hasPickup = typeof data.pickupLat === 'number' && typeof data.pickupLng === 'number';
+  const hasDest = typeof data.dropoffLat === 'number' && typeof data.dropoffLng === 'number';
+  if(!mapsReady){
+    initMapIfNeeded(hasPickup ? data.pickupLat : null, hasPickup ? data.pickupLng : null);
+  }
+  if(mapsReady && map){
+    if(hasPickup && !pickupMarker){
+      pickupMarker = new google.maps.Marker({
+        position: { lat: data.pickupLat, lng: data.pickupLng }, map: map,
+        icon: { path: google.maps.SymbolPath.CIRCLE, scale: 7, fillColor: '#FFC94D', fillOpacity: 1, strokeColor: '#0d0f13', strokeWeight: 2 },
+        title: 'Recolha'
+      });
+    }
+    if(hasDest && !destMarker){
+      destMarker = new google.maps.Marker({
+        position: { lat: data.dropoffLat, lng: data.dropoffLng }, map: map,
+        icon: { path: google.maps.SymbolPath.CIRCLE, scale: 7, fillColor: '#9aa2b1', fillOpacity: 1, strokeColor: '#0d0f13', strokeWeight: 2 },
+        title: 'Destino'
+      });
+    }
+    if(!lastDriverPos && (hasPickup || hasDest)){
+      const bounds = new google.maps.LatLngBounds();
+      if(hasPickup) bounds.extend({ lat: data.pickupLat, lng: data.pickupLng });
+      if(hasDest) bounds.extend({ lat: data.dropoffLat, lng: data.dropoffLng });
+      if(!bounds.isEmpty()) map.fitBounds(bounds, 60);
+    }
+  }
+
+  // Ouve a localização ao vivo do motorista assim que soubermos o driverId.
+  if(data.driverId && !locationUnsub && db){
+    locationUnsub = db.collection('driver_locations').doc(data.driverId).onSnapshot(function(snap){
+      if(!snap.exists) return;
+      const loc = snap.data();
+      if(typeof loc.lat !== 'number' || typeof loc.lng !== 'number') return;
+      lastDriverPos = { lat: loc.lat, lng: loc.lng };
+      if(!mapsReady) initMapIfNeeded(loc.lat, loc.lng);
+      if(!mapsReady || !map) return;
+      if(!driverMarker){
+        driverMarker = new google.maps.Marker({
+          position: lastDriverPos, map: map,
+          icon: { path: google.maps.SymbolPath.CIRCLE, scale: 8, fillColor: '#FFC94D', fillOpacity: 1, strokeColor: '#07080a', strokeWeight: 2 },
+          title: data.driverName || 'Motorista', zIndex: 999
+        });
+        map.setCenter(lastDriverPos);
+      }else{
+        driverMarker.setPosition(lastDriverPos);
+      }
+    }, function(e){ console.warn('Falha ao ouvir localização do motorista:', e); });
+  }
+
+  if(data.status === 'completed' || data.status === 'cancelled'){
+    if(locationUnsub){ locationUnsub(); locationUnsub = null; }
+  }
+}
+
+function start(){
+  if(!rideId){
+    showError('Link inválido — falta o identificador da viagem.');
+    return;
+  }
+  if(!db){
+    showError('Não foi possível ligar ao serviço. Tenta novamente mais tarde.');
+    return;
+  }
+  trackingUnsub = db.collection('public_tracking').doc(rideId).onSnapshot(function(snap){
+    if(!snap.exists){
+      showError();
+      return;
+    }
+    renderTracking(snap.data());
+  }, function(e){
+    console.warn('Falha ao ouvir tracking:', e);
+    showError('Não foi possível carregar esta viagem.');
+  });
+}
+
+window.addEventListener('load', start);
+</script>
+</body>
+</html>
