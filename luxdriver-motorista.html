@@ -1931,9 +1931,6 @@ function listenDriverNameRequest(){
    sobrescrevê-lo a partir do próprio documento desalinharia futuras escritas
    com o doc já existente. */
 let driverProfileUnsub = null;
-/* epoch ms até quando o motorista fica impedido de ficar online — penalização
-   de 3h por cancelar uma reserva já aceite (ver cancelReservationByDriver). */
-let driverBlockedUntil = null;
 function listenDriverProfile(){
   const db = initFirestore();
   if(!db || !currentUser.d.email) return;
@@ -1953,9 +1950,6 @@ function listenDriverProfile(){
       const earnEl = document.getElementById('stat-earn');
       if(earnEl) earnEl.textContent = maskedOrValue(driverEarnings);
     }
-    // Bloqueio temporário (penalização por cancelar uma reserva já aceite):
-    // guardado em drivers/{id}.blockedUntil (epoch ms). Ver toggleOnline().
-    driverBlockedUntil = (data.blockedUntil && typeof data.blockedUntil === 'number') ? data.blockedUntil : null;
     let nameOrPhoneChanged = false;
     if(data.name && data.name !== currentUser.d.name){ currentUser.d.name = data.name; nameOrPhoneChanged = true; }
     if(data.phone!=null && data.phone !== currentUser.d.phone){ currentUser.d.phone = data.phone; nameOrPhoneChanged = true; }
@@ -4359,12 +4353,6 @@ function toggleOnline(){
     openRecharge();
     return;
   }
-  if(!isOnline && driverBlockedUntil && driverBlockedUntil > Date.now()){
-    const mins = Math.ceil((driverBlockedUntil - Date.now()) / 60000);
-    const h = Math.floor(mins / 60), m = mins % 60;
-    toast('d-home', 'Ainda estás temporariamente impedido de receber pedidos (cancelaste uma reserva já aceite). Falta ' + (h>0 ? (h + 'h ') : '') + m + 'min.');
-    return;
-  }
   isOnline = !isOnline;
   document.getElementById('online-switch').classList.toggle('on', isOnline);
   setOnlineStatusText(isOnline);
@@ -5003,7 +4991,7 @@ function reservationRowHtml(item, opts){
     (opts && opts.mine
       ? '<div style="font-size:12px; color:#5fd68a; font-weight:700; margin-top:4px;">✓ Reserva aceite — recebes um lembrete 30 min antes</div>' +
         '<button class="btn btn-gold" style="margin-top:6px; padding:8px; font-size:12.5px;" onclick="startReservedTrip(\'' + item.id + '\')"' + (currentRideId ? ' disabled' : '') + '>Iniciar viagem</button>' +
-        '<button class="btn btn-outline" style="margin-top:6px; padding:8px; font-size:12.5px; color:#e6795c; border-color:#e6795c;" onclick="cancelReservationByDriver(\'' + item.id + '\', this)"' + (currentRideId ? ' disabled' : '') + '>Cancelar reserva (bloqueio 3h)</button>'
+        '<button class="btn btn-outline" style="margin-top:6px; padding:8px; font-size:12.5px; color:#e6795c; border-color:#e6795c;" onclick="cancelReservationByDriver(\'' + item.id + '\', this)"' + (currentRideId ? ' disabled' : '') + '>Cancelar reserva</button>'
       : '<button class="btn btn-outline" style="margin-top:4px; padding:8px; font-size:12.5px;" onclick="acceptReservation(\'' + item.id + '\', this)">Aceitar reserva</button>'
     ) +
   '</div>';
@@ -5125,50 +5113,49 @@ function acceptReservation(rideId, btnEl){
 }
 /* Penalização por cancelar uma reserva já aceite: a reserva volta ao estado
    'scheduled' (disponível para outro motorista aceitar) e este motorista
-   fica 3h impedido de ficar online / receber pedidos (drivers/{id}.blockedUntil).
-   O crédito da taxa mínima ao motorista e o reembolso Stripe ao cliente são
-   tratados do lado do cliente em cancelReservationByClient() — aqui só se
-   trata da penalização quando é o MOTORISTA a cancelar. */
+   paga a taxa mínima da classe de veículo reservada (debitada do próprio
+   saldo, tal como uma comissão — pode ficar negativo, tal como o resto do
+   sistema já permite). Deixou de haver bloqueio de 3h: o motorista continua
+   livre para ficar online e receber novos pedidos normalmente. */
+const DEFAULT_MIN_FARE = 1.00;
 function cancelReservationByDriver(rideId, btnEl){
   const col = ridesCollection();
   if(!col || !rideId) return;
-  if(!window.confirm('Cancelar esta reserva já aceite? Vais ficar 3 horas sem poder receber novos pedidos.')) return;
-  if(btnEl){ btnEl.disabled = true; btnEl.textContent = 'A cancelar…'; }
-  col.doc(rideId).set({
-    status: 'scheduled', cancelledBy: 'driver', cancelledFromReservation: true,
-    driverName: firebase.firestore.FieldValue.delete(),
-    driverPhone: firebase.firestore.FieldValue.delete(),
-    driverEmail: firebase.firestore.FieldValue.delete(),
-    driverId: firebase.firestore.FieldValue.delete(),
-    vehicleBrand: firebase.firestore.FieldValue.delete(),
-    vehicleModel: firebase.firestore.FieldValue.delete(),
-    vehicleColor: firebase.firestore.FieldValue.delete(),
-    vehiclePlate: firebase.firestore.FieldValue.delete(),
-    driverPhotoUrl: firebase.firestore.FieldValue.delete(),
-    reservedAt: firebase.firestore.FieldValue.delete(),
-    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-  }, { merge:true }).then(function(){
-    const blockedUntil = Date.now() + (3 * 60 * 60 * 1000);
-    const myId = driverDocId(currentUser.d.email);
-    const db = initFirestore();
-    return db.collection('drivers').doc(myId).set({ blockedUntil: blockedUntil }, { merge:true });
-  }).then(function(){
-    if(isOnline){
-      isOnline = false;
-      const sw = document.getElementById('online-switch');
-      if(sw) sw.classList.toggle('on', false);
-      setOnlineStatusText(false);
-      updateDriverFrames();
-      stopSharingLocation();
-      stopListeningForRides();
-    }
-    toast('d-reservations', 'Reserva cancelada. Ficas 3 horas sem poder receber novos pedidos.');
-    loadDriverReservations();
-    refreshReservationsBanner();
+  col.doc(rideId).get().then(function(snap){
+    const rideData = snap.exists ? snap.data() : {};
+    const minFare = (typeof rideData.vehicleBase === 'number') ? rideData.vehicleBase : DEFAULT_MIN_FARE;
+    if(!window.confirm('Cancelar esta reserva já aceite? Vai ser debitada a taxa mínima de ' + fmtEur(minFare) + ' do teu saldo.')) return;
+    if(btnEl){ btnEl.disabled = true; btnEl.textContent = 'A cancelar…'; }
+    col.doc(rideId).set({
+      status: 'scheduled', cancelledBy: 'driver', cancelledFromReservation: true,
+      driverName: firebase.firestore.FieldValue.delete(),
+      driverPhone: firebase.firestore.FieldValue.delete(),
+      driverEmail: firebase.firestore.FieldValue.delete(),
+      driverId: firebase.firestore.FieldValue.delete(),
+      vehicleBrand: firebase.firestore.FieldValue.delete(),
+      vehicleModel: firebase.firestore.FieldValue.delete(),
+      vehicleColor: firebase.firestore.FieldValue.delete(),
+      vehiclePlate: firebase.firestore.FieldValue.delete(),
+      driverPhotoUrl: firebase.firestore.FieldValue.delete(),
+      reservedAt: firebase.firestore.FieldValue.delete(),
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    }, { merge:true }).then(function(){
+      if(!unlimitedAccount.d){
+        driverBalance -= minFare;
+        persistDriverBalance();
+        renderBalanceUI();
+      }
+      toast('d-reservations', 'Reserva cancelada — taxa mínima de ' + fmtEur(minFare) + ' debitada do saldo.');
+      loadDriverReservations();
+      refreshReservationsBanner();
+    }).catch(function(e){
+      console.warn('Falha ao cancelar reserva (motorista):', e);
+      toast('d-reservations', 'Não foi possível cancelar. Tenta novamente.');
+      loadDriverReservations();
+    });
   }).catch(function(e){
-    console.warn('Falha ao cancelar reserva (motorista):', e);
+    console.warn('Falha ao ler reserva antes de cancelar:', e);
     toast('d-reservations', 'Não foi possível cancelar. Tenta novamente.');
-    loadDriverReservations();
   });
 }
 /* ===================== LEMBRETE 30 MIN ANTES DA RESERVA =====================

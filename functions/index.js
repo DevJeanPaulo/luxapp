@@ -13,6 +13,7 @@
 
 const { onRequest } = require('firebase-functions/v2/https');
 const { onDocumentUpdated } = require('firebase-functions/v2/firestore');
+const { onSchedule } = require('firebase-functions/v2/scheduler');
 const { defineSecret } = require('firebase-functions/params');
 const admin = require('firebase-admin');
 const Stripe = require('stripe');
@@ -561,4 +562,264 @@ exports.onRideStatusChanged = onDocumentUpdated('rides/{rideId}', async (event) 
   const userDoc = await admin.firestore().collection('users').doc(after.clientId).get();
   const token = userDoc.exists ? userDoc.data().fcmToken : null;
   await sendPush(token, msg.title, msg.body);
+});
+
+/**
+ * ===================== CONVIDAR AMIGOS (referral) =====================
+ * Mesma lógica de "id do documento" usada no frontend (clientDocId ->
+ * sanitizeSessionKey em lux-cliente.html): email em minúsculas, tudo o que
+ * não for a-z0-9 vira "_". Tem de ficar sempre igual dos dois lados.
+ */
+function clientDocIdFromEmail(email) {
+  return String(email || '').toLowerCase().replace(/[^a-z0-9]/g, '_').slice(0, 120);
+}
+
+/**
+ * Debita crédito (saldo de convites) da conta do cliente, de forma atómica —
+ * é a ÚNICA forma de o campo "credits" ser reduzido a partir do frontend.
+ * Chamada por lux-cliente.html mesmo antes de criar o PaymentIntent Stripe,
+ * para descontar o crédito disponível do valor da viagem. As regras do
+ * Firestore bloqueiam qualquer escrita direta do cliente a "credits", por
+ * isso esta função (Admin SDK, ignora as regras) é o único caminho possível.
+ *
+ * Espera um POST JSON: { email, amount }  (amount em euros, > 0)
+ * Devolve: { ok:true, newCredits } ou { ok:false, error }
+ */
+exports.consumeClientCredits = onRequest({}, (req, res) => {
+  cors(req, res, async () => {
+    if (req.method !== 'POST') {
+      res.status(405).send('Method Not Allowed');
+      return;
+    }
+    try {
+      const { email, amount } = req.body || {};
+      const amt = Number(amount);
+      if (!email || !(amt > 0)) {
+        res.status(400).json({ ok: false, error: 'email e amount (>0) são obrigatórios.' });
+        return;
+      }
+      const db = admin.firestore();
+      const ref = db.collection('clients').doc(clientDocIdFromEmail(email));
+      const newCredits = await db.runTransaction(async (tx) => {
+        const snap = await tx.get(ref);
+        const current = (snap.exists && typeof snap.data().credits === 'number') ? snap.data().credits : 0;
+        if (current < amt) throw new Error('Crédito insuficiente.');
+        const updated = Math.round((current - amt) * 100) / 100;
+        tx.set(ref, { credits: updated }, { merge: true });
+        return updated;
+      });
+      res.status(200).json({ ok: true, newCredits });
+    } catch (err) {
+      console.error('consumeClientCredits falhou:', err);
+      res.status(400).json({ ok: false, error: err.message });
+    }
+  });
+});
+
+/**
+ * Recompensa o convite de amigo (5€ para cada lado) assim que o AMIGO
+ * CONVIDADO conclui a sua PRIMEIRA viagem paga — nunca no registo, para não
+ * ser possível ganhar crédito com contas falsas sem viagens reais.
+ *
+ * Dispara quando rides/{rideId} passa a status:'completed' (ver
+ * markTripComplete em luxdriver-motorista.html). Regras aplicadas:
+ *   - só recompensa se for mesmo a 1ª corrida concluída deste cliente;
+ *   - só recompensa se o cliente tiver sido convidado (referredBy) e ainda
+ *     não tiver sido recompensado antes (referralRewarded === false);
+ *   - o convidador só pode ser recompensado por, no máximo, 2 amigos
+ *     (referralCount < 2) — limite pedido explicitamente pelo negócio.
+ * Tudo corre numa transação Firestore para evitar corridas em paralelo a
+ * ultrapassarem o limite de 2 amigos.
+ */
+exports.rewardReferralOnFirstRide = onDocumentUpdated('rides/{rideId}', async (event) => {
+  const before = event.data.before.data();
+  const after = event.data.after.data();
+  if (!after || !before) return;
+  if (before.status === 'completed' || after.status !== 'completed') return;
+  if (!after.clientEmail) return;
+
+  const db = admin.firestore();
+  const referredId = clientDocIdFromEmail(after.clientEmail);
+  const referredRef = db.collection('clients').doc(referredId);
+
+  try {
+    const referredSnap = await referredRef.get();
+    if (!referredSnap.exists) return;
+    const referred = referredSnap.data();
+    if (!referred.referredBy || referred.referralRewarded !== false) return;
+
+    // Confirma que esta é mesmo a 1ª viagem CONCLUÍDA deste cliente.
+    const completedRides = await db.collection('rides')
+      .where('clientEmail', '==', after.clientEmail)
+      .where('status', '==', 'completed')
+      .get();
+    if (completedRides.size !== 1) return;
+
+    const referrerRef = db.collection('clients').doc(referred.referredBy);
+    await db.runTransaction(async (tx) => {
+      const [referrerSnap, referredSnap2] = await Promise.all([tx.get(referrerRef), tx.get(referredRef)]);
+      if (!referrerSnap.exists) return;
+      const referrer = referrerSnap.data();
+      const referredNow = referredSnap2.data();
+      if (referredNow.referralRewarded !== false) return; // já recompensado (concorrência)
+      const referralCount = typeof referrer.referralCount === 'number' ? referrer.referralCount : 0;
+      if (referralCount >= 2) return; // limite de 2 amigos por conta
+
+      const referrerCredits = typeof referrer.credits === 'number' ? referrer.credits : 0;
+      const referredCredits = typeof referredNow.credits === 'number' ? referredNow.credits : 0;
+      tx.set(referrerRef, {
+        credits: Math.round((referrerCredits + 5) * 100) / 100,
+        referralCount: referralCount + 1
+      }, { merge: true });
+      tx.set(referredRef, {
+        credits: Math.round((referredCredits + 5) * 100) / 100,
+        referralRewarded: true
+      }, { merge: true });
+    });
+  } catch (err) {
+    console.error('rewardReferralOnFirstRide falhou:', err);
+  }
+});
+
+/**
+ * ===================== DESPACHO SERVIDOR DE RESERVAS =====================
+ * Rede de segurança server-side para o despacho de reservas ("Reserva um
+ * transfer"). O despacho normal (ativar uma reserva quando se aproxima a
+ * hora marcada, e avançar a oferta de motorista em motorista) corre no
+ * cliente (ver checkMyScheduledRides/advanceRideOffer em lux-cliente.html)
+ * enquanto a app do PASSAGEIRO está aberta. Se o passageiro fechar a app
+ * antes da hora da reserva chegar, isso nunca acontece e o motorista nunca
+ * recebe o alerta — este era o bug reportado ("motorista ainda não recebe
+ * alerta de pedido de reserva"). Esta função corre a cada minuto e replica
+ * exatamente a mesma lógica do cliente, para que a reserva seja despachada
+ * mesmo com a app do cliente fechada.
+ */
+const MAX_MATCH_RADIUS_KM = 20; // igual ao valor usado em lux-cliente.html
+const SCHEDULE_ACTIVATION_WINDOW_MINUTES = 30; // igual ao valor usado em lux-cliente.html
+const OFFER_WINDOW_MS = 16000; // igual ao valor usado em lux-cliente.html
+
+function normalizeDistrictNameServer(name) {
+  if (!name) return null;
+  return String(name)
+    .toLowerCase()
+    .replace(/^distrito\s+(de|do|da)\s+/i, '')
+    .replace(/^regi[aã]o\s+aut[oó]noma\s+(de|do|da)\s+/i, '')
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .trim();
+}
+
+function haversineKmServer(lat1, lng1, lat2, lng2) {
+  if ([lat1, lng1, lat2, lng2].some((v) => v == null || Number.isNaN(v))) return null;
+  const R = 6371;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLng = (lng2 - lng1) * Math.PI / 180;
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+async function pickNextDriverCandidateServer(db, pickupLat, pickupLng, excludeIds, districtFilter) {
+  if (districtFilter) {
+    try {
+      const snap = await db.collection('driver_locations').where('online', '==', true).get();
+      const candidates = [];
+      snap.forEach((doc) => {
+        if (excludeIds.has(doc.id)) return;
+        const d = doc.data();
+        if (!d.district || normalizeDistrictNameServer(d.district) !== districtFilter) return;
+        candidates.push(doc.id);
+      });
+      if (!candidates.length) return null;
+      return candidates[Math.floor(Math.random() * candidates.length)];
+    } catch (e) {
+      console.warn('dispatchScheduledRides: falha ao procurar motoristas no distrito:', e);
+      return null;
+    }
+  }
+  if (pickupLat == null || pickupLng == null) return null;
+  try {
+    const snap = await db.collection('driver_locations').where('online', '==', true).get();
+    let best = null, bestKm = Infinity;
+    snap.forEach((doc) => {
+      if (excludeIds.has(doc.id)) return;
+      const d = doc.data();
+      if (d.lat == null || d.lng == null) return;
+      const km = haversineKmServer(pickupLat, pickupLng, d.lat, d.lng);
+      if (km == null || km > MAX_MATCH_RADIUS_KM) return;
+      if (km < bestKm) { bestKm = km; best = doc.id; }
+    });
+    return best;
+  } catch (e) {
+    console.warn('dispatchScheduledRides: falha ao procurar motoristas próximos:', e);
+    return null;
+  }
+}
+
+async function advanceRideOfferServer(db, rideId, rideData) {
+  const ride = rideData;
+  if (ride.status !== 'searching') return;
+  const offered = new Set(ride.offeredDriverIds || []);
+  const declined = new Set(ride.declinedDriverIds || []);
+  const excluded = new Set([...offered, ...declined]);
+  const districtFilter = ride.scheduledFor ? normalizeDistrictNameServer(ride.district) : null;
+  let candidate = await pickNextDriverCandidateServer(db, ride.pickupLat, ride.pickupLng, excluded, districtFilter);
+  let didReset = false;
+  if (!candidate && offered.size > 0) {
+    didReset = true;
+    candidate = await pickNextDriverCandidateServer(db, ride.pickupLat, ride.pickupLng, declined, districtFilter);
+  }
+  if (!candidate) return; // sem candidatos disponíveis agora; tenta de novo no próximo minuto
+  const expiresAt = Date.now() + OFFER_WINDOW_MS;
+  const update = {
+    offerDriverId: candidate,
+    offerExpiresAt: expiresAt,
+    offeredDriverIds: didReset ? [candidate] : admin.firestore.FieldValue.arrayUnion(candidate),
+    updatedAt: admin.firestore.FieldValue.serverTimestamp()
+  };
+  try {
+    await db.collection('rides').doc(rideId).set(update, { merge: true });
+  } catch (e) {
+    console.warn('dispatchScheduledRides: falha ao atribuir motorista à corrida', rideId, e);
+  }
+}
+
+exports.dispatchScheduledRides = onSchedule('every 1 minutes', async () => {
+  const db = admin.firestore();
+  const now = Date.now();
+
+  // 1) Ativa reservas cuja hora marcada já esteja dentro da janela de
+  //    ativação — mesmo critério usado em checkMyScheduledRides() no cliente.
+  try {
+    const limitTs = admin.firestore.Timestamp.fromDate(new Date(now + SCHEDULE_ACTIVATION_WINDOW_MINUTES * 60000));
+    const scheduledSnap = await db.collection('rides').where('status', '==', 'scheduled').get();
+    for (const doc of scheduledSnap.docs) {
+      const data = doc.data();
+      const sf = data.scheduledFor;
+      const sfMillis = sf && sf.toMillis ? sf.toMillis() : null;
+      if (sfMillis == null || sfMillis > limitTs.toMillis()) continue;
+      try {
+        await doc.ref.set({ status: 'searching', updatedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
+        const freshSnap = await doc.ref.get();
+        if (freshSnap.exists) await advanceRideOfferServer(db, doc.id, freshSnap.data());
+      } catch (e) {
+        console.warn('dispatchScheduledRides: falha ao ativar reserva', doc.id, e);
+      }
+    }
+  } catch (e) {
+    console.error('dispatchScheduledRides: falha ao procurar reservas por ativar:', e);
+  }
+
+  // 2) Avança corridas já em despacho ('searching') cuja oferta ao motorista
+  //    atual expirou (ou nunca chegou a ser feita) — rede de segurança para
+  //    quando a app do cliente está fechada durante o despacho.
+  try {
+    const searchingSnap = await db.collection('rides').where('status', '==', 'searching').get();
+    for (const doc of searchingSnap.docs) {
+      const data = doc.data();
+      const stillNeedsOffer = !data.offerDriverId || !data.offerExpiresAt || data.offerExpiresAt <= now;
+      if (!stillNeedsOffer) continue;
+      await advanceRideOfferServer(db, doc.id, data);
+    }
+  } catch (e) {
+    console.error('dispatchScheduledRides: falha ao avançar ofertas pendentes:', e);
+  }
 });

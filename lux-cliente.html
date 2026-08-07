@@ -257,7 +257,63 @@
   }
   .sheet-handle{
     width:36px; height:4px; border-radius:99px; background:var(--line);
-    margin:0 auto 14px;
+    margin:0 auto 14px; cursor:grab; touch-action:none;
+  }
+  #c-home-sheet{ transition:transform .1s linear; }
+  #c-home-sheet.no-transition{ transition:none; }
+  /* box-sizing:border-box + max-height:0 faz o painel desaparecer por
+     completo quando fechado (mesmo com padding), e o padding extra +
+     margem negativa dão respiro suficiente para a moldura dourada
+     (glow-frame) do sheet-expand-inner não ser cortada pelo overflow:hidden
+     que controla a animação de "deslizar para cima". */
+  .sheet-expand-content{
+    box-sizing:border-box; max-height:0; overflow:hidden; opacity:0;
+    margin:0 -16px; padding:0 16px;
+    transition:max-height .32s cubic-bezier(.22,.9,.32,1), opacity .22s ease, margin-top .32s ease, padding .32s ease;
+  }
+  #c-home-sheet.expanded .sheet-expand-content{ max-height:640px; opacity:1; margin-top:16px; padding:16px; }
+  /* Moldura dourada só nesta secção (redes sociais + convite), com luz
+     intermitente/pulsante — diferente da moldura estática usada no mapa —
+     para chamar a atenção assim que o cliente desliza o painel para cima. */
+  .sheet-expand-inner{
+    border-radius:var(--radius-md); background:var(--panel2);
+    border:1px solid var(--line); padding:14px;
+  }
+  .sheet-expand-inner.glow-frame{ animation:sheet-glow-pulse 2.4s ease-in-out infinite; }
+  .sheet-expand-inner.glow-frame::before{
+    border-radius:calc(var(--radius-md) + 2px);
+    animation:rotate-current 3.6s linear infinite;
+  }
+  @keyframes sheet-glow-pulse{
+    0%, 100%{ box-shadow:0 0 10px rgba(255,201,77,.18), inset 0 0 0 1px rgba(255,201,77,.10); }
+    50%{ box-shadow:0 0 22px rgba(255,201,77,.5), inset 0 0 0 1px rgba(255,201,77,.3); }
+  }
+  .social-row{ display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:14px; }
+  .social-btn{
+    display:flex; align-items:center; gap:10px;
+    background:var(--panel); border:1px solid var(--line); border-radius:var(--radius-md);
+    padding:12px 12px; text-decoration:none; color:var(--text); font-size:12.5px; font-weight:600;
+    -webkit-tap-highlight-color:transparent;
+  }
+  .social-btn svg{ width:20px; height:20px; flex-shrink:0; }
+  .invite-card{
+    background:linear-gradient(135deg, rgba(255,201,77,.14), rgba(255,201,77,.03));
+    border:1px solid rgba(255,201,77,.35); border-radius:var(--radius-md); padding:14px;
+  }
+  .invite-card .invite-title{ font-size:13.5px; font-weight:700; margin-bottom:2px; }
+  .invite-card .invite-sub{ font-size:11.5px; color:var(--muted); margin-bottom:12px; line-height:1.4; }
+  .invite-progress{ display:flex; gap:6px; margin-bottom:12px; }
+  .invite-dot{ flex:1; height:5px; border-radius:99px; background:var(--line); }
+  .invite-dot.filled{ background:var(--gold); }
+  .invite-share-btn{
+    width:100%; background:var(--gold); color:#1a1305; border:none; border-radius:999px;
+    padding:12px; font-weight:700; font-size:13px; cursor:pointer; -webkit-tap-highlight-color:transparent;
+  }
+  .invite-credits-line{ margin-top:10px; font-size:11.5px; color:var(--muted); text-align:center; }
+  .sheet-footer-link{
+    display:block; text-align:center; margin-top:14px; padding:6px;
+    font-size:11.5px; font-weight:600; color:var(--gold); text-decoration:none;
+    -webkit-tap-highlight-color:transparent;
   }
 
   h1.title{ font-size:20px; margin:0 0 4px; font-weight:700; }
@@ -1112,8 +1168,8 @@
             <div class="me-dot" style="left:50%; top:46%;"></div>
           </div>
         </div>
-        <div class="sheet">
-          <div class="sheet-handle"></div>
+        <div class="sheet" id="c-home-sheet">
+          <div class="sheet-handle" id="c-home-sheet-handle"></div>
           <h1 class="title" data-i18n="home_greeting">Boa noite</h1>
           <p class="subtitle" data-i18n="home_subtitle">Para onde vai hoje?</p>
           <div class="chips-wrap">
@@ -1123,6 +1179,39 @@
             </div>
           </div>
           <button class="btn btn-gold" id="c-request-btn" disabled data-i18n="btn_request_ride" onclick="goTo('c-vehicles')">Pedir viagem</button>
+          <div class="sheet-expand-content" id="c-home-sheet-extra">
+            <div class="sheet-expand-inner glow-frame">
+              <div class="social-row">
+                <a class="social-btn" href="https://instagram.com/luxtransfers.pt" target="_blank" rel="noopener">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="#E1306C" stroke-width="1.8"><rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.2" cy="6.8" r="1" fill="#E1306C" stroke="none"/></svg>
+                  <span data-i18n="social_instagram">Instagram</span>
+                </a>
+                <a class="social-btn" href="https://facebook.com/luxtransfers.pt" target="_blank" rel="noopener">
+                  <svg viewBox="0 0 24 24" fill="#1877F2"><path d="M22 12a10 10 0 1 0-11.6 9.9v-7H7.9V12h2.5V9.8c0-2.5 1.5-3.9 3.8-3.9 1.1 0 2.2.2 2.2.2v2.5h-1.3c-1.2 0-1.6.8-1.6 1.6V12h2.8l-.4 2.9h-2.4v7A10 10 0 0 0 22 12z"/></svg>
+                  <span data-i18n="social_facebook">Facebook</span>
+                </a>
+                <a class="social-btn" href="https://open.spotify.com/user/luxtransfers" target="_blank" rel="noopener">
+                  <svg viewBox="0 0 24 24" fill="#1DB954"><circle cx="12" cy="12" r="10"/><path d="M7 9.8c3-1 6.7-.7 9.2.9M7.6 13c2.4-.7 5.3-.5 7.4.8M8.2 16c2-.6 4.2-.4 5.9.7" stroke="#07080a" stroke-width="1.3" fill="none" stroke-linecap="round"/></svg>
+                  <span data-i18n="social_spotify">Spotify</span>
+                </a>
+                <a class="social-btn" href="https://wa.me/351900000000" target="_blank" rel="noopener">
+                  <svg viewBox="0 0 24 24" fill="#25D366"><path d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5.1-1.3A10 10 0 1 0 12 2zm0 18.2a8.1 8.1 0 0 1-4.1-1.1l-.3-.2-3 .8.8-2.9-.2-.3A8.2 8.2 0 1 1 12 20.2zm4.5-6.1c-.2-.1-1.5-.7-1.7-.8-.2-.1-.4-.1-.6.1-.2.2-.7.8-.8 1-.1.2-.3.2-.5.1-.2-.1-1-.4-1.9-1.2-.7-.6-1.2-1.4-1.3-1.6-.1-.2 0-.4.1-.5.1-.1.2-.3.4-.4.1-.1.2-.2.2-.4.1-.1 0-.3 0-.4C10.3 9.6 10 8.9 9.8 8.5c-.1-.4-.3-.3-.4-.3h-.4c-.2 0-.4.1-.6.3-.2.2-.8.8-.8 1.9s.8 2.2 1 2.4c.1.1 1.6 2.5 3.9 3.4.5.2.9.4 1.3.5.5.2 1 .1 1.4.1.4-.1 1.3-.5 1.5-1 .2-.5.2-.9.1-1z"/></svg>
+                  <span data-i18n="social_whatsapp">WhatsApp</span>
+                </a>
+              </div>
+              <div class="invite-card">
+                <div class="invite-title" data-i18n="invite_title">Convida amigos, ganha 5€</div>
+                <div class="invite-sub" data-i18n="invite_sub">Cada amigo que se registar e fizer a 1ª viagem dá-te 5€ de crédito (até 2 amigos).</div>
+                <div class="invite-progress">
+                  <div class="invite-dot" id="c-invite-dot-1"></div>
+                  <div class="invite-dot" id="c-invite-dot-2"></div>
+                </div>
+                <button class="invite-share-btn" data-i18n="invite_share_btn" onclick="shareReferralLink()">Partilhar convite</button>
+                <div class="invite-credits-line" id="c-invite-credits-line">Crédito disponível: 0,00€</div>
+              </div>
+            </div>
+            <a class="sheet-footer-link" href="https://luxtransfers.pt" target="_blank" rel="noopener">luxtransfers.pt</a>
+          </div>
         </div>
       </div>
 
@@ -2146,6 +2235,7 @@ function completeAuth(p){
   if(p==='c'){
     if(typeof upsertClientProfile==='function') upsertClientProfile();
     if(typeof listenClientProfile==='function') listenClientProfile();
+    if(typeof updateInviteUI==='function') updateInviteUI();
     resetClientFlow();
     if(typeof tryRestoreActiveRide==='function') tryRestoreActiveRide();
   } else { resetDriverFlow(); }
@@ -2508,7 +2598,14 @@ const LANG_DICT = {
   home_subtitle: { pt:'Para onde vai hoje?', en:'Where are you headed today?', es:'¿A dónde vas hoy?' },
   chip_airport_lisbon: { pt:'Aeroporto Lisboa', en:'Lisbon Airport', es:'Aeropuerto Lisboa' },
   chip_airport_porto: { pt:'Aeroporto Porto', en:'Porto Airport', es:'Aeropuerto Oporto' },
-  btn_request_ride: { pt:'Pedir viagem', en:'Request ride', es:'Pedir viaje' }
+  btn_request_ride: { pt:'Pedir viagem', en:'Request ride', es:'Pedir viaje' },
+  social_instagram: { pt:'Instagram', en:'Instagram', es:'Instagram' },
+  social_facebook: { pt:'Facebook', en:'Facebook', es:'Facebook' },
+  social_spotify: { pt:'Spotify', en:'Spotify', es:'Spotify' },
+  social_whatsapp: { pt:'WhatsApp', en:'WhatsApp', es:'WhatsApp' },
+  invite_title: { pt:'Convida amigos, ganha 5€', en:'Invite friends, earn €5', es:'Invita amigos, gana 5€' },
+  invite_sub: { pt:'Cada amigo que se registar e fizer a 1ª viagem dá-te 5€ de crédito (até 2 amigos).', en:'Each friend who signs up and completes their 1st ride gives you €5 credit (up to 2 friends).', es:'Cada amigo que se registre y complete su 1ª viaje te da 5€ de crédito (hasta 2 amigos).' },
+  invite_share_btn: { pt:'Partilhar convite', en:'Share invite', es:'Compartir invitación' }
 };
 let currentLang = 'pt';
 function setLanguage(lang){
@@ -2564,6 +2661,10 @@ const STRIPE_PUBLISHABLE_KEY = 'pk_live_51LzS4GGvTv5FeVcivmRKG7lS1sBOluHfuyniDyk
 const CREATE_PAYMENT_INTENT_URL = 'https://us-central1-lux-transfers-47cb2.cloudfunctions.net/createPaymentIntent';
 // TODO: substitui pelo URL real da tua Cloud Function que cria o SetupIntent (guardar cartão sem cobrar).
 const CREATE_SETUP_INTENT_URL = 'https://us-central1-lux-transfers-47cb2.cloudfunctions.net/createSetupIntent';
+// Debita crédito de convites (ver "Convidar amigos") de forma atómica no
+// backend — é a única forma permitida de reduzir "credits", nunca escrita
+// direta do frontend (bloqueada nas regras do Firestore).
+const CONSUME_CLIENT_CREDITS_URL = 'https://us-central1-lux-transfers-47cb2.cloudfunctions.net/consumeClientCredits';
 
 let stripeInstance = null;
 let cardElements = { c:null, d:null };
@@ -2788,17 +2889,91 @@ function sanitizeSessionKey(str){
 function clientDocId(email){
   return sanitizeSessionKey(email);
 }
+/* ===================== CONVIDAR AMIGOS (referral) =====================
+   Cada cliente tem um referralCode próprio, gerado uma única vez (na
+   primeira gravação do perfil). Se a app for aberta com ?ref=CODIGO, o
+   código fica guardado em localStorage até o registo/login terminar — só
+   nesse momento (upsertClientProfile, e só se o documento for novo) é que
+   gravamos referredBy no novo cliente. A recompensa (5€ para cada lado) só é
+   atribuída pela Cloud Function rewardReferralOnFirstRide, na 1ª viagem paga
+   do convidado — nunca aqui no frontend — e credits/referralCount/
+   referralRewarded ficam bloqueados a escrita direta do cliente nas regras
+   do Firestore (só a Cloud Function, com Admin SDK, os pode alterar). */
+const REFERRAL_PENDING_KEY = 'lux-pending-ref';
+function generateReferralCode(email){
+  const base = (email||'').split('@')[0].replace(/[^a-zA-Z0-9]/g,'').toUpperCase().slice(0,5) || 'LUX';
+  const rand = Math.random().toString(36).slice(2,6).toUpperCase();
+  return base + rand;
+}
+function captureReferralParam(){
+  try{
+    const params = new URLSearchParams(window.location.search);
+    const ref = (params.get('ref')||'').trim().toUpperCase();
+    if(ref){
+      localStorage.setItem(REFERRAL_PENDING_KEY, ref);
+      history.replaceState({}, '', window.location.pathname);
+    }
+  }catch(e){}
+}
+function referralLinkFor(code){
+  return 'https://lux-cliente.luxtransfers.pt/lux-cliente.html?ref=' + encodeURIComponent(code);
+}
+async function shareReferralLink(){
+  const code = currentUser.c && currentUser.c.referralCode;
+  if(!code){ toast('c-home', 'Inicia sessão para obteres o teu link de convite.'); return; }
+  const url = referralLinkFor(code);
+  const text = 'Experimenta a Lux Transfers comigo — regista-te com o meu link e ganhamos os dois 5€ de crédito na tua primeira viagem: ' + url;
+  try{
+    if(navigator.share){ await navigator.share({ title:'Lux Transfers', text, url }); return; }
+  }catch(e){ /* utilizador cancelou a partilha — sem erro */ return; }
+  try{
+    await navigator.clipboard.writeText(url);
+    toast('c-home', 'Link de convite copiado!');
+  }catch(e){ toast('c-home', url); }
+}
+function updateInviteUI(){
+  const credits = (currentUser.c && typeof currentUser.c.credits === 'number') ? currentUser.c.credits : 0;
+  const count = (currentUser.c && typeof currentUser.c.referralCount === 'number') ? currentUser.c.referralCount : 0;
+  const line = document.getElementById('c-invite-credits-line');
+  if(line) line.textContent = 'Crédito disponível: ' + fmtEur(credits) + ' · ' + Math.min(count,2) + '/2 amigos convidados';
+  const d1 = document.getElementById('c-invite-dot-1');
+  const d2 = document.getElementById('c-invite-dot-2');
+  if(d1) d1.classList.toggle('filled', count>=1);
+  if(d2) d2.classList.toggle('filled', count>=2);
+}
 async function upsertClientProfile(){
   const db = initFirestore();
   if(!db || !currentUser.c || !currentUser.c.email) return;
   try{
     const id = clientDocId(currentUser.c.email);
-    await db.collection('clients').doc(id).set({
+    const ref = db.collection('clients').doc(id);
+    const snap = await ref.get();
+    const isNew = !snap.exists;
+    const payload = {
       name: currentUser.c.name || '',
       email: currentUser.c.email,
       phone: currentUser.c.phone || '',
       updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-    }, { merge:true });
+    };
+    if(isNew){
+      payload.referralCode = generateReferralCode(currentUser.c.email);
+      payload.credits = 0;
+      payload.referralCount = 0;
+      payload.createdAt = firebase.firestore.FieldValue.serverTimestamp();
+      let pendingRef = null;
+      try{ pendingRef = (localStorage.getItem(REFERRAL_PENDING_KEY)||'').trim().toUpperCase(); }catch(e){}
+      if(pendingRef && pendingRef !== payload.referralCode){
+        payload.referredBy = pendingRef;
+        payload.referralRewarded = false;
+      }
+    }
+    await ref.set(payload, { merge:true });
+    try{ localStorage.removeItem(REFERRAL_PENDING_KEY); }catch(e){}
+    if(isNew){
+      currentUser.c.referralCode = payload.referralCode;
+      currentUser.c.credits = 0;
+      currentUser.c.referralCount = 0;
+    }
   }catch(e){ console.warn('Falha ao gravar perfil do cliente:', e); }
 }
 let clientProfileUnsub = null;
@@ -2813,11 +2988,49 @@ function listenClientProfile(){
     let changed = false;
     if(data.name && data.name !== currentUser.c.name){ currentUser.c.name = data.name; changed = true; }
     if(data.phone && data.phone !== currentUser.c.phone){ currentUser.c.phone = data.phone; changed = true; }
+    if(data.referralCode && data.referralCode !== currentUser.c.referralCode){ currentUser.c.referralCode = data.referralCode; changed = true; }
+    if(typeof data.credits === 'number' && data.credits !== currentUser.c.credits){ currentUser.c.credits = data.credits; changed = true; }
+    if(typeof data.referralCount === 'number' && data.referralCount !== currentUser.c.referralCount){ currentUser.c.referralCount = data.referralCount; changed = true; }
     if(changed){
       if(typeof updateSettingsUI==='function') updateSettingsUI('c');
+      if(typeof updateInviteUI==='function') updateInviteUI();
       saveSession('c');
     }
   }, function(e){ console.warn('Falha ao ouvir perfil do cliente:', e); });
+}
+/* Sheet inicial deslizante (como Uber/Bolt): toca ou arrasta a pega para
+   revelar o conteúdo extra (redes sociais + convite de amigos) por baixo do
+   botão "Pedir viagem". Usa transição CSS de max-height em vez de um drag
+   por transform — mais simples e sem risco de o dedo "perder" o gesto. */
+function initHomeSheetDrag(){
+  const sheet = document.getElementById('c-home-sheet');
+  const handle = document.getElementById('c-home-sheet-handle');
+  if(!sheet || !handle || sheet.dataset.dragBound) return;
+  sheet.dataset.dragBound = '1';
+  let startY = 0, dragging = false, moved = false;
+  function setExpanded(val){
+    sheet.classList.toggle('expanded', val);
+    if(val && typeof updateInviteUI==='function') updateInviteUI();
+  }
+  function onStart(e){
+    dragging = true; moved = false;
+    startY = (e.touches ? e.touches[0].clientY : e.clientY);
+  }
+  function onMove(e){
+    if(!dragging) return;
+    const y = (e.touches ? e.touches[0].clientY : e.clientY);
+    const delta = y - startY;
+    if(delta < -16 && !sheet.classList.contains('expanded')){ setExpanded(true); dragging=false; moved=true; }
+    else if(delta > 16 && sheet.classList.contains('expanded')){ setExpanded(false); dragging=false; moved=true; }
+  }
+  function onEnd(){ dragging = false; }
+  handle.addEventListener('touchstart', onStart, { passive:true });
+  handle.addEventListener('touchmove', onMove, { passive:true });
+  handle.addEventListener('touchend', onEnd);
+  handle.addEventListener('mousedown', onStart);
+  window.addEventListener('mousemove', onMove);
+  window.addEventListener('mouseup', onEnd);
+  handle.addEventListener('click', function(){ if(!moved) setExpanded(!sheet.classList.contains('expanded')); });
 }
 function newSessionId(){
   try{ return crypto.randomUUID(); }catch(e){ return Date.now()+'-'+Math.random().toString(36).slice(2); }
@@ -3950,6 +4163,25 @@ function cancelAcceptedRide(){
   toast('c-home', cancelFee>0 ? ('Viagem cancelada — taxa de ' + fmtEur(cancelFee) + ' aplicada, resto reembolsado') : 'Viagem cancelada sem custo — reembolso total a caminho');
   goTo('c-home');
 }
+/* Debita o crédito de convites (currentUser.c.credits) no backend — nunca
+   escrito diretamente no Firestore pelo cliente. Devolve true/false. */
+async function consumeClientCredits(email, amount){
+  if(!(amount > 0)) return true;
+  try{
+    const resp = await fetch(CONSUME_CLIENT_CREDITS_URL, {
+      method:'POST',
+      headers:{ 'Content-Type':'application/json' },
+      body: JSON.stringify({ email, amount })
+    });
+    const data = await resp.json();
+    if(data && data.ok){
+      if(currentUser.c) currentUser.c.credits = data.newCredits;
+      if(typeof updateInviteUI==='function') updateInviteUI();
+      return true;
+    }
+    return false;
+  }catch(e){ return false; }
+}
 function payThenRequestRide(){
   // Só se chama (pede) um motorista real depois de o pagamento da tarifa
   // estimada ser aprovado — nunca antes. Se o pagamento falhar ou for
@@ -3958,14 +4190,28 @@ function payThenRequestRide(){
   // "Agora", a corrida fica reservada (status:'scheduled') em vez de ir já
   // para o despacho de motoristas — ver scheduleRideForLater().
   if(!selectedVehicle) return;
+  // Aplica o crédito de convites (até ao valor da viagem) como desconto —
+  // debitado primeiro no backend; só depois se cobra o resto (se sobrar
+  // algum) via Stripe. Se não sobrar nada a pagar, salta o Stripe.
+  const availableCredits = (currentUser.c && typeof currentUser.c.credits === 'number') ? currentUser.c.credits : 0;
+  const creditsToUse = unlimitedAccount.c ? 0 : Math.max(0, Math.min(availableCredits, selectedVehicle.price));
+  const amountDue = round2(selectedVehicle.price - creditsToUse);
+  async function afterCreditsApplied(onPaid){
+    if(creditsToUse > 0){
+      const ok = await consumeClientCredits(currentUser.c.email, creditsToUse);
+      if(!ok){ toast('c-vehicles', 'Não foi possível aplicar o crédito de convites — tenta novamente.'); return; }
+    }
+    if(amountDue <= 0){ onPaid(null); return; }
+    openPayment('c', amountDue, onPaid);
+  }
   if(rideTiming === 'later'){
     if(!scheduledForDate){ toast('c-vehicles', 'Escolhe uma data/hora válida para a reserva.'); return; }
     if(unlimitedAccount.c){ scheduleRideForLater(null); return; }
-    openPayment('c', selectedVehicle.price, function(pi){ scheduleRideForLater(pi && pi.id ? pi.id : null); });
+    afterCreditsApplied(function(pi){ scheduleRideForLater(pi && pi.id ? pi.id : null); });
     return;
   }
   if(unlimitedAccount.c){ startMatching(null); return; }
-  openPayment('c', selectedVehicle.price, function(pi){ startMatching(pi && pi.id ? pi.id : null); });
+  afterCreditsApplied(function(pi){ startMatching(pi && pi.id ? pi.id : null); });
 }
 /* ===================== DISTRITO (reverse geocoding) =====================
    Usado apenas para RESERVAS (viagens agendadas): em vez do raio de 20km
@@ -4184,6 +4430,7 @@ async function startMatching(paymentIntentId){
     offeredDriverIds: [],
     declinedDriverIds: [],
     vehicleId: selectedVehicle.id, vehicleName: selectedVehicle.model || selectedVehicle.name,
+    vehicleBase: selectedVehicle.base,
     price: selectedVehicle.price,
     paymentIntentId: paymentIntentId || null,
     createdAt: firebase.firestore.FieldValue.serverTimestamp(),
@@ -4245,6 +4492,7 @@ async function scheduleRideForLater(paymentIntentId){
     offeredDriverIds: [],
     declinedDriverIds: [],
     vehicleId: selectedVehicle.id, vehicleName: selectedVehicle.model || selectedVehicle.name,
+    vehicleBase: selectedVehicle.base,
     price: selectedVehicle.price,
     paymentIntentId: paymentIntentId || null,
     createdAt: firebase.firestore.FieldValue.serverTimestamp(),
@@ -4741,6 +4989,8 @@ function finishClientTrip(){
 /* init */
 renderVehicleList();
 initClientApp();
+if(typeof captureReferralParam==='function') captureReferralParam();
+if(typeof initHomeSheetDrag==='function') initHomeSheetDrag();
 if(typeof handleIncomingPasswordResetLink==='function') handleIncomingPasswordResetLink();
 // Verifica reservas por ativar a cada minuto, enquanto a app estiver aberta.
 if(typeof checkMyScheduledRides === 'function') setInterval(checkMyScheduledRides, 60000);
