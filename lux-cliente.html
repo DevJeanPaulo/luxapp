@@ -673,6 +673,59 @@
   .cancel-alert-msg{ color:var(--text); font-size:13.5px; line-height:1.55; margin:0 0 22px; }
   .cancel-alert-card .btn{ background:#e53935; color:#fff; }
   .cancel-alert-card .btn:active{ background:#c62828; }
+
+  /* Botão SOS flutuante — sempre acessível (exceto nos ecrãs de
+     autenticação), canto inferior esquerdo, para nunca colidir com o
+     ride-float-widget ou outros elementos do lado direito. */
+  .sos-btn{
+    position:absolute; left:16px; bottom:calc(16px + var(--safe-bottom));
+    width:52px; height:52px; border-radius:50%;
+    background:#e53935; border:2px solid rgba(255,255,255,.22);
+    box-shadow:0 8px 20px rgba(229,57,53,.5), 0 4px 14px rgba(0,0,0,.4);
+    display:flex; align-items:center; justify-content:center;
+    font-size:22px; cursor:pointer; z-index:97;
+    transition:transform .15s ease;
+  }
+  .sos-btn:active{ transform:scale(.9); }
+  .sos-btn.hide{ display:none; }
+  .sos-menu-overlay{
+    position:absolute; inset:0; background:rgba(0,0,0,.65); z-index:99;
+    display:none; align-items:flex-end; justify-content:center;
+    padding:0 16px calc(16px + var(--safe-bottom));
+  }
+  .sos-menu-overlay.show{ display:flex; }
+  .sos-menu-card{
+    width:100%; max-width:360px; background:var(--panel); border-radius:24px 24px 0 0;
+    padding:20px 18px calc(18px + var(--safe-bottom)); border-top:1px solid #e53935;
+    box-shadow:0 -16px 44px rgba(0,0,0,.5);
+  }
+  .sos-menu-title{ font-size:15px; font-weight:800; color:#e53935; text-align:center; margin:0 0 4px; }
+  .sos-menu-sub{ font-size:12px; color:var(--muted); text-align:center; margin:0 0 16px; line-height:1.5; }
+  .sos-menu-btn{
+    width:100%; display:flex; align-items:center; gap:12px; padding:14px 16px;
+    border-radius:14px; background:var(--panel2); border:1px solid var(--line);
+    margin-bottom:10px; cursor:pointer; text-align:left;
+  }
+  .sos-menu-btn .ic{ font-size:22px; flex-shrink:0; }
+  .sos-menu-btn .txt{ font-size:13.5px; font-weight:700; color:var(--text); }
+  .sos-menu-btn.danger{ border-color:#e53935; background:rgba(229,57,53,.12); }
+  .sos-menu-btn.danger .txt{ color:#e53935; }
+  .sos-menu-cancel{
+    width:100%; text-align:center; padding:12px; margin-top:2px; background:transparent; border:none;
+    color:var(--muted); font-size:13px; font-weight:600; cursor:pointer;
+  }
+
+  /* Botão flutuante "Partilhar viagem" — canto superior direito do mapa
+     de acompanhamento (ecrãs "motorista a caminho" e "em viagem"). */
+  .share-ride-btn{
+    position:absolute; top:14px; right:14px; z-index:20;
+    display:flex; align-items:center; gap:7px;
+    background:var(--panel2); border:1px solid var(--gold); border-radius:999px;
+    padding:9px 14px 9px 11px; box-shadow:0 8px 20px rgba(0,0,0,.45);
+    cursor:pointer; font-size:12.5px; font-weight:700; color:var(--text);
+  }
+  .share-ride-btn:active{ transform:scale(.96); }
+  .share-ride-btn .ic{ font-size:16px; }
   .chat-overlay{
     position:absolute; inset:0; background:var(--bg); z-index:90;
     display:none; flex-direction:column;
@@ -1364,6 +1417,7 @@
         <div class="map" id="map-found">
           <svg id="svg-route-found"></svg>
           <div class="car-marker" id="car-found">🚙</div>
+          <div class="share-ride-btn" onclick="shareRide()"><span class="ic">📤</span>Partilhar</div>
         </div>
         <div class="sheet">
           <div class="sheet-handle"></div>
@@ -1408,6 +1462,7 @@
         <div class="map" id="map-trip">
           <svg id="svg-route-trip"></svg>
           <div class="car-marker" id="car-trip">🚙</div>
+          <div class="share-ride-btn" onclick="shareRide()"><span class="ic">📤</span>Partilhar</div>
         </div>
         <div class="sheet">
           <div class="sheet-handle"></div>
@@ -1554,6 +1609,21 @@
         </div>
       </div>
 
+      <div class="sos-btn" id="sos-btn" onclick="openSosMenu()">🆘</div>
+      <div class="sos-menu-overlay" id="sos-menu-overlay" onclick="if(event.target===this) closeSosMenu()">
+        <div class="sos-menu-card">
+          <h1 class="sos-menu-title">Precisas de ajuda?</h1>
+          <p class="sos-menu-sub">Em caso de perigo imediato, liga sempre primeiro para o 112.</p>
+          <div class="sos-menu-btn danger" onclick="callEmergency()">
+            <span class="ic">🚨</span><span class="txt">Ligar 112 (Emergência)</span>
+          </div>
+          <div class="sos-menu-btn" onclick="shareSosLocation()">
+            <span class="ic">📍</span><span class="txt">Partilhar a minha localização ao vivo</span>
+          </div>
+          <button class="sos-menu-cancel" onclick="closeSosMenu()">Cancelar</button>
+        </div>
+      </div>
+
     </div>
 </div>
 <script>
@@ -1564,6 +1634,7 @@ function goTo(screenId){
   });
   document.getElementById(screenId).classList.add('active');
   if(screenId === 'c-home') updateHomeGreeting();
+  if(typeof updateSosVisibility === 'function') updateSosVisibility();
 }
 /* Saudação do ecrã inicial: "Olá {primeiro nome}" em vez do antigo texto
    fixo por hora do dia ("Boa noite" sempre, independente da hora real —
@@ -1584,6 +1655,61 @@ function updateHomeGreeting(){
    de um .screen específico), por isso aparece por cima de qualquer ecrã em
    que o cliente esteja — ao contrário do toast, que só é visível dentro do
    ecrã atualmente ativo. */
+/* Botão SOS — sempre visível exceto nos ecrãs de autenticação (ver
+   updateSosVisibility, chamado a partir de goTo()). Ligar 112 é uma ação
+   direta (tel:); a partilha de localização usa o seletor de contactos do
+   próprio WhatsApp (wa.me sem número), para não depender de guardar um
+   contacto de emergência no perfil. */
+function openSosMenu(){
+  const el = document.getElementById('sos-menu-overlay');
+  if(el) el.classList.add('show');
+}
+function closeSosMenu(){
+  const el = document.getElementById('sos-menu-overlay');
+  if(el) el.classList.remove('show');
+}
+function callEmergency(){
+  window.location.href = 'tel:112';
+}
+function shareSosLocation(){
+  closeSosMenu();
+  const openWhatsapp = function(msg){
+    window.open('https://wa.me/?text=' + encodeURIComponent(msg), '_blank');
+  };
+  if(navigator.geolocation){
+    navigator.geolocation.getCurrentPosition(function(pos){
+      const mapsUrl = 'https://www.google.com/maps?q=' + pos.coords.latitude + ',' + pos.coords.longitude;
+      openWhatsapp('🆘 Preciso de ajuda. Esta é a minha localização atual: ' + mapsUrl + ' (partilhado via app Lux Transfers)');
+    }, function(){
+      openWhatsapp('🆘 Preciso de ajuda. Não consegui obter a minha localização exata — por favor contacta-me. (partilhado via app Lux Transfers)');
+    }, { enableHighAccuracy:true, timeout:8000 });
+  } else {
+    openWhatsapp('🆘 Preciso de ajuda. (partilhado via app Lux Transfers)');
+  }
+}
+function updateSosVisibility(){
+  const btn = document.getElementById('sos-btn');
+  if(!btn) return;
+  const sid = currentScreenId();
+  btn.classList.toggle('hide', !!(sid && sid.indexOf('c-auth-') === 0));
+}
+/* Partilhar viagem via WhatsApp — texto com motorista/veículo/destino +
+   link público de acompanhamento ao vivo (acompanhar.html, sem login; o
+   próprio ID da corrida funciona como o "token" de acesso, tal como o
+   Uber/Bolt fazem nas suas partilhas de viagem). */
+function shareRide(){
+  if(!currentRideId || !currentRide){
+    toast(currentScreenId() || 'c-found', 'Ainda não há viagem para partilhar.');
+    return;
+  }
+  const driverName = currentRide.driverName || 'o motorista';
+  const vLabel = [currentRide.vehicleBrand, currentRide.vehicleModel].filter(Boolean).join(' ') || currentRide.vehicleName || 'veículo Lux';
+  const plate = currentRide.vehiclePlate ? (' (' + currentRide.vehiclePlate + ')') : '';
+  const dest = currentRide.destination ? (' até ' + currentRide.destination) : '';
+  const trackUrl = 'https://luxtransfers.pt/acompanhar.html?id=' + encodeURIComponent(currentRideId);
+  const msg = '🚗 Estou numa viagem Lux Transfers com ' + driverName + ', em ' + vLabel + plate + dest + '. Acompanha em tempo real: ' + trackUrl;
+  window.open('https://wa.me/?text=' + encodeURIComponent(msg), '_blank');
+}
 function showCancelAlertOverlay(title, msg){
   const el = document.getElementById('cancel-alert-overlay');
   if(!el) return;
