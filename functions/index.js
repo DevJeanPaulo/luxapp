@@ -127,6 +127,71 @@ exports.createSetupIntent = onRequest({ secrets: [stripeSecretKey] }, (req, res)
 });
 
 /**
+ * "Corrida Livre" — assinatura mensal (10€/mês) que desbloqueia o taxímetro
+ * do motorista (0,80€/km, cobrado diretamente ao cliente, sem comissão da
+ * Lux Transfers). Cria uma subscrição Stripe recorrente usando o Customer +
+ * cartão já guardados no registo (createSetupIntent), com o preço definido
+ * inline (price_data) — não precisa de nenhum Price ID pré-criado no
+ * dashboard. O estado real da assinatura só é confirmado pelo webhook
+ * (customer.subscription.updated/deleted, ver stripeWebhook), que grava
+ * drivers/{driverId}.freeRideSub — esta função apenas inicia o processo e
+ * devolve o estado imediato da primeira fatura para feedback rápido na app.
+ *
+ * Espera um POST JSON: { customerId: "cus_...", driverId: "..." }
+ * Devolve: { active, status, currentPeriodEnd (unix seconds) }
+ */
+const FREE_RIDE_MONTHLY_CENTS = 1000;
+exports.createFreeRideSubscription = onRequest({ secrets: [stripeSecretKey] }, (req, res) => {
+  cors(req, res, async () => {
+    if (req.method !== 'POST') {
+      res.status(405).send('Method Not Allowed');
+      return;
+    }
+    try {
+      const stripe = Stripe(stripeSecretKey.value());
+      const { customerId, driverId } = req.body || {};
+      if (!customerId || !driverId) {
+        res.status(400).json({ error: 'customerId e driverId são obrigatórios.' });
+        return;
+      }
+      const paymentMethods = await stripe.paymentMethods.list({ customer: customerId, type: 'card' });
+      if (!paymentMethods.data.length) {
+        res.status(400).json({ error: 'Sem cartão guardado para esta conta.' });
+        return;
+      }
+      const defaultPm = paymentMethods.data[0].id;
+      const subscription = await stripe.subscriptions.create({
+        customer: customerId,
+        items: [{
+          price_data: {
+            currency: 'eur',
+            product_data: { name: 'Lux Transfers — Corrida Livre (taxímetro sem comissão)' },
+            unit_amount: FREE_RIDE_MONTHLY_CENTS,
+            recurring: { interval: 'month' }
+          }
+        }],
+        default_payment_method: defaultPm,
+        metadata: { type: 'free_ride', driverId },
+        expand: ['latest_invoice.payment_intent']
+      });
+      const active = subscription.status === 'active' || subscription.status === 'trialing';
+      await admin.firestore().collection('drivers').doc(driverId).set({
+        freeRideSub: {
+          active,
+          status: subscription.status,
+          subscriptionId: subscription.id,
+          currentPeriodEnd: admin.firestore.Timestamp.fromMillis(subscription.current_period_end * 1000)
+        }
+      }, { merge: true });
+      res.status(200).json({ active, status: subscription.status, currentPeriodEnd: subscription.current_period_end });
+    } catch (err) {
+      console.error('createFreeRideSubscription falhou:', err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+});
+
+/**
  * Verifica se um login corresponde a uma "conta especial" (acesso ilimitado —
  * saldo infinito para motorista, sem pagamento para cliente) sem NUNCA expor
  * essas credenciais no código do frontend. As credenciais reais só existem
@@ -488,6 +553,28 @@ exports.stripeWebhook = onRequest({ secrets: [stripeSecretKey, stripeWebhookSecr
       const moeda = (session.currency || 'eur').toUpperCase();
       await gerarESalvarFaturaXml({ id, cliente, email, valor, moeda, data: new Date().toISOString() });
       console.log('Fatura XML gerada para', id);
+    }
+    // Mantém drivers/{driverId}.freeRideSub sincronizado com o estado real da
+    // assinatura "Corrida Livre" (10€/mês) — renovação, falha de pagamento ou
+    // cancelamento. Requer que os eventos customer.subscription.updated e
+    // customer.subscription.deleted estejam ativados no endpoint do webhook
+    // (Stripe Dashboard → Developers → Webhooks).
+    if (event.type === 'customer.subscription.updated' || event.type === 'customer.subscription.deleted') {
+      const subscription = event.data.object;
+      const driverId = subscription.metadata && subscription.metadata.type === 'free_ride' ? subscription.metadata.driverId : null;
+      if (driverId) {
+        const active = event.type === 'customer.subscription.updated'
+          && (subscription.status === 'active' || subscription.status === 'trialing');
+        await admin.firestore().collection('drivers').doc(driverId).set({
+          freeRideSub: {
+            active,
+            status: subscription.status,
+            subscriptionId: subscription.id,
+            currentPeriodEnd: admin.firestore.Timestamp.fromMillis(subscription.current_period_end * 1000)
+          }
+        }, { merge: true });
+        console.log('freeRideSub atualizado para', driverId, '→', subscription.status);
+      }
     }
     res.status(200).json({ received: true });
   } catch (err) {

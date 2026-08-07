@@ -1076,6 +1076,37 @@
     border-radius:var(--radius-md); padding:10px 14px; margin:-6px 20px 10px; font-size:12.5px; font-weight:600; color:var(--gold);
   }
   .stops-banner.show{ display:flex; }
+
+  /* ===================== CORRIDA LIVRE (taxímetro sem comissão) ===================== */
+  .icon-btn-freeride{ border-color:var(--gold); box-shadow:0 0 0 3px rgba(255,201,77,.15); }
+  .icon-btn-freeride svg{ width:17px; height:17px; }
+  .taximeter-fare{
+    background:var(--panel2); border:1px solid var(--line); border-radius:var(--radius-md);
+    padding:22px 20px; text-align:center; margin:0 20px 14px;
+  }
+  .taximeter-fare .lbl{ font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.06em; margin-bottom:6px; }
+  .taximeter-fare .amt{ font-size:36px; font-weight:700; color:var(--gold); line-height:1.2; }
+  .taximeter-fare .sub{ font-size:11.5px; color:var(--muted); margin-top:8px; }
+  .taximeter-stats{ display:flex; gap:10px; margin:0 20px 14px; }
+  .taximeter-stat{ flex:1; background:var(--panel2); border:1px solid var(--line); border-radius:var(--radius-sm); padding:10px; text-align:center; }
+  .taximeter-stat .num{ font-size:15px; font-weight:700; }
+  .taximeter-stat .lbl{ font-size:10px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; margin-top:2px; }
+  .taximeter-note{
+    margin:0 20px 18px; padding:10px 12px; border-radius:var(--radius-sm);
+    background:rgba(255,201,77,.08); border:1px solid rgba(255,201,77,.3);
+    font-size:11.5px; color:var(--gold); text-align:center; line-height:1.5;
+  }
+  .freeride-lock{ text-align:center; padding:46px 26px 20px; }
+  .freeride-lock .ic{ font-size:36px; margin-bottom:14px; }
+  .freeride-lock .t{ font-size:17px; font-weight:700; margin-bottom:10px; }
+  .freeride-lock .d{ font-size:13px; color:var(--muted); line-height:1.65; margin-bottom:24px; }
+  .freeride-rate-chip{
+    display:inline-block; margin-bottom:18px; padding:6px 14px; border-radius:20px;
+    background:rgba(255,201,77,.1); border:1px solid rgba(255,201,77,.3); color:var(--gold);
+    font-size:12.5px; font-weight:700;
+  }
+  .freeride-sub-status{ font-size:12px; color:var(--muted); text-align:center; margin:14px 20px 0; }
+
   /* Bloqueio de ações com o veículo em movimento (terminar viagem, iniciar
      parada) — só ficam disponíveis com o carro parado. */
   .disabled-moving{ opacity:.4; pointer-events:none; filter:grayscale(.3); }
@@ -1805,6 +1836,47 @@
         </div>
       </div>
 
+      <!-- CORRIDA LIVRE (taxímetro sem comissão, corridas fora da app) -->
+      <div class="screen" id="d-free-ride">
+        <div class="toast" id="toast-d-free-ride"></div>
+        <div class="topbar">
+          <div class="icon-btn" onclick="closeFreeRide()">←</div>
+          <div class="brand" style="font-size:13px;">CORRIDA LIVRE</div>
+          <div style="width:38px;"></div>
+        </div>
+
+        <!-- Ecrã de bloqueio: sem assinatura ativa -->
+        <div id="freeride-locked" style="display:none;">
+          <div class="freeride-lock">
+            <div class="ic">🚕</div>
+            <div class="t">Corrida livre</div>
+            <div class="d">Liga o taxímetro para corridas apanhadas fora da app. Cobras 0,80€/km diretamente ao cliente — sem qualquer comissão para a Lux Transfers.</div>
+            <div class="freeride-rate-chip">0,80 €/km · 100% para ti</div>
+            <button class="btn btn-gold" id="freeride-subscribe-btn" onclick="subscribeFreeRide()">Assinar por 10€/mês</button>
+            <div class="freeride-sub-status" id="freeride-sub-status"></div>
+          </div>
+        </div>
+
+        <!-- Ecrã do taxímetro: assinatura ativa -->
+        <div id="freeride-active" style="display:none;">
+          <div class="taximeter-fare">
+            <div class="lbl">Valor a cobrar</div>
+            <div class="amt" id="freeride-fare">0,00 €</div>
+            <div class="sub" id="freeride-distance-sub">0,0 km · 0,80 €/km</div>
+          </div>
+          <div class="taximeter-stats">
+            <div class="taximeter-stat"><div class="num" id="freeride-time">00:00</div><div class="lbl">Tempo</div></div>
+            <div class="taximeter-stat"><div class="num" id="freeride-km">0,0 km</div><div class="lbl">Distância</div></div>
+          </div>
+          <div class="taximeter-note">Pago diretamente a ti pelo cliente · sem comissão Lux Transfers</div>
+          <div style="padding:0 20px;">
+            <button class="btn btn-gold" id="freeride-start-btn" onclick="startFreeRideMeter()">Iniciar corrida</button>
+            <button class="btn" style="background:var(--danger); color:#fff; display:none;" id="freeride-stop-btn" onclick="stopFreeRideMeter()">Parar corrida</button>
+          </div>
+          <div class="freeride-sub-status" id="freeride-active-sub-status"></div>
+        </div>
+      </div>
+
       <!-- DOCUMENTOS DO MOTORISTA -->
       <div class="screen" id="d-documents">
         <div class="topbar">
@@ -1957,6 +2029,9 @@
         <div class="topbar">
           <div class="brand"><span style="color:var(--gold);">Lux</span>Driver</div>
           <div style="display:flex; align-items:center; gap:8px;">
+            <div class="icon-btn icon-btn-freeride" onclick="openFreeRide()" title="Corrida livre">
+              <svg viewBox="0 0 24 24" fill="none" stroke="var(--gold)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 13m-1 0a1 1 0 1 0 2 0a1 1 0 1 0 -2 0"></path><path d="M13.45 11.55l2.05 -2.05"></path><path d="M6.4 20a9 9 0 1 1 11.2 0z"></path></svg>
+            </div>
             <div class="icon-btn" onclick="openDriverReservations()" title="Reservas">📅</div>
             <div class="icon-btn" id="d-header-avatar" onclick="goTo('d-settings')">👤</div>
           </div>
@@ -3157,6 +3232,15 @@ function listenDriverProfile(){
       try{ localStorage.setItem('lux-driver-spoken-lang', driverSpokenLang); }catch(e){}
       updateSpokenLangUI();
     }
+    if(data.stripeCustomerId) currentUser.d.stripeCustomerId = data.stripeCustomerId;
+    if(data.freeRideSub && typeof updateFreeRideSubUI==='function'){
+      freeRideSub = {
+        active: !!data.freeRideSub.active,
+        status: data.freeRideSub.status || null,
+        currentPeriodEnd: (data.freeRideSub.currentPeriodEnd && data.freeRideSub.currentPeriodEnd.toMillis) ? data.freeRideSub.currentPeriodEnd.toMillis() : null
+      };
+      updateFreeRideSubUI();
+    }
     let nameOrPhoneChanged = false;
     if(data.name && data.name !== currentUser.d.name){ currentUser.d.name = data.name; nameOrPhoneChanged = true; }
     if(data.phone!=null && data.phone !== currentUser.d.phone){ currentUser.d.phone = data.phone; nameOrPhoneChanged = true; }
@@ -4072,6 +4156,7 @@ async function upsertDriverProfile(){
       vehicleColor: driverVehicle.color || '', vehiclePlate: driverVehicle.plate || '',
       lastLoginAt: firebase.firestore.FieldValue.serverTimestamp()
     };
+    if(currentUser.d.stripeCustomerId) payload.stripeCustomerId = currentUser.d.stripeCustomerId;
     if(userPhoto.d) payload.photoUrl = userPhoto.d;
     if(!snap.exists) payload.registeredAt = firebase.firestore.FieldValue.serverTimestamp();
     await ref.set(payload, { merge:true });
@@ -4089,6 +4174,140 @@ async function recordDriverRecharge(amount){
       createdAt: firebase.firestore.FieldValue.serverTimestamp()
     });
   }catch(e){ console.warn('Não foi possível registar a recarga:', e); }
+}
+
+/* ===================== CORRIDA LIVRE (taxímetro sem comissão) =====================
+   Funcionalidade paga à parte (10€/mês, assinatura Stripe recorrente), para
+   corridas apanhadas fora da app: o motorista liga um taxímetro que cobra
+   0,80€/km em tempo real via GPS. O valor é pago diretamente pelo cliente ao
+   motorista (dinheiro/TPA próprio) — a Lux Transfers não fica com nenhuma
+   comissão desta corrida, só com a mensalidade fixa da assinatura. */
+const FREE_RIDE_RATE_PER_KM = 0.80;
+const CREATE_FREE_RIDE_SUB_URL = 'https://us-central1-lux-transfers-47cb2.cloudfunctions.net/createFreeRideSubscription';
+let freeRideSub = { active:false, status:null, currentPeriodEnd:null };
+let freeRideMeter = { running:false, watchId:null, lastLatLng:null, distanceKm:0, startedAt:null, timerInt:null };
+
+function isFreeRideSubActive(){ return !!(freeRideSub && freeRideSub.active); }
+function updateFreeRideSubUI(){
+  const locked = document.getElementById('freeride-locked');
+  const active = document.getElementById('freeride-active');
+  if(!locked || !active) return;
+  if(isFreeRideSubActive()){
+    locked.style.display = 'none';
+    active.style.display = 'block';
+    const endTxt = freeRideSub.currentPeriodEnd ? new Date(freeRideSub.currentPeriodEnd).toLocaleDateString('pt-PT') : '';
+    const statusEl = document.getElementById('freeride-active-sub-status');
+    if(statusEl) statusEl.textContent = endTxt ? ('Assinatura ativa · renova a ' + endTxt) : 'Assinatura ativa';
+  } else {
+    locked.style.display = 'block';
+    active.style.display = 'none';
+    const statusEl = document.getElementById('freeride-sub-status');
+    if(statusEl) statusEl.textContent = (freeRideSub && freeRideSub.status === 'canceled') ? 'A tua assinatura anterior foi cancelada.' : '';
+  }
+}
+function openFreeRide(){
+  goTo('d-free-ride');
+  updateFreeRideSubUI();
+}
+function closeFreeRide(){
+  if(freeRideMeter.running){
+    toast('d-free-ride', 'Para o taxímetro antes de sair.');
+    return;
+  }
+  goTo('d-home');
+}
+async function subscribeFreeRide(){
+  const btn = document.getElementById('freeride-subscribe-btn');
+  const statusEl = document.getElementById('freeride-sub-status');
+  if(!currentUser.d || !currentUser.d.email) return;
+  if(btn){ btn.disabled = true; btn.textContent = 'A processar…'; }
+  if(statusEl) statusEl.textContent = '';
+  try{
+    let customerId = currentUser.d.stripeCustomerId;
+    if(!customerId){
+      // Contas antigas sem SetupIntent ainda não têm cartão guardado — pede um agora.
+      customerId = await new Promise(function(resolve, reject){
+        openCardSetup('d', function(res){
+          if(res && res.customerId){
+            currentUser.d.stripeCustomerId = res.customerId;
+            resolve(res.customerId);
+          } else {
+            reject(new Error('Cartão não guardado.'));
+          }
+        }, currentUser.d.email, currentUser.d.name);
+      });
+    }
+    const resp = await fetch(CREATE_FREE_RIDE_SUB_URL, {
+      method:'POST', headers:{ 'Content-Type':'application/json' },
+      body: JSON.stringify({ customerId: customerId, driverId: driverDocId(currentUser.d.email) })
+    });
+    const data = await resp.json();
+    if(!resp.ok || data.error) throw new Error(data.error || 'Falha ao criar assinatura.');
+    freeRideSub = { active: data.active !== false, status: data.status, currentPeriodEnd: data.currentPeriodEnd ? data.currentPeriodEnd*1000 : null };
+    updateFreeRideSubUI();
+    toast('d-free-ride', 'Corrida livre ativada!');
+  }catch(e){
+    console.warn('Falha ao assinar Corrida Livre:', e);
+    if(statusEl) statusEl.textContent = 'Não foi possível ativar a assinatura. Tenta novamente.';
+  } finally {
+    if(btn){ btn.disabled = false; btn.textContent = 'Assinar por 10€/mês'; }
+  }
+}
+function fmtFreeRideTime(sec){
+  const m = Math.floor(sec/60), s = sec%60;
+  return String(m).padStart(2,'0') + ':' + String(s).padStart(2,'0');
+}
+function renderFreeRideMeter(){
+  const fare = freeRideMeter.distanceKm * FREE_RIDE_RATE_PER_KM;
+  const fareEl = document.getElementById('freeride-fare');
+  const subEl = document.getElementById('freeride-distance-sub');
+  const kmEl = document.getElementById('freeride-km');
+  if(fareEl) fareEl.textContent = fmtEur(fare);
+  if(subEl) subEl.textContent = freeRideMeter.distanceKm.toFixed(1).replace('.', ',') + ' km · 0,80 €/km';
+  if(kmEl) kmEl.textContent = freeRideMeter.distanceKm.toFixed(1).replace('.', ',') + ' km';
+}
+function startFreeRideMeter(){
+  if(!isFreeRideSubActive() || freeRideMeter.running) return;
+  if(!navigator.geolocation){
+    toast('d-free-ride', 'GPS indisponível neste dispositivo.');
+    return;
+  }
+  freeRideMeter.running = true;
+  freeRideMeter.distanceKm = 0;
+  freeRideMeter.lastLatLng = null;
+  freeRideMeter.startedAt = Date.now();
+  const startBtn = document.getElementById('freeride-start-btn');
+  const stopBtn = document.getElementById('freeride-stop-btn');
+  if(startBtn) startBtn.style.display = 'none';
+  if(stopBtn) stopBtn.style.display = 'block';
+  renderFreeRideMeter();
+  freeRideMeter.timerInt = setInterval(function(){
+    const sec = Math.floor((Date.now() - freeRideMeter.startedAt)/1000);
+    const timeEl = document.getElementById('freeride-time');
+    if(timeEl) timeEl.textContent = fmtFreeRideTime(sec);
+  }, 1000);
+  freeRideMeter.watchId = navigator.geolocation.watchPosition(function(pos){
+    const lat = pos.coords.latitude, lng = pos.coords.longitude;
+    if(freeRideMeter.lastLatLng){
+      const d = haversineKm(freeRideMeter.lastLatLng.lat, freeRideMeter.lastLatLng.lng, lat, lng);
+      // Ignora saltos de GPS irrealistas (>300m entre leituras) para não inflacionar a tarifa parado.
+      if(d > 0 && d < 0.3){ freeRideMeter.distanceKm += d; }
+    }
+    freeRideMeter.lastLatLng = { lat:lat, lng:lng };
+    renderFreeRideMeter();
+  }, function(err){ console.warn('Falha GPS Corrida Livre:', err); }, { enableHighAccuracy:true, maximumAge:2000, timeout:10000 });
+}
+function stopFreeRideMeter(){
+  if(!freeRideMeter.running) return;
+  freeRideMeter.running = false;
+  if(freeRideMeter.watchId !== null){ navigator.geolocation.clearWatch(freeRideMeter.watchId); freeRideMeter.watchId = null; }
+  if(freeRideMeter.timerInt){ clearInterval(freeRideMeter.timerInt); freeRideMeter.timerInt = null; }
+  const startBtn = document.getElementById('freeride-start-btn');
+  const stopBtn = document.getElementById('freeride-stop-btn');
+  if(startBtn) startBtn.style.display = 'block';
+  if(stopBtn) stopBtn.style.display = 'none';
+  const fare = freeRideMeter.distanceKm * FREE_RIDE_RATE_PER_KM;
+  toast('d-free-ride', 'Corrida terminada: ' + fmtEur(fare) + ' a cobrar.');
 }
 
 /* ===================== PERFIL REAL DO CLIENTE + CONVIDAR AMIGOS =====================
