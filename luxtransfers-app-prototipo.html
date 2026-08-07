@@ -778,6 +778,15 @@
     align-self:flex-start; background:var(--panel2); color:var(--text); border-bottom-left-radius:4px;
     border:1px solid var(--line);
   }
+  .chat-bubble-translated{
+    margin-top:6px; padding-top:6px; border-top:1px dashed rgba(0,0,0,.18);
+    font-size:12.5px; font-style:italic; opacity:.85;
+  }
+  .chat-bubble.theirs .chat-bubble-translated{ border-top-color:var(--line); }
+  .lang-select{
+    background:var(--panel3); color:var(--text); border:1px solid var(--line); border-radius:10px;
+    padding:7px 10px; font-size:13px; font-weight:600; cursor:pointer;
+  }
   .chat-empty{
     text-align:center; color:var(--muted); font-size:13px; margin-top:30px; padding:0 24px;
   }
@@ -1889,6 +1898,16 @@
             </div>
           </div>
           <div class="settings-row">
+            <span class="s-lbl">Idioma que falo</span>
+            <select id="d-spoken-lang-select" class="lang-select" onchange="setDriverSpokenLanguage(this.value)">
+              <option value="pt">Português</option>
+              <option value="en">English</option>
+              <option value="es">Español</option>
+              <option value="fr">Français</option>
+              <option value="de">Deutsch</option>
+            </select>
+          </div>
+          <div class="settings-row">
             <span class="s-lbl" data-i18n="lbl_theme">Tema</span>
             <div class="theme-switcher" id="d-theme-switcher">
               <button data-t="dark" data-i18n="theme_dark" onclick="setTheme('dark','d')">Escuro</button>
@@ -2886,6 +2905,32 @@ function loadDriverVehicle(){
     if(v) driverVehicle = Object.assign(driverVehicle, JSON.parse(v));
   }catch(e){}
 }
+/* ===================== IDIOMA FALADO (LuxTranslator) =====================
+   Distinto do idioma da INTERFACE da app (setLanguage/currentLang). Guardado
+   em drivers/{id}.spokenLanguage e usado pela Cloud Function
+   translateChatMessage para saber para que idioma traduzir o chat. */
+let driverSpokenLang = 'pt';
+function updateSpokenLangUI(){
+  const sel = document.getElementById('d-spoken-lang-select');
+  if(sel) sel.value = driverSpokenLang;
+}
+async function setDriverSpokenLanguage(lang){
+  driverSpokenLang = lang;
+  try{ localStorage.setItem('lux-driver-spoken-lang', lang); }catch(e){}
+  const db = initFirestore();
+  if(!db || !currentUser.d || !currentUser.d.email) return;
+  try{
+    const id = driverDocId(currentUser.d.email);
+    await db.collection('drivers').doc(id).set({ spokenLanguage: lang }, { merge:true });
+    toast('d-settings', 'Idioma falado atualizado');
+  }catch(e){ console.warn('Falha ao guardar idioma falado:', e); }
+}
+function loadDriverSpokenLangLocal(){
+  try{
+    const v = localStorage.getItem('lux-driver-spoken-lang');
+    if(v) driverSpokenLang = v;
+  }catch(e){}
+}
 function saveDriverVehicleLocal(){
   try{ localStorage.setItem('lux-driver-vehicle', JSON.stringify(driverVehicle)); }catch(e){}
 }
@@ -3106,6 +3151,11 @@ function listenDriverProfile(){
     if(typeof data.balance === 'number' && !unlimitedAccount.d && data.balance !== driverBalance){
       driverBalance = data.balance;
       renderBalanceUI();
+    }
+    if(data.spokenLanguage && data.spokenLanguage !== driverSpokenLang){
+      driverSpokenLang = data.spokenLanguage;
+      try{ localStorage.setItem('lux-driver-spoken-lang', driverSpokenLang); }catch(e){}
+      updateSpokenLangUI();
     }
     let nameOrPhoneChanged = false;
     if(data.name && data.name !== currentUser.d.name){ currentUser.d.name = data.name; nameOrPhoneChanged = true; }
@@ -3767,6 +3817,8 @@ function initDriverApp(){ goTo('d-auth-welcome'); }
   loadUserPhotos();
   loadDriverVehicle();
   updateVehicleSettingsUI();
+  loadDriverSpokenLangLocal();
+  updateSpokenLangUI();
   updateSettingsUI('c'); updateSettingsUI('d');
   /* Adiado com setTimeout: garante que todo o script (incluindo variáveis
      declaradas mais abaixo, como VEHICLES/selectedVehicle ou o estado do
@@ -5563,6 +5615,7 @@ async function startMatching(paymentIntentId){
   col.add({
     status: 'searching',
     clientName: u.name, clientPhone: u.phone,
+    clientLang: currentLang || 'pt',
     origin: originValNow,
     destination: destValNow,
     pickupLat: pickupLatLng ? pickupLatLng.lat : null,
@@ -5624,6 +5677,7 @@ async function scheduleRideForLater(paymentIntentId){
     status: 'scheduled',
     scheduledFor: scheduledForTs,
     clientName: u.name, clientPhone: u.phone, clientEmail: u.email || null,
+    clientLang: currentLang || 'pt',
     origin: originValNow,
     destination: destValNow,
     pickupLat: pickupLatLng ? pickupLatLng.lat : null,
@@ -6397,6 +6451,12 @@ function openClientChat(){
         const el = document.createElement('div');
         el.className = 'chat-bubble ' + (m.sender === 'client' ? 'mine' : 'theirs');
         el.textContent = m.text || '';
+        if(m.translatedText && m.translatedText !== m.text){
+          const tr = document.createElement('div');
+          tr.className = 'chat-bubble-translated';
+          tr.textContent = '🌐 ' + m.translatedText;
+          el.appendChild(tr);
+        }
         list.appendChild(el);
       });
     }
@@ -6982,6 +7042,12 @@ function openDriverChat(){
         const el = document.createElement('div');
         el.className = 'chat-bubble ' + (m.sender === 'driver' ? 'mine' : 'theirs');
         el.textContent = m.text || '';
+        if(m.translatedText && m.translatedText !== m.text){
+          const tr = document.createElement('div');
+          tr.className = 'chat-bubble-translated';
+          tr.textContent = '🌐 ' + m.translatedText;
+          el.appendChild(tr);
+        }
         list.appendChild(el);
       });
     }

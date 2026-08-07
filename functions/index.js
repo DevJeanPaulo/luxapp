@@ -12,12 +12,13 @@
  */
 
 const { onRequest } = require('firebase-functions/v2/https');
-const { onDocumentUpdated } = require('firebase-functions/v2/firestore');
+const { onDocumentUpdated, onDocumentCreated } = require('firebase-functions/v2/firestore');
 const { onSchedule } = require('firebase-functions/v2/scheduler');
 const { defineSecret } = require('firebase-functions/params');
 const admin = require('firebase-admin');
 const Stripe = require('stripe');
 const cors = require('cors')({ origin: true });
+const { Translate } = require('@google-cloud/translate').v2;
 
 admin.initializeApp();
 
@@ -781,6 +782,61 @@ async function advanceRideOfferServer(db, rideId, rideData) {
     console.warn('dispatchScheduledRides: falha ao atribuir motorista à corrida', rideId, e);
   }
 }
+
+/**
+ * ===================== LUXTRANSLATOR (chat cliente ↔ motorista) =====================
+ * Traduz automaticamente cada mensagem nova de rides/{rideId}/messages para o
+ * idioma do OUTRO lado da conversa, e grava o resultado no próprio documento
+ * da mensagem (translatedText/translatedLang). O frontend (lux-cliente.html
+ * e luxdriver-motorista.html) mostra sempre o texto original, e por baixo,
+ * se existir, a tradução — sem esconder nunca a mensagem tal como foi escrita.
+ *
+ * De onde vem cada idioma:
+ *   - Cliente: campo clientLang gravado no documento da corrida na criação
+ *     (currentLang da app cliente no momento do pedido).
+ *   - Motorista: campo spokenLanguage em drivers/{driverId} — configurável
+ *     em "Definições > Idioma que falo", DISTINTO do idioma da interface da
+ *     app (que só traduz botões/labels e não diz nada sobre que língua o
+ *     motorista efetivamente fala com o cliente).
+ *
+ * Usa as credenciais automáticas da Cloud Function (Application Default
+ * Credentials) — não precisa de nenhuma chave de API: basta a Cloud
+ * Translation API estar ativada no projeto Google Cloud (translate.googleapis.com).
+ */
+const translateClient = new Translate();
+const LUXTRANSLATOR_SUPPORTED_LANGS = ['pt', 'en', 'es', 'fr', 'de'];
+function luxTranslatorNormalizeLang(lang) {
+  const l = String(lang || 'pt').toLowerCase().slice(0, 2);
+  return LUXTRANSLATOR_SUPPORTED_LANGS.includes(l) ? l : 'pt';
+}
+exports.translateChatMessage = onDocumentCreated('rides/{rideId}/messages/{messageId}', async (event) => {
+  const snap = event.data;
+  if (!snap) return;
+  const msg = snap.data();
+  if (!msg || !msg.text || msg.translatedText) return;
+  const db = admin.firestore();
+  const rideId = event.params.rideId;
+  try {
+    const rideSnap = await db.collection('rides').doc(rideId).get();
+    const ride = rideSnap.exists ? rideSnap.data() : {};
+    const clientLang = luxTranslatorNormalizeLang(ride.clientLang);
+    let driverLang = 'pt';
+    const driverId = ride.driverId;
+    if (driverId) {
+      const driverSnap = await db.collection('drivers').doc(driverId).get();
+      if (driverSnap.exists) driverLang = luxTranslatorNormalizeLang(driverSnap.data().spokenLanguage);
+    }
+    const sourceLang = msg.sender === 'driver' ? driverLang : clientLang;
+    const targetLang = msg.sender === 'driver' ? clientLang : driverLang;
+    if (!targetLang || sourceLang === targetLang) return;
+    const [translation] = await translateClient.translate(msg.text, { from: sourceLang, to: targetLang });
+    if (translation && translation !== msg.text) {
+      await snap.ref.set({ translatedText: translation, translatedLang: targetLang }, { merge: true });
+    }
+  } catch (e) {
+    console.warn('translateChatMessage: falha ao traduzir mensagem da corrida', rideId, e);
+  }
+});
 
 exports.dispatchScheduledRides = onSchedule('every 1 minutes', async () => {
   const db = admin.firestore();
