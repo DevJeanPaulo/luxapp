@@ -973,7 +973,7 @@
     text-align:center; background:var(--panel2); border:1px solid var(--line);
     border-radius:var(--radius-md); padding:22px 16px; margin-bottom:14px; transition:border-color .3s ease;
   }
-  .wait-timer-box .time{ font-size:38px; font-weight:700; color:var(--gold); font-variant-numeric:tabular-nums; letter-spacing:.02em; }
+  .wait-timer-box .time{ font-size:38px; font-weight:700; color:var(--success); font-variant-numeric:tabular-nums; letter-spacing:.02em; }
   .wait-timer-box .lbl{ font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.06em; margin-top:6px; }
   .wait-timer-box.expired{ border-color:var(--danger); }
   .wait-timer-box.expired .time{ color:var(--danger); }
@@ -1378,6 +1378,10 @@
             </div>
           </div>
           <div id="pickup-eta-msg" style="font-size:12px; color:var(--muted); margin:-6px 0 10px;"></div>
+          <div class="wait-timer-box" id="wait-timer-box" style="display:none;">
+            <div class="time" id="wait-timer">02:00</div>
+            <div class="lbl" id="wait-timer-label">Tempo livre para embarcar</div>
+          </div>
           <div class="driver-card">
             <div class="avatar" id="found-avatar">RA</div>
             <div class="driver-info">
@@ -4196,6 +4200,7 @@ function tryRestoreActiveRide(){
       }
       if(ride.driverId) startListeningDriverLocationEta(ride.driverId);
       startChatWatch();
+      if(ride.status === 'arrived') startClientWaitTimer(ride.arrivedAt);
     }
     toast(currentScreenId() || 'c-home', 'Corrida em curso recuperada');
   }).catch(function(err){ console.warn('Falha ao restaurar corrida ativa:', err); });
@@ -4203,6 +4208,56 @@ function tryRestoreActiveRide(){
 function currentScreenId(){
   const activeEl = document.querySelector('.screen.active');
   return activeEl ? activeEl.id : null;
+}
+/* Cronómetro de tempo livre para o cliente embarcar — espelha o que o
+   motorista já faz em luxdriver-motorista.html (FREE_WAIT_SECONDS lá
+   também tem de ser 120). Corre de forma totalmente automática a partir do
+   momento em que o motorista marca "Cheguei ao local" (ride.arrivedAt),
+   sem qualquer ação do motorista: verde a decrescer enquanto há tempo
+   livre, muda para vermelho e passa a contar a crescer assim que esgota,
+   e avisa o cliente uma única vez. A cobrança do tempo extra é feita pelo
+   motorista (waitOverageFee), este cronómetro é só informativo. */
+const CLIENT_FREE_WAIT_SECONDS = 120; // 2:00 — tem de bater certo com FREE_WAIT_SECONDS no app do motorista
+let clientWaitInterval = null;
+let clientWaitFreeEndNotified = false;
+function formatWaitTime(s){
+  const m = Math.floor(s/60), sec = s%60;
+  return String(m).padStart(2,'0') + ':' + String(sec).padStart(2,'0');
+}
+function startClientWaitTimer(arrivedAtField){
+  stopClientWaitTimer();
+  let arrivedMs = Date.now();
+  try{ if(arrivedAtField && typeof arrivedAtField.toMillis === 'function') arrivedMs = arrivedAtField.toMillis(); }catch(e){}
+  clientWaitFreeEndNotified = false;
+  const box = document.getElementById('wait-timer-box');
+  const timeEl = document.getElementById('wait-timer');
+  const labelEl = document.getElementById('wait-timer-label');
+  if(box){ box.style.display = ''; box.classList.remove('expired'); }
+  function tick(){
+    const elapsed = Math.floor((Date.now() - arrivedMs) / 1000);
+    const remaining = CLIENT_FREE_WAIT_SECONDS - elapsed;
+    if(remaining > 0){
+      if(timeEl) timeEl.textContent = formatWaitTime(remaining);
+      if(labelEl) labelEl.textContent = 'Tempo livre para embarcar';
+    } else {
+      if(box) box.classList.add('expired');
+      const overage = -remaining;
+      if(timeEl) timeEl.textContent = '+' + formatWaitTime(overage);
+      if(labelEl) labelEl.textContent = 'Tempo livre terminou';
+      if(!clientWaitFreeEndNotified){
+        clientWaitFreeEndNotified = true;
+        toast('c-found', 'O teu tempo livre terminou.');
+        if(navigator.vibrate) try{ navigator.vibrate([100,50,100]); }catch(e){}
+      }
+    }
+  }
+  tick();
+  clientWaitInterval = setInterval(tick, 1000);
+}
+function stopClientWaitTimer(){
+  if(clientWaitInterval){ clearInterval(clientWaitInterval); clientWaitInterval = null; }
+  const box = document.getElementById('wait-timer-box');
+  if(box){ box.style.display = 'none'; box.classList.remove('expired'); }
 }
 function listenToRide(rideId){
   const col = ridesCollection();
@@ -4263,16 +4318,20 @@ function handleRideUpdate(ride){
     const msgEl1 = document.getElementById('pickup-eta-msg');
     if(msgEl1) msgEl1.textContent = 'O motorista chegou ao local de recolha';
     toast('c-found', 'O motorista chegou ao local de recolha');
+    startClientWaitTimer(ride.arrivedAt);
   } else if(ride.status === 'in_progress'){
+    stopClientWaitTimer();
     clearRouteCarMarker('map-found');
     startTrip();
   } else if(ride.status === 'completed'){
+    stopClientWaitTimer();
     stopListeningDriverLocationEta();
     clearRouteCarMarker('map-trip');
     stopChatWatch();
     clearActiveRideStorage();
     showClientSummary();
   } else if(ride.status === 'cancelled'){
+    stopClientWaitTimer();
     stopOfferWatchdog();
     hideNoDriversFoundPrompt();
     toast('c-home', 'A viagem foi cancelada');

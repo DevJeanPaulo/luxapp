@@ -1016,7 +1016,7 @@
     text-align:center; background:var(--panel2); border:1px solid var(--line);
     border-radius:var(--radius-md); padding:22px 16px; margin-bottom:14px; transition:border-color .3s ease;
   }
-  .wait-timer-box .time{ font-size:38px; font-weight:700; color:var(--gold); font-variant-numeric:tabular-nums; letter-spacing:.02em; }
+  .wait-timer-box .time{ font-size:38px; font-weight:700; color:var(--success); font-variant-numeric:tabular-nums; letter-spacing:.02em; }
   .wait-timer-box .lbl{ font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.06em; margin-top:6px; }
   .wait-timer-box.expired{ border-color:var(--danger); }
   .wait-timer-box.expired .time{ color:var(--danger); }
@@ -1438,6 +1438,10 @@
             </div>
           </div>
           <div id="pickup-eta-msg" style="font-size:12px; color:var(--muted); margin:-6px 0 10px;"></div>
+          <div class="wait-timer-box" id="c-wait-timer-box" style="display:none;">
+            <div class="time" id="c-wait-timer">02:00</div>
+            <div class="lbl" id="c-wait-timer-label">Tempo livre para embarcar</div>
+          </div>
           <div class="driver-card">
             <div class="avatar" id="found-avatar">RA</div>
             <div class="driver-info">
@@ -4966,6 +4970,7 @@ function tryRestoreClientActiveRide(){
       }
       if(ride.driverId) startListeningDriverLocationEta(ride.driverId);
       startClientChatWatch();
+      if(ride.status === 'arrived') startClientWaitTimer(ride.arrivedAt);
     }
     toast(currentClientScreenId() || 'c-home', 'Corrida em curso recuperada');
   }).catch(function(err){ console.warn('Falha ao restaurar corrida ativa do cliente:', err); });
@@ -5072,6 +5077,53 @@ function updateTripEtaDisplay(driverLat, driverLng){
     etaEl.textContent = mins + ' min';
   });
 }
+/* Cronómetro de tempo livre para o cliente embarcar — espelha o que o
+   motorista já faz (FREE_WAIT_SECONDS lá também tem de ser 120). Corre de
+   forma totalmente automática a partir do momento em que o motorista marca
+   "Cheguei ao local" (ride.arrivedAt), sem qualquer ação do motorista:
+   verde a decrescer enquanto há tempo livre, muda para vermelho e passa a
+   contar a crescer assim que esgota, e avisa o cliente uma única vez. Usa
+   ids próprios (c-wait-timer*) porque este ficheiro combinado partilha a
+   página com o app do motorista, que já usa os ids "wait-timer*" sem
+   prefixo para o seu próprio cronómetro. */
+const CLIENT_FREE_WAIT_SECONDS = 120; // 2:00 — tem de bater certo com FREE_WAIT_SECONDS no app do motorista
+let clientWaitInterval = null;
+let clientWaitFreeEndNotified = false;
+function startClientWaitTimer(arrivedAtField){
+  stopClientWaitTimer();
+  let arrivedMs = Date.now();
+  try{ if(arrivedAtField && typeof arrivedAtField.toMillis === 'function') arrivedMs = arrivedAtField.toMillis(); }catch(e){}
+  clientWaitFreeEndNotified = false;
+  const box = document.getElementById('c-wait-timer-box');
+  const timeEl = document.getElementById('c-wait-timer');
+  const labelEl = document.getElementById('c-wait-timer-label');
+  if(box){ box.style.display = ''; box.classList.remove('expired'); }
+  function tick(){
+    const elapsed = Math.floor((Date.now() - arrivedMs) / 1000);
+    const remaining = CLIENT_FREE_WAIT_SECONDS - elapsed;
+    if(remaining > 0){
+      if(timeEl) timeEl.textContent = formatWaitTime(remaining);
+      if(labelEl) labelEl.textContent = 'Tempo livre para embarcar';
+    } else {
+      if(box) box.classList.add('expired');
+      const overage = -remaining;
+      if(timeEl) timeEl.textContent = '+' + formatWaitTime(overage);
+      if(labelEl) labelEl.textContent = 'Tempo livre terminou';
+      if(!clientWaitFreeEndNotified){
+        clientWaitFreeEndNotified = true;
+        toast('c-found', 'O teu tempo livre terminou.');
+        if(navigator.vibrate) try{ navigator.vibrate([100,50,100]); }catch(e){}
+      }
+    }
+  }
+  tick();
+  clientWaitInterval = setInterval(tick, 1000);
+}
+function stopClientWaitTimer(){
+  if(clientWaitInterval){ clearInterval(clientWaitInterval); clientWaitInterval = null; }
+  const box = document.getElementById('c-wait-timer-box');
+  if(box){ box.style.display = 'none'; box.classList.remove('expired'); }
+}
 function listenToClientRide(rideId){
   const col = ridesCollection();
   if(!col) return;
@@ -5130,16 +5182,20 @@ function handleClientRideUpdate(ride){
     const msgEl1 = document.getElementById('pickup-eta-msg');
     if(msgEl1) msgEl1.textContent = 'O motorista chegou ao local de recolha';
     toast('c-found', 'O motorista chegou ao local de recolha');
+    startClientWaitTimer(ride.arrivedAt);
   } else if(ride.status === 'in_progress'){
+    stopClientWaitTimer();
     clearRouteCarMarker('map-found');
     startTrip();
   } else if(ride.status === 'completed'){
+    stopClientWaitTimer();
     stopListeningDriverLocationEta();
     clearRouteCarMarker('map-trip');
     stopClientChatWatch();
     clearClientActiveRideStorage();
     showClientSummary();
   } else if(ride.status === 'cancelled'){
+    stopClientWaitTimer();
     stopOfferWatchdog();
     hideNoDriversFoundPrompt();
     toast('c-home', 'A viagem foi cancelada');
@@ -7732,7 +7788,7 @@ function markArrived(el){
   el.classList.add('filled');
   if(driverRideId){
     const col = ridesCollection();
-    if(col) col.doc(driverRideId).set({ status:'arrived', updatedAt: firebase.firestore.FieldValue.serverTimestamp() }, { merge:true }).catch(function(){});
+    if(col) col.doc(driverRideId).set({ status:'arrived', arrivedAt: firebase.firestore.FieldValue.serverTimestamp(), updatedAt: firebase.firestore.FieldValue.serverTimestamp() }, { merge:true }).catch(function(){});
   }
   clearRouteCarMarker('map-d-pickup');
   const t = setTimeout(()=>{
@@ -7748,7 +7804,7 @@ function markArrived(el){
    minutes of free waiting after arrival, then automatic per-minute billing
    of extra waiting time (added to the final fare), plus the option to
    cancel with a no-show fee if the passenger never shows up at all. */
-const FREE_WAIT_SECONDS = 180; // 3:00 gratuitos
+const FREE_WAIT_SECONDS = 120; // 2:00 gratuitos para o cliente embarcar
 const WAIT_FEE_PER_MINUTE = 0.20; // €/min cobrado após o tempo gratuito (igual em todas as classes)
 let waitInterval = null;
 let waitSecondsLeft = FREE_WAIT_SECONDS;
@@ -7798,8 +7854,10 @@ let driverStopWaitFee = 0;
 /* Nº de paradas planeadas nesta viagem (limitado a MAX_TRIP_STOPS_D) e quantas
    já foram concluídas — controla quando o botão "Iniciar parada" volta a
    aparecer (entre paradas) e quando fica escondido em definitivo (depois da
-   última). Corridas sem paradas pré-planeadas mantêm o comportamento antigo:
-   uma utilização "avulsa" possível, depois escondido. */
+   última). CORRIGIDO: corridas SEM paradas pré-planeadas pelo cliente nunca
+   mostram este botão — antes havia uma utilização "avulsa" possível mesmo
+   sem paradas, o que permitia ao motorista cobrar tempo de parada de forma
+   injusta numa corrida direta (sem paragens). */
 const MAX_TRIP_STOPS_D = 2;
 let tripTotalStops = 1;
 let tripStopsCompleted = 0;
@@ -7815,7 +7873,11 @@ function resetStopTimerState(){
   const resumeBtn = document.getElementById('stop-resume-btn');
   const completeBtn = document.getElementById('complete-trip-btn');
   if(box){ box.style.display='none'; box.classList.remove('expired'); }
-  if(btn){ btn.textContent = '▶ Iniciar parada'; btn.style.display = ''; }
+  // Só mostra o botão "Iniciar parada" se esta corrida tiver mesmo paragens
+  // pré-planeadas pelo cliente (driverRideData.stops) — nunca numa corrida
+  // direta, para não permitir cobrança de tempo de parada indevida.
+  const hasPlannedStops = !!(driverRideData && Array.isArray(driverRideData.stops) && driverRideData.stops.length);
+  if(btn){ btn.textContent = '▶ Iniciar parada'; btn.style.display = hasPlannedStops ? '' : 'none'; }
   if(resumeBtn) resumeBtn.style.display = 'none';
   if(completeBtn) completeBtn.style.display = '';
   /* Já não escreve stopsCompleted:0 no Firestore aqui — esta função também é
@@ -7850,7 +7912,7 @@ function renderTripStopsInfo(){
   const info = document.getElementById('d-trip-stops-info');
   const textEl = document.getElementById('d-trip-stops-info-text');
   const stops = (driverRideData && Array.isArray(driverRideData.stops)) ? driverRideData.stops : [];
-  tripTotalStops = stops.length ? Math.min(stops.length, MAX_TRIP_STOPS_D) : 1;
+  tripTotalStops = stops.length ? Math.min(stops.length, MAX_TRIP_STOPS_D) : 0;
   if(info){
     if(stops.length){
       info.classList.add('show');
