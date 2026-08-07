@@ -2094,19 +2094,6 @@
           </div>
         </div>
 
-        <!-- Payment overlay -->
-        <div class="req-overlay" id="d-payment-overlay">
-          <div class="req-sheet">
-            <h1 class="title" style="text-align:center;" id="d-payment-title">Pagamento seguro</h1>
-            <div class="payment-summary-row" id="d-payment-summary-row"><span id="d-payment-summary-label">Recarga de saldo</span><span class="amt" id="d-payment-amount-label">50,00€</span></div>
-            <div id="d-card-element" class="stripe-card-element"></div>
-            <div class="auth-error" id="d-card-errors"></div>
-            <button class="btn btn-gold" id="d-pay-btn" onclick="submitPayment('d')"><span id="d-pay-btn-label">Pagar</span> <span id="d-pay-btn-amount">50,00€</span></button>
-            <button class="btn btn-ghost-text" onclick="cancelPayment('d')">Cancelar</button>
-            <p class="stripe-badge">🔒 Pagamento processado com segurança pela Stripe</p>
-          </div>
-        </div>
-
         <!-- Incoming request overlay -->
         <div class="req-overlay" id="req-overlay">
           <div class="req-sheet">
@@ -2141,6 +2128,21 @@
               <button class="btn btn-gold glow-frame" onclick="acceptRequest()">Aceitar</button>
             </div>
           </div>
+        </div>
+      </div>
+
+      <!-- Payment overlay (fora de qualquer .screen: precisa de ficar visível
+           independentemente do ecrã ativo, ex. ao assinar a Corrida Livre a
+           partir do ecrã #d-free-ride, ou ao guardar cartão durante o registo) -->
+      <div class="req-overlay" id="d-payment-overlay">
+        <div class="req-sheet">
+          <h1 class="title" style="text-align:center;" id="d-payment-title">Pagamento seguro</h1>
+          <div class="payment-summary-row" id="d-payment-summary-row"><span id="d-payment-summary-label">Recarga de saldo</span><span class="amt" id="d-payment-amount-label">50,00€</span></div>
+          <div id="d-card-element" class="stripe-card-element"></div>
+          <div class="auth-error" id="d-card-errors"></div>
+          <button class="btn btn-gold" id="d-pay-btn" onclick="submitPayment('d')"><span id="d-pay-btn-label">Pagar</span> <span id="d-pay-btn-amount">50,00€</span></button>
+          <button class="btn btn-ghost-text" onclick="cancelPayment('d')">Cancelar</button>
+          <p class="stripe-badge">🔒 Pagamento processado com segurança pela Stripe</p>
         </div>
       </div>
 
